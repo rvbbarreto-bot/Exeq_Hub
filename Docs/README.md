@@ -1,5 +1,7 @@
 # Índice da documentação oficial EXEQ Hub
 
+Repositório: https://github.com/rvbbarreto-bot/Exeq_Hub
+
 | Doc | Arquivo canônico | Status |
 |-----|------------------|--------|
 | Contrato | `EXEQ Hub - Contrato de Desenvolvimento da Plataforma.docx` | Ativo |
