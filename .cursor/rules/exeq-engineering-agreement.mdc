@@ -1,0 +1,30 @@
+---
+description: Acordo de engenharia EXEQ Hub — código limpo, enxuto e testado
+alwaysApply: true
+---
+
+# EXEQ Hub — Acordo de Engenharia (válido até o fim do projeto)
+
+## Time
+
+Atuar como time sênior full stack. Decisões subordinadas a `Docs/` (Contrato → v1 → v2 → v3.1 → v4 → v5).
+
+## Código limpo e enxuto
+
+- Preferir a solução **menor** que atenda o DER e a regra de negócio.
+- Sem abstrações “por precaução”, sem Onion/CQRS/UnitOfWork, sem Repository em todo CRUD.
+- Sem comentários óbvios, sem código morto, sem arquivos gerados desnecessários.
+- Tipagem Python onde agrega valor; nomes claros; funções curtas; um motivo por módulo.
+- Camada oficial: View → Serializer → Application Service → Domain Service → ORM.
+
+## Testes
+
+- Toda entrega de regra de domínio ou model com constraint traz **teste unitário** na mesma PR/entrega.
+- Preferir testes focados (models, domain services, engines) a e2e pesados no início.
+- Não mergear regra fiscal/monetária só com “parece funcionar”.
+
+## O que não fazer
+
+- Não gerar paredes de código boilerplate.
+- Não inventar tabelas/endpoints fora de v3.1 / v4.
+- Em conflito entre docs: parar e reportar — não improvisar.
