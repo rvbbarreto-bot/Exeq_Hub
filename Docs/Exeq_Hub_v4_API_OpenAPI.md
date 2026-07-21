@@ -22,7 +22,7 @@ Em conflito de contrato HTTP, prevalece `openapi-v4.yaml` após promoção; sche
 | Área | Paths |
 |------|--------|
 | Meta | `GET /openapi.json` |
-| Billing | `GET/POST /charges/`, `POST /charges/{id}/cancel`, webhooks gateway |
+| Billing | `GET/POST /charges/`, `POST /charges/{id}/cancel`, webhooks gateway, **`/billing/provider`**, **`/billing/providers/.../credentials`**, test-connection Inter |
 | DAS | `GET/POST /das/guias/` |
 | Proxies | `GET/POST /electronic-proxies/`, `POST /certificates/upload` |
 | Issuance / Focus | ver YAML completo |
@@ -53,3 +53,4 @@ Providers de cobrança: `asaas` \| `inter` \| `c6` (`tenant.settings.payment_pro
 |--------|------|------|
 | 4.0.0-draft | 2026-07-19 | Emissão + Focus |
 | 4.1.0-draft | 2026-07-19 | DAS + billing + proxies + `/openapi.json`; Inter/C6 HTTP |
+| 4.1.1-draft | 2026-07-20 | Billing provider config por tenant (credenciais + test-connection) |

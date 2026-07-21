@@ -15,3 +15,11 @@ class IncompatiblePaymentError(DomainError):
 
 class GatewayRegistrationError(DomainError):
     code = "gateway_registration_failed"
+
+
+class InvalidPaymentProviderError(DomainError):
+    code = "invalid_payment_provider"
+
+
+class InvalidProviderCredentialsError(DomainError):
+    code = "invalid_provider_credentials"

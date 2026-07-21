@@ -1,10 +1,11 @@
 openapi: 3.0.3
 info:
   title: EXEQ Hub API
-  version: 4.1.0-draft
+  version: 4.1.1-draft
   description: |
     Auth, master data, fiscal, emissão NFS-e, billing (asaas|inter|c6),
-    DAS/SERPRO, procurações e-CAC, Focus e webhooks.
+    configuração de provedor de cobrança por tenant, DAS/SERPRO,
+    procurações e-CAC, Focus e webhooks.
 servers:
   - url: http://localhost:8000/api/v1
     description: Local
@@ -66,6 +67,86 @@ paths:
               $ref: "#/components/schemas/ChargeCreate"
       responses:
         "201": { description: registered }
+  /billing/provider:
+    get:
+      tags: [billing]
+      summary: Provedor de cobrança ativo do tenant + status de configuração
+      responses:
+        "200":
+          description: provider + providers.{inter|asaas|c6}.configured
+    put:
+      tags: [billing]
+      summary: Define tenant.settings.payment_provider
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider]
+              properties:
+                provider: { type: string, enum: [inter, asaas, c6] }
+      responses:
+        "200": { description: OK }
+        "400": { description: provedor inválido }
+  /billing/providers/inter/credentials:
+    get:
+      tags: [billing]
+      summary: Metadados mascarados das credenciais Inter (sem segredos)
+      responses:
+        "200": { description: configured + client_id_masked + flags }
+    post:
+      tags: [billing]
+      summary: Grava credenciais Inter (multipart write-only)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [client_id, client_secret, cert_file, key_file]
+              properties:
+                client_id: { type: string }
+                client_secret: { type: string, format: password }
+                conta_corrente: { type: string }
+                cert_file: { type: string, format: binary }
+                key_file: { type: string, format: binary }
+      responses:
+        "200": { description: metadados mascarados }
+        "400": { description: PEM inválido ou campos ausentes }
+  /billing/providers/inter/test-connection:
+    post:
+      tags: [billing]
+      summary: Testa OAuth+mTLS Inter (não retorna access_token)
+      responses:
+        "200": { description: "{status: ok}" }
+        "400": { description: credenciais incompletas }
+        "502": { description: falha no gateway }
+  /billing/providers/{provider}/credentials:
+    parameters:
+      - in: path
+        name: provider
+        required: true
+        schema: { type: string, enum: [asaas, c6] }
+    get:
+      tags: [billing]
+      summary: Metadados mascarados api_token (Asaas/C6)
+      responses:
+        "200": { description: OK }
+    post:
+      tags: [billing]
+      summary: Grava api_token (write-only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [api_token]
+              properties:
+                api_token: { type: string, format: password }
+      responses:
+        "200": { description: metadados mascarados }
   /charges/{id}/cancel:
     post:
       tags: [billing]

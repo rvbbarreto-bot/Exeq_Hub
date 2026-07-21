@@ -189,3 +189,46 @@ class PaymentEvent(UUIDPrimaryKeyModel):
                 name="ck_payment_event_amount_positive",
             )
         ]
+
+
+class PaymentProviderAudit(UUIDPrimaryKeyModel):
+    """
+    Trilha de auditoria para troca de credenciais/provedor de cobrança.
+
+    Escolha: modelo próprio (não reusa CertificateAudit), porque CertificateAudit
+    exige FK obrigatória para DigitalCertificate (A1 PFX). PaymentAccount
+    (múltiplas contas) fica fora desta entrega.
+    """
+
+    class Action(models.TextChoices):
+        PROVIDER_CHANGED = "provider_changed", "Provedor alterado"
+        CREDENTIALS_UPDATED = "credentials_updated", "Credenciais atualizadas"
+        CONNECTION_TESTED = "connection_tested", "Conexão testada"
+
+    tenant = models.ForeignKey(
+        "accounts.Tenant",
+        on_delete=models.PROTECT,
+        related_name="payment_provider_audits",
+        verbose_name="Tenant",
+    )
+    provider = models.CharField(max_length=32, verbose_name="Provedor")
+    action = models.CharField(max_length=64, verbose_name="Ação")
+    actor_user = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Usuário",
+    )
+    metadata = models.JSONField(
+        default=dict, blank=True, verbose_name="Metadados"
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
+
+    class Meta:
+        verbose_name = "Auditoria de provedor de cobrança"
+        verbose_name_plural = "Auditorias de provedor de cobrança"
+        indexes = [
+            models.Index(fields=["tenant", "provider", "created_at"]),
+        ]

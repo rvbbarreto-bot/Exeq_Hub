@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from apps.billing.models import Charge, PaymentEvent, WebhookInbox
+from apps.billing.models import Charge, PaymentEvent, PaymentProviderAudit, WebhookInbox
 from shared.money import format_brl_from_cents
 
 
@@ -41,3 +41,24 @@ class PaymentEventAdmin(admin.ModelAdmin):
     @admin.display(description="Valor", ordering="amount_cents")
     def amount_brl(self, obj: PaymentEvent) -> str:
         return format_brl_from_cents(obj.amount_cents)
+
+
+@admin.register(PaymentProviderAudit)
+class PaymentProviderAuditAdmin(admin.ModelAdmin):
+    list_display = ("provider", "action", "actor_user", "tenant", "created_at")
+    list_filter = ("provider", "action")
+    search_fields = ("provider", "action")
+    readonly_fields = (
+        "tenant",
+        "provider",
+        "action",
+        "actor_user",
+        "metadata",
+        "created_at",
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

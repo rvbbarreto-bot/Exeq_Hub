@@ -44,6 +44,11 @@ Postgres Docker: **5433**. Redis: **6379**.
 - Providers: **`inter` (default)** | `asaas` | `c6` (porta `PaymentGateway`).
 - Seleção: `tenant.settings.payment_provider` → senão `PAYMENT_DEFAULT_PROVIDER` (default `inter`).
 - Stub por padrão (`PAYMENT_HTTP_MODE=stub`). Estudo oficial: `Docs/Exeq_Hub_Inter_Billing_Integration_Study.md`.
+- `GET/PUT /api/v1/billing/provider` — provedor ativo do tenant + status configurado
+- `GET/POST /api/v1/billing/providers/inter/credentials` — credenciais Inter (multipart; write-only)
+- `POST /api/v1/billing/providers/inter/test-connection` — OAuth+mTLS (sem devolver token)
+- `GET/POST /api/v1/billing/providers/{asaas|c6}/credentials` — `api_token`
+- Admin → Tenants → **Configurar provedor** (UI server-rendered)
 - Spec: `GET /api/v1/openapi.json` ← `Docs/openapi-v4.yaml`.
 - **Inter** (primeiro / Cobrança BolePix v3): auth HTTP = **`InterAuthClient`** (OAuth2 `client_credentials` + **mTLS** `.crt`/`.key`). Env: `INTER_CLIENT_ID`, `INTER_CLIENT_SECRET`, `INTER_CERT_PATH`/`INTER_KEY_PATH` (ou PEM / `TenantSecret`). `INTER_API_TOKEN` só legado/stub. Endpoints: `POST /cobranca/v3/cobrancas`, `GET .../{codigoSolicitacao}`, `GET .../pdf`, `POST .../cancelar`, `PUT .../webhook`. Base sandbox `cdpj-sandbox.partners.uatinter.co`. Header opcional `INTER_CONTA_CORRENTE`.
 - **Asaas** / **C6**: secundários após Inter E2E (`ASAAS_API_*`, `C6_API_*` + `TenantSecret`).
