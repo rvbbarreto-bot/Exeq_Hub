@@ -23,3 +23,11 @@ class InvalidPaymentProviderError(DomainError):
 
 class InvalidProviderCredentialsError(DomainError):
     code = "invalid_provider_credentials"
+
+
+class InvalidBillingPresetError(DomainError):
+    code = "invalid_billing_preset"
+
+
+class InvalidChargeInputError(DomainError):
+    code = "invalid_charge_input"

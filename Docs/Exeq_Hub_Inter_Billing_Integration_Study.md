@@ -124,7 +124,9 @@ Contrato alinhado ao adaptador Hub (`_inter_charge_body`):
 | `numDiasAgenda` | Sim (0+) | Dias após vencimento em carteira |
 | `pagador.cpfCnpj` / `nome` / `tipoPessoa` | Sim | `FISICA` \| `JURIDICA` |
 | `pagador.email`, endereço, CEP | Recomendado | Algumas rotinas/bancos exigem endereço completo |
-| `desconto`, `multa`, `mora` | Opcional | Fase 2 |
+| `desconto`, `multa`, `mora` | Opcional | Hub: preset tenant → `multa.PERCENTUAL` / `mora.TAXAMENSAL` |
+| `mensagem.linha1`…`linha5` | Recomendado | Até 5×78 chars |
+| Parcelado / recorrente | Hub | API Inter pública emite SIMPLES; Hub orquestra N boletos (carnê/agenda) |
 | `formasRecebimento` | Conforme doc | Controla boleto vs pix vs ambos (BolePix) |
 
 Header recomendado: `x-idempotency-key` (já enviado pelo Hub).
@@ -258,7 +260,8 @@ Se o callback Inter for “leve” (só código), o processador deve **GET detal
 | Default provider | **→ `inter`** (esta entrega) |
 | OAuth + mTLS | **Falta** |
 | Persistência artefatos | Campos no model em andamento; service ainda não grava |
-| GET detalhe pós-emissão | **Falta** |
+| GET detalhe pós-emissão | **OK** — `POST/GET /charges/{id}/sync` → `consultar_cobranca` |
+| Cancelar | **OK** — `POST /charges/{id}/cancel` + `motivoCancelamento` enum; bloqueia paid/failed |
 | GET PDF → StoredFile | **Falta** |
 | Normalize webhook Inter | **Falta** |
 | PUT webhook na ativação do tenant | **Falta** |

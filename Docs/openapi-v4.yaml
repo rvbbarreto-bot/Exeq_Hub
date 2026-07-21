@@ -1,9 +1,10 @@
 openapi: 3.0.3
 info:
   title: EXEQ Hub API
-  version: 4.1.1-draft
+  version: 4.1.2-draft
   description: |
     Auth, master data, fiscal, emissão NFS-e, billing (asaas|inter|c6),
+    predefinições de cobrança e tipos de emissão (única/parcelada/recorrente),
     configuração de provedor de cobrança por tenant, DAS/SERPRO,
     procurações e-CAC, Focus e webhooks.
 servers:
@@ -89,6 +90,29 @@ paths:
       responses:
         "200": { description: OK }
         "400": { description: provedor inválido }
+  /billing/presets:
+    get:
+      tags: [billing]
+      summary: Predefinições de cobrança do tenant (agenda / multa% / juros% a.m.)
+      responses:
+        "200":
+          description: BillingPreset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingPreset"
+    put:
+      tags: [billing]
+      summary: Atualiza predefinições de cobrança do tenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BillingPreset"
+      responses:
+        "200": { description: BillingPreset }
+        "400": { description: preset inválido }
   /billing/providers/inter/credentials:
     get:
       tags: [billing]
@@ -150,14 +174,53 @@ paths:
   /charges/{id}/cancel:
     post:
       tags: [billing]
-      summary: Cancela cobrança
+      summary: Cancela cobrança (Inter motivoCancelamento obrigatório)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                motivo_cancelamento:
+                  type: string
+                  enum:
+                    - ACERTOS
+                    - APEDIDODOCLIENTE
+                    - CLIENTE_DESISTIU
+                    - PAGODIRETOAOCLIENTE
+                    - SUBSTITUICAO
+                  description: Default ACERTOS (settings.INTER_CANCEL_MOTIVO)
+      responses:
+        "200": { description: cancelled }
+        "400": { description: status inválido / motivo inválido / gateway }
+  /charges/{id}/sync:
+    get:
+      tags: [billing]
+      summary: Consulta situação/pagamento no gateway e sincroniza Hub
       parameters:
         - in: path
           name: id
           required: true
           schema: { type: string, format: uuid }
       responses:
-        "200": { description: cancelled }
+        "200": { description: Charge atualizada }
+        "400": { description: sem gateway_ref }
+        "502": { description: falha no gateway }
+    post:
+      tags: [billing]
+      summary: Idem GET sync (consulta pagamento Inter)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: Charge atualizada }
   /webhooks/gateway:
     post:
       tags: [billing]
@@ -237,7 +300,44 @@ components:
         amount_cents: { type: integer, minimum: 1 }
         due_date: { type: string, format: date }
         description: { type: string }
+        seu_numero:
+          type: string
+          maxLength: 15
+          description: Código de controle (Inter seuNumero / nº documento do boleto)
+        message_lines:
+          type: array
+          maxItems: 5
+          items: { type: string, maxLength: 78 }
+        charge_kind:
+          type: string
+          enum: [simple, installment, recurring]
+          default: simple
+        installment_count:
+          type: integer
+          minimum: 1
+          maximum: 60
+          description: Parcelas (installment 2–48) ou ocorrências (recurring)
+        recurrence_end_date:
+          type: string
+          format: date
+          description: Fim da recorrência mensal (alternativa a installment_count)
         nf_issue_id: { type: string, format: uuid, nullable: true }
+    BillingPreset:
+      type: object
+      properties:
+        num_dias_agenda:
+          type: integer
+          minimum: 0
+          maximum: 60
+          description: Dias após vencimento (Inter numDiasAgenda)
+        apply_multa: { type: boolean }
+        multa_percent:
+          type: string
+          description: Multa percentual (Inter multa.PERCENTUAL)
+        apply_mora: { type: boolean }
+        mora_percent_am:
+          type: string
+          description: Juros % a.m. (Inter mora.TAXAMENSAL)
     GuiaCreate:
       type: object
       required: [idempotency_key, provider_id, tipo_guia, competencia]

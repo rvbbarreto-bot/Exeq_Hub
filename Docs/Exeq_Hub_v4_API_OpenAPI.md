@@ -2,8 +2,8 @@
 
 | Campo | Valor |
 |-------|--------|
-| Versão | **4.1.0-draft** |
-| Data | 2026-07-19 |
+| Versão | **4.1.2-draft** |
+| Data | 2026-07-20 |
 | Status | **Draft** — emissão + Focus + **billing** + **DAS** + **electronic-proxies** |
 | Spec machine-readable | [`Docs/openapi-v4.yaml`](openapi-v4.yaml) |
 | Endpoint runtime | `GET /api/v1/openapi.json` (público) |
@@ -22,7 +22,7 @@ Em conflito de contrato HTTP, prevalece `openapi-v4.yaml` após promoção; sche
 | Área | Paths |
 |------|--------|
 | Meta | `GET /openapi.json` |
-| Billing | `GET/POST /charges/`, `POST /charges/{id}/cancel`, webhooks gateway, **`/billing/provider`**, **`/billing/providers/.../credentials`**, test-connection Inter |
+| Billing | `GET/POST /charges/`, `POST /charges/{id}/cancel`, webhooks gateway, **`/billing/provider`**, **`/billing/presets`**, **`/billing/providers/.../credentials`**, test-connection Inter |
 | DAS | `GET/POST /das/guias/` |
 | Proxies | `GET/POST /electronic-proxies/`, `POST /certificates/upload` |
 | Issuance / Focus | ver YAML completo |
@@ -54,3 +54,4 @@ Providers de cobrança: `asaas` \| `inter` \| `c6` (`tenant.settings.payment_pro
 | 4.0.0-draft | 2026-07-19 | Emissão + Focus |
 | 4.1.0-draft | 2026-07-19 | DAS + billing + proxies + `/openapi.json`; Inter/C6 HTTP |
 | 4.1.1-draft | 2026-07-20 | Billing provider config por tenant (credenciais + test-connection) |
+| 4.1.2-draft | 2026-07-20 | Predefinições por tenant + emissão única/parcelada/recorrente (Inter) |

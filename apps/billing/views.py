@@ -11,6 +11,7 @@ from apps.billing.exceptions import (
     ChargeNotFoundError,
     GatewayRegistrationError,
     IncompatiblePaymentError,
+    InvalidChargeInputError,
     InvalidWebhookSignatureError,
 )
 from apps.billing.models import Charge, WebhookInbox
@@ -19,7 +20,12 @@ from apps.billing.serializers import (
     ChargeSerializer,
     WebhookInboxSerializer,
 )
-from apps.billing.services import cancel_charge, ingest_gateway_webhook, reprocess_webhook
+from apps.billing.services import (
+    cancel_charge,
+    ingest_gateway_webhook,
+    reprocess_webhook,
+    sync_charge_from_gateway,
+)
 
 
 class ChargeViewSet(viewsets.ModelViewSet):
@@ -37,16 +43,44 @@ class ChargeViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        charge = serializer.save()
-        return Response(ChargeSerializer(charge).data, status=status.HTTP_201_CREATED)
+        result = serializer.save()
+        if isinstance(result, list):
+            group_id = result[0].schedule_group_id if result else None
+            return Response(
+                {
+                    "schedule_group_id": str(group_id) if group_id else None,
+                    "charge_kind": result[0].charge_kind if result else None,
+                    "charges": ChargeSerializer(result, many=True).data,
+                },
+                status=status.HTTP_201_CREATED,
+            )
+        return Response(ChargeSerializer(result).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"], url_path="cancel")
     def cancel(self, request, pk=None):
         charge = self.get_object()
+        motivo = request.data.get("motivo_cancelamento") or request.data.get(
+            "motivoCancelamento"
+        )
         try:
-            cancel_charge(charge)
+            cancel_charge(charge, motivo_cancelamento=motivo)
+        except InvalidChargeInputError as exc:
+            return Response({"detail": str(exc), "code": exc.code}, status=400)
         except (IncompatiblePaymentError, GatewayRegistrationError) as exc:
             return Response({"detail": str(exc), "code": exc.code}, status=400)
+        charge.refresh_from_db()
+        return Response(ChargeSerializer(charge).data)
+
+    @action(detail=True, methods=["post", "get"], url_path="sync")
+    def sync(self, request, pk=None):
+        """Consulta situação/pagamento no gateway (Inter GET /cobrancas/{codigo})."""
+        charge = self.get_object()
+        try:
+            sync_charge_from_gateway(charge)
+        except ChargeNotFoundError as exc:
+            return Response({"detail": str(exc), "code": exc.code}, status=400)
+        except GatewayRegistrationError as exc:
+            return Response({"detail": str(exc), "code": exc.code}, status=502)
         charge.refresh_from_db()
         return Response(ChargeSerializer(charge).data)
 

@@ -11,6 +11,14 @@ from django.conf import settings
 
 from integrations.payments.errors import PaymentGatewayError
 from integrations.payments.inter_auth import InterAuthClient
+from integrations.payments.inter_cancel import (
+    DEFAULT_INTER_CANCEL_MOTIVO,
+    INTER_CANCEL_MOTIVOS,
+)
+from integrations.payments.inter_status import (
+    inter_artifacts,
+    map_inter_situacao,
+)
 from integrations.payments.port import ChargeRegisterResult
 
 
@@ -20,6 +28,19 @@ def _digits(value: str) -> str:
 
 def _tipo_pessoa(document: str) -> str:
     return "JURIDICA" if len(_digits(document)) > 11 else "FISICA"
+
+
+_IBGE_CIDADE = {
+    "3504107": "ATIBAIA",
+}
+
+
+def _inter_cidade(addr: dict) -> str:
+    cidade = (addr.get("cidade") or addr.get("municipio") or "").strip()
+    if cidade:
+        return cidade[:60]
+    ibge = str(addr.get("codigo_municipio") or addr.get("ibge") or "")
+    return (_IBGE_CIDADE.get(ibge) or "SAO PAULO")[:60]
 
 
 class BankPaymentGateway:
@@ -50,6 +71,9 @@ class BankPaymentGateway:
         customer_name: str,
         external_reference: str,
         idempotency_key: str,
+        customer_address: dict[str, Any] | None = None,
+        customer_email: str = "",
+        charge_options: dict[str, Any] | None = None,
     ) -> ChargeRegisterResult:
         if self.mode != "http":
             ref = f"{self.kind}_{uuid4().hex[:16]}"
@@ -64,6 +88,7 @@ class BankPaymentGateway:
                     "idempotency_key": idempotency_key,
                     "amount_cents": amount_cents,
                     "due_date": due_date.isoformat(),
+                    "charge_options": charge_options or {},
                 },
             )
 
@@ -74,6 +99,9 @@ class BankPaymentGateway:
             customer_document=customer_document,
             customer_name=customer_name,
             external_reference=external_reference,
+            customer_address=customer_address,
+            customer_email=customer_email,
+            charge_options=charge_options,
         )
         data = self._request(
             "POST",
@@ -90,7 +118,9 @@ class BankPaymentGateway:
             raw={"provider": self.kind, "mode": "http", **data},
         )
 
-    def cancelar(self, *, ref: str) -> ChargeRegisterResult:
+    def cancelar(
+        self, *, ref: str, motivo_cancelamento: str | None = None
+    ) -> ChargeRegisterResult:
         if self.mode != "http":
             return ChargeRegisterResult(
                 external_ref=ref,
@@ -100,14 +130,47 @@ class BankPaymentGateway:
                     "mode": "stub",
                     "action": "cancelar",
                     "ref": ref,
+                    "motivo_cancelamento": motivo_cancelamento,
                 },
             )
-        method, path, body = self._cancel_spec(ref)
+        method, path, body = self._cancel_spec(ref, motivo_cancelamento=motivo_cancelamento)
         data = self._request(method, path, json=body) if body is not None else self._request(method, path)
         return ChargeRegisterResult(
             external_ref=ref,
             status="cancelled",
             raw={"provider": self.kind, "mode": "http", **(data if isinstance(data, dict) else {})},
+        )
+
+    def consultar_cobranca(self, *, ref: str) -> ChargeRegisterResult:
+        if self.mode != "http":
+            return ChargeRegisterResult(
+                external_ref=ref,
+                status="registered",
+                raw={
+                    "provider": self.kind,
+                    "mode": "stub",
+                    "action": "consultar",
+                    "ref": ref,
+                    "cobranca": {
+                        "codigoSolicitacao": ref,
+                        "situacao": "A_RECEBER",
+                    },
+                },
+                extras={"situacao": "A_RECEBER"},
+            )
+        path = f"{self._charge_path().rstrip('/')}/{ref}"
+        data = self._request("GET", path)
+        payload = data if isinstance(data, dict) else {}
+        arts = inter_artifacts(payload)
+        hub_status = map_inter_situacao(arts.get("situacao")) or "registered"
+        return ChargeRegisterResult(
+            external_ref=str(arts.get("codigo_solicitacao") or ref),
+            status=hub_status,
+            raw={"provider": self.kind, "mode": "http", **payload},
+            digitable_line=str(arts.get("digitable_line") or ""),
+            barcode=str(arts.get("barcode") or ""),
+            pix_copy_paste=str(arts.get("pix_copy_paste") or ""),
+            extras=arts,
         )
 
     def _charge_path(self) -> str:
@@ -118,7 +181,9 @@ class BankPaymentGateway:
         }
         return getattr(settings, key, None) or defaults.get(self.kind, "/cobrancas")
 
-    def _cancel_spec(self, ref: str) -> tuple[str, str, dict[str, Any] | None]:
+    def _cancel_spec(
+        self, ref: str, *, motivo_cancelamento: str | None = None
+    ) -> tuple[str, str, dict[str, Any] | None]:
         if self.kind == "c6":
             tmpl = getattr(settings, "C6_CANCEL_PATH_TMPL", None) or "/v1/bank_slips/{ref}/cancel"
             return "PUT", tmpl.format(ref=ref), None
@@ -126,7 +191,17 @@ class BankPaymentGateway:
             getattr(settings, "INTER_CANCEL_PATH_TMPL", None)
             or "/cobranca/v3/cobrancas/{ref}/cancelar"
         )
-        motivo = getattr(settings, "INTER_CANCEL_MOTIVO", None) or "ACERTOS"
+        motivo = (motivo_cancelamento or "").strip().upper()
+        if not motivo:
+            motivo = (
+                getattr(settings, "INTER_CANCEL_MOTIVO", None) or DEFAULT_INTER_CANCEL_MOTIVO
+            )
+        motivo = str(motivo).strip().upper()
+        if motivo not in INTER_CANCEL_MOTIVOS:
+            raise PaymentGatewayError(
+                f"motivoCancelamento inválido: {motivo}. "
+                f"Use: {', '.join(sorted(INTER_CANCEL_MOTIVOS))}"
+            )
         return "POST", tmpl.format(ref=ref), {"motivoCancelamento": motivo}
 
     def _charge_body(
@@ -138,6 +213,9 @@ class BankPaymentGateway:
         customer_document: str,
         customer_name: str,
         external_reference: str,
+        customer_address: dict[str, Any] | None = None,
+        customer_email: str = "",
+        charge_options: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if self.kind == "c6":
             return self._c6_charge_body(
@@ -147,6 +225,7 @@ class BankPaymentGateway:
                 customer_document=customer_document,
                 customer_name=customer_name,
                 external_reference=external_reference,
+                customer_address=customer_address,
             )
         return self._inter_charge_body(
             amount_cents=amount_cents,
@@ -155,6 +234,9 @@ class BankPaymentGateway:
             customer_document=customer_document,
             customer_name=customer_name,
             external_reference=external_reference,
+            customer_address=customer_address,
+            customer_email=customer_email,
+            charge_options=charge_options,
         )
 
     def _inter_charge_body(
@@ -166,20 +248,56 @@ class BankPaymentGateway:
         customer_document: str,
         customer_name: str,
         external_reference: str,
+        customer_address: dict[str, Any] | None = None,
+        customer_email: str = "",
+        charge_options: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         # Contrato: developers.inter.co Cobrança v3 (BolePix)
-        return {
-            "seuNumero": external_reference[:15],
+        opts = charge_options or {}
+        addr = customer_address or {}
+        pagador: dict[str, Any] = {
+            "cpfCnpj": _digits(customer_document),
+            "nome": customer_name[:100],
+            "tipoPessoa": _tipo_pessoa(customer_document),
+            "endereco": (
+                addr.get("logradouro") or addr.get("endereco") or "NAO INFORMADO"
+            )[:90],
+            "numero": str(addr.get("numero") or "S/N")[:10],
+            "bairro": (addr.get("bairro") or "CENTRO")[:60],
+            "cidade": _inter_cidade(addr),
+            "uf": (addr.get("uf") or "SP")[:2].upper(),
+            "cep": _digits(str(addr.get("cep") or "01000000"))[:8],
+        }
+        email = (customer_email or addr.get("email") or "").strip()
+        if email:
+            pagador["email"] = email[:100]
+
+        seu_numero = str(opts.get("seu_numero") or external_reference)[:15]
+        if "num_dias_agenda" in opts and opts["num_dias_agenda"] is not None:
+            num_dias = int(opts["num_dias_agenda"])
+        else:
+            num_dias = int(getattr(settings, "INTER_NUM_DIAS_AGENDA", 0) or 0)
+        num_dias = max(0, min(60, num_dias))
+
+        mensagem = _inter_mensagem(
+            description=description,
+            message_lines=opts.get("message_lines"),
+        )
+        body: dict[str, Any] = {
+            "seuNumero": seu_numero,
             "valorNominal": round(amount_cents / 100, 2),
             "dataVencimento": due_date.isoformat(),
-            "numDiasAgenda": int(getattr(settings, "INTER_NUM_DIAS_AGENDA", 0) or 0),
-            "pagador": {
-                "cpfCnpj": _digits(customer_document),
-                "nome": customer_name[:100],
-                "tipoPessoa": _tipo_pessoa(customer_document),
-            },
-            "mensagem": {"linha1": (description or "Cobranca EXEQ Hub")[:80]},
+            "numDiasAgenda": num_dias,
+            "pagador": pagador,
+            "mensagem": mensagem,
         }
+        multa = _inter_multa(opts.get("multa_percent"))
+        if multa:
+            body["multa"] = multa
+        mora = _inter_mora(opts.get("mora_percent_am"))
+        if mora:
+            body["mora"] = mora
+        return body
 
     def _c6_charge_body(
         self,
@@ -190,9 +308,11 @@ class BankPaymentGateway:
         customer_document: str,
         customer_name: str,
         external_reference: str,
+        customer_address: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         # Contrato BaaS C6: POST /v1/bank_slips (snake_case)
         instr = (description or "Cobranca EXEQ Hub")[:80]
+        addr = customer_address or {}
         return {
             "external_reference_id": external_reference[:64],
             "amount": round(amount_cents / 100, 2),
@@ -206,12 +326,30 @@ class BankPaymentGateway:
                 "name": customer_name[:100],
                 "tax_id": _digits(customer_document),
                 "address": {
-                    "street": getattr(settings, "C6_PAYER_STREET", None) or "NAO INFORMADO",
-                    "number": getattr(settings, "C6_PAYER_NUMBER", None) or "S/N",
-                    "city": getattr(settings, "C6_PAYER_CITY", None) or "SAO PAULO",
-                    "state": getattr(settings, "C6_PAYER_STATE", None) or "SP",
+                    "street": (
+                        addr.get("logradouro")
+                        or getattr(settings, "C6_PAYER_STREET", None)
+                        or "NAO INFORMADO"
+                    ),
+                    "number": str(
+                        addr.get("numero")
+                        or getattr(settings, "C6_PAYER_NUMBER", None)
+                        or "S/N"
+                    ),
+                    "city": _inter_cidade(addr)
+                    if addr
+                    else (getattr(settings, "C6_PAYER_CITY", None) or "SAO PAULO"),
+                    "state": (
+                        addr.get("uf")
+                        or getattr(settings, "C6_PAYER_STATE", None)
+                        or "SP"
+                    ),
                     "zip_code": _digits(
-                        getattr(settings, "C6_PAYER_ZIP", None) or "01000000"
+                        str(
+                            addr.get("cep")
+                            or getattr(settings, "C6_PAYER_ZIP", None)
+                            or "01000000"
+                        )
                     ),
                 },
             },
@@ -255,6 +393,39 @@ class BankPaymentGateway:
         if response.status_code >= 400:
             raise PaymentGatewayError(f"{self.kind} HTTP {response.status_code}: {data}")
         return data if isinstance(data, dict) else {"data": data}
+
+
+def _inter_mensagem(
+    *, description: str, message_lines: list[str] | None
+) -> dict[str, str]:
+    if message_lines:
+        lines = list(message_lines[:5])
+        while len(lines) < 5:
+            lines.append("")
+        return {
+            f"linha{i}": str(lines[i - 1] or "")[:78]
+            for i in range(1, 6)
+        }
+    text = (description or "Cobranca EXEQ Hub")[:78]
+    return {"linha1": text, "linha2": "", "linha3": "", "linha4": "", "linha5": ""}
+
+
+def _inter_multa(percent: float | int | None) -> dict[str, Any] | None:
+    if percent is None:
+        return None
+    taxa = float(percent)
+    if taxa <= 0:
+        return {"codigo": "NAOTEMMULTA", "taxa": 0, "valor": 0}
+    return {"codigo": "PERCENTUAL", "taxa": taxa, "valor": 0}
+
+
+def _inter_mora(percent_am: float | int | None) -> dict[str, Any] | None:
+    if percent_am is None:
+        return None
+    taxa = float(percent_am)
+    if taxa <= 0:
+        return {"codigo": "ISENTO", "taxa": 0, "valor": 0}
+    return {"codigo": "TAXAMENSAL", "taxa": taxa, "valor": 0}
 
 
 class InterPaymentGateway(BankPaymentGateway):

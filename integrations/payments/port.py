@@ -32,6 +32,13 @@ class PaymentGateway(Protocol):
         customer_name: str,
         external_reference: str,
         idempotency_key: str,
+        customer_address: dict[str, Any] | None = None,
+        customer_email: str = "",
+        charge_options: dict[str, Any] | None = None,
     ) -> ChargeRegisterResult: ...
 
-    def cancelar(self, *, ref: str) -> ChargeRegisterResult: ...
+    def cancelar(
+        self, *, ref: str, motivo_cancelamento: str | None = None
+    ) -> ChargeRegisterResult: ...
+
+    def consultar_cobranca(self, *, ref: str) -> ChargeRegisterResult: ...

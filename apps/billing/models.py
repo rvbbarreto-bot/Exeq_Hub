@@ -16,6 +16,11 @@ class Charge(TenantOwnedModel):
         CANCELLED = "cancelled", "Cancelada"
         FAILED = "failed", "Falhou"
 
+    class ChargeKind(models.TextChoices):
+        SIMPLE = "simple", "Pagamento único"
+        INSTALLMENT = "installment", "Parcelado"
+        RECURRING = "recurring", "Recorrente"
+
     idempotency_key = models.CharField(max_length=128, verbose_name="Chave de idempotência")
     status = models.CharField(
         max_length=16,
@@ -32,6 +37,57 @@ class Charge(TenantOwnedModel):
     amount_cents = models.BigIntegerField(verbose_name="Valor")
     due_date = models.DateField(verbose_name="Vencimento")
     description = models.TextField(blank=True, default="", verbose_name="Descrição")
+    seu_numero = models.CharField(
+        max_length=15,
+        blank=True,
+        default="",
+        verbose_name="Código de controle",
+    )
+    charge_kind = models.CharField(
+        max_length=16,
+        choices=ChargeKind.choices,
+        default=ChargeKind.SIMPLE,
+        verbose_name="Tipo de emissão",
+    )
+    message_lines = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name="Linhas da descrição (boleto)",
+    )
+    schedule_group_id = models.UUIDField(
+        null=True,
+        blank=True,
+        verbose_name="Grupo da agenda",
+    )
+    installment_number = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Parcela",
+    )
+    installment_count = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Total de parcelas",
+    )
+    num_dias_agenda = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Dias após vencimento",
+    )
+    multa_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Multa %",
+    )
+    mora_percent_am = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Juros % a.m.",
+    )
     gateway_ref = models.CharField(
         max_length=128, blank=True, default="", verbose_name="Referência gateway"
     )
@@ -87,6 +143,8 @@ class Charge(TenantOwnedModel):
         indexes = [
             models.Index(fields=["tenant", "status", "due_date"]),
             models.Index(fields=["tenant", "gateway_ref"]),
+            models.Index(fields=["tenant", "schedule_group_id"]),
+            models.Index(fields=["tenant", "seu_numero"]),
         ]
 
 

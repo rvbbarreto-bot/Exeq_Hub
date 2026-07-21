@@ -7,6 +7,7 @@ from apps.billing.provider_views import (
     InterTestConnectionView,
     TokenProviderCredentialsView,
 )
+from apps.billing.preset_views import BillingPresetView
 from apps.billing.views import ChargeViewSet, GatewayWebhookView, WebhookInboxViewSet
 
 router = DefaultRouter()
@@ -16,6 +17,7 @@ router.register("webhooks", WebhookInboxViewSet, basename="webhooks")
 urlpatterns = [
     path("webhooks/gateway", GatewayWebhookView.as_view(), name="webhooks-gateway"),
     path("billing/provider", BillingProviderView.as_view(), name="billing-provider"),
+    path("billing/presets", BillingPresetView.as_view(), name="billing-presets"),
     path(
         "billing/providers/inter/credentials",
         InterCredentialsView.as_view(),

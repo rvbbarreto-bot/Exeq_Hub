@@ -43,6 +43,9 @@ class AsaasPaymentGateway:
         customer_name: str,
         external_reference: str,
         idempotency_key: str,
+        customer_address: dict | None = None,
+        customer_email: str = "",
+        charge_options: dict | None = None,
     ) -> ChargeRegisterResult:
         if self.mode != "http":
             ref = f"asaas_{uuid4().hex[:16]}"
@@ -85,7 +88,7 @@ class AsaasPaymentGateway:
             raw={"provider": self.kind, "mode": "http", **data},
         )
 
-    def cancelar(self, *, ref: str) -> ChargeRegisterResult:
+    def cancelar(self, *, ref: str, motivo_cancelamento: str | None = None) -> ChargeRegisterResult:
         if self.mode != "http":
             return ChargeRegisterResult(
                 external_ref=ref,
@@ -95,6 +98,7 @@ class AsaasPaymentGateway:
                     "mode": "stub",
                     "action": "cancelar",
                     "ref": ref,
+                    "motivo_cancelamento": motivo_cancelamento,
                 },
             )
         data = self._request("DELETE", f"/payments/{ref}")
@@ -102,6 +106,39 @@ class AsaasPaymentGateway:
             external_ref=ref,
             status="cancelled",
             raw={"provider": self.kind, "mode": "http", **(data if isinstance(data, dict) else {})},
+        )
+
+    def consultar_cobranca(self, *, ref: str) -> ChargeRegisterResult:
+        if self.mode != "http":
+            return ChargeRegisterResult(
+                external_ref=ref,
+                status="registered",
+                raw={
+                    "provider": self.kind,
+                    "mode": "stub",
+                    "action": "consultar",
+                    "ref": ref,
+                },
+            )
+        data = self._request("GET", f"/payments/{ref}")
+        status_map = {
+            "PENDING": "registered",
+            "RECEIVED": "paid",
+            "CONFIRMED": "paid",
+            "OVERDUE": "overdue",
+            "REFUNDED": "cancelled",
+            "DELETED": "cancelled",
+        }
+        asaas_status = str(data.get("status") or "").upper()
+        return ChargeRegisterResult(
+            external_ref=ref,
+            status=status_map.get(asaas_status, "registered"),
+            raw={"provider": self.kind, "mode": "http", **data},
+            digitable_line=str(data.get("identificationField") or ""),
+            barcode=str(data.get("barCode") or ""),
+            payment_url=str(data.get("invoiceUrl") or data.get("bankSlipUrl") or ""),
+            pix_copy_paste=str(data.get("pixCopiaECola") or ""),
+            extras={"situacao": asaas_status},
         )
 
     def _ensure_customer(self, *, document: str, name: str) -> str:
