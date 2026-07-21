@@ -1,9 +1,12 @@
 from django import forms
 from django.contrib import admin, messages
-from django.http import FileResponse, Http404
+from django.contrib.admin.helpers import ACTION_CHECKBOX_NAME
+from django.http import FileResponse, Http404, HttpResponseRedirect
+from django.template.response import TemplateResponse
 from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.html import format_html
+from decimal import Decimal
 
 from apps.issuance.artifacts import ensure_authorized_artifacts
 from apps.issuance.exceptions import (
@@ -15,6 +18,7 @@ from apps.issuance.exceptions import (
 from apps.issuance.models import FiscalRuleSnapshot, NfArtifact, NfIssue, NfIssueEvent
 from apps.issuance.polling import poll_nf_issue_status
 from apps.issuance.services import cancel_nf_issue, create_nf_issue, reprocess_nf_issue
+from shared.money import format_brl_from_cents
 from shared.storage import StorageError, get_storage
 
 QA_CANCEL_JUSTIFICATIVA = "Cancelamento via Django Admin QA EXEQ Hub"
@@ -112,6 +116,11 @@ class NfIssueAdminForm(forms.ModelForm):
             "Há perfis com nome igual em tenants diferentes — escolha o do tenant selecionado."
         ),
     )
+    valor_reais = forms.CharField(
+        label="Valor (R$)",
+        help_text="Informe em reais com duas casas decimais (ex.: 150,50).",
+        max_length=32,
+    )
 
     class Meta:
         model = NfIssue
@@ -124,7 +133,6 @@ class NfIssueAdminForm(forms.ModelForm):
             "fiscal_profile",
             "ibge_code",
             "competence_date",
-            "amount_cents",
         )
 
     def __init__(self, *args, **kwargs):
@@ -146,14 +154,35 @@ class NfIssueAdminForm(forms.ModelForm):
             "service",
             "ibge_code",
             "competence_date",
-            "amount_cents",
+            "valor_reais",
         ):
             self.fields[name].required = True
+        if self.instance and self.instance.pk and self.instance.amount_cents:
+            from shared.money import format_brl_from_cents
 
-    def clean_amount_cents(self):
-        value = self.cleaned_data["amount_cents"]
-        if value is None or value <= 0:
-            raise forms.ValidationError("O valor em centavos deve ser maior que zero.")
+            # Campo de entrada: só o número no padrão BR (sem prefixo R$)
+            self.fields["valor_reais"].initial = (
+                format_brl_from_cents(self.instance.amount_cents)
+                .replace("R$ ", "")
+            )
+
+    def clean_valor_reais(self):
+        from shared.money import reais_to_cents
+
+        raw = (self.cleaned_data.get("valor_reais") or "").strip()
+        text = raw.replace("R$", "").replace("r$", "").strip()
+        if "." in text and "," in text:
+            text = text.replace(".", "").replace(",", ".")
+        elif "," in text:
+            text = text.replace(",", ".")
+        try:
+            value = Decimal(text)
+        except Exception as exc:  # noqa: BLE001
+            raise forms.ValidationError("Valor inválido. Use o formato 150,50.") from exc
+        try:
+            self.cleaned_data["amount_cents"] = reais_to_cents(value)
+        except ValueError as exc:
+            raise forms.ValidationError(str(exc)) from exc
         return value
 
     def clean_fiscal_profile(self):
@@ -188,7 +217,7 @@ class NfIssueAdmin(admin.ModelAdmin):
         "status_badge",
         "tenant",
         "provider",
-        "amount_cents",
+        "amount_brl",
         "ibge_code",
         "competence_date",
         "focus_ref",
@@ -208,6 +237,8 @@ class NfIssueAdmin(admin.ModelAdmin):
         "rejection_code",
         "created_at",
         "updated_at",
+        "cancel_panel",
+        "amount_brl",
     )
     autocomplete_fields = ("tenant", "provider", "customer", "service", "fiscal_profile")
     inlines = [NfArtifactInline, NfIssueEventInline]
@@ -233,8 +264,19 @@ class NfIssueAdmin(admin.ModelAdmin):
                     "fiscal_profile",
                     "ibge_code",
                     "competence_date",
-                    "amount_cents",
+                    "amount_brl",
                 )
+            },
+        ),
+        (
+            "Cancelamento (QA)",
+            {
+                "description": (
+                    "Disponível somente com status Autorizada. "
+                    "Também dá para cancelar pela lista: marque a nota → "
+                    "ação «Cancelar no Focus (autorizadas)»."
+                ),
+                "fields": ("cancel_panel",),
             },
         ),
         (
@@ -274,6 +316,82 @@ class NfIssueAdmin(admin.ModelAdmin):
             obj.get_status_display(),
         )
 
+    @admin.display(description="Ação")
+    def cancel_panel(self, obj: NfIssue) -> str:
+        if not obj or not obj.pk:
+            return "—"
+        if obj.status != NfIssue.Status.AUTHORIZED:
+            return format_html(
+                "<em>Cancelamento disponível apenas quando o status for "
+                "<strong>Autorizada</strong> (atual: {}).</em>",
+                obj.get_status_display(),
+            )
+        url = reverse("admin:issuance_nfissue_cancel", args=[obj.pk])
+        return format_html(
+            '<a class="button" href="{}" style="background:#ba2121;color:#fff;'
+            'padding:8px 14px;border-radius:4px;text-decoration:none">'
+            "Cancelar esta nota no Focus</a>"
+            '<p style="margin-top:8px;color:#666">Justificativa usada: «{}»</p>',
+            url,
+            QA_CANCEL_JUSTIFICATIVA,
+        )
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom = [
+            path(
+                "<uuid:object_id>/cancelar-focus/",
+                self.admin_site.admin_view(self.cancel_detail_view),
+                name="issuance_nfissue_cancel",
+            ),
+        ]
+        return custom + urls
+
+    def cancel_detail_view(self, request, object_id):
+        issue = (
+            NfIssue.objects.select_related("tenant", "provider")
+            .filter(pk=object_id)
+            .first()
+        )
+        if issue is None:
+            raise Http404("Emissão não encontrada")
+        changelist = reverse("admin:issuance_nfissue_changelist")
+        change_url = reverse("admin:issuance_nfissue_change", args=[issue.pk])
+
+        if request.method == "POST" and request.POST.get("confirm") == "1":
+            try:
+                cancel_nf_issue(
+                    issue,
+                    justificativa=QA_CANCEL_JUSTIFICATIVA,
+                    actor="admin",
+                )
+                messages.success(
+                    request,
+                    f"{issue.idempotency_key}: cancelada no Focus (status=cancelled).",
+                )
+            except (
+                InvalidTransitionError,
+                CancelJustificationError,
+                FocusCancelFailedError,
+            ) as exc:
+                messages.error(request, f"{issue.idempotency_key}: {exc}")
+            return HttpResponseRedirect(change_url)
+
+        context = {
+            **self.admin_site.each_context(request),
+            "opts": self.model._meta,
+            "issue": issue,
+            "justificativa": QA_CANCEL_JUSTIFICATIVA,
+            "title": "Confirmar cancelamento",
+            "back_url": change_url,
+            "changelist_url": changelist,
+        }
+        return TemplateResponse(
+            request,
+            "admin/issuance/nfissue/cancel_detail_confirm.html",
+            context,
+        )
+
     def get_readonly_fields(self, request, obj=None):
         if obj is None:
             return ()
@@ -298,7 +416,7 @@ class NfIssueAdmin(admin.ModelAdmin):
                             "fiscal_profile",
                             "ibge_code",
                             "competence_date",
-                            "amount_cents",
+                            "valor_reais",
                         ),
                     },
                 ),
@@ -307,6 +425,10 @@ class NfIssueAdmin(admin.ModelAdmin):
 
     def has_change_permission(self, request, obj=None):
         return request.user.is_staff
+
+    @admin.display(description="Valor", ordering="amount_cents")
+    def amount_brl(self, obj: NfIssue) -> str:
+        return format_brl_from_cents(obj.amount_cents)
 
     def save_model(self, request, obj, form, change):
         if change:
@@ -355,10 +477,46 @@ class NfIssueAdmin(admin.ModelAdmin):
 
     @admin.action(description="Cancelar no Focus (autorizadas)")
     def action_cancel_authorized(self, request, queryset):
+        authorized = list(
+            queryset.filter(status=NfIssue.Status.AUTHORIZED).select_related(
+                "tenant", "provider"
+            )
+        )
+        skipped = list(queryset.exclude(status=NfIssue.Status.AUTHORIZED))
+
+        if not authorized:
+            messages.error(
+                request,
+                "Nenhuma nota Autorizada selecionada. "
+                "O cancelamento só funciona com status = Autorizada "
+                "(marque o checkbox da linha e escolha esta ação).",
+            )
+            return None
+
+        if request.POST.get("apply") != "1":
+            return TemplateResponse(
+                request,
+                "admin/issuance/nfissue/cancel_confirm.html",
+                {
+                    **self.admin_site.each_context(request),
+                    "opts": self.model._meta,
+                    "authorized": authorized,
+                    "skipped": skipped,
+                    "justificativa": QA_CANCEL_JUSTIFICATIVA,
+                    "action_checkbox_name": ACTION_CHECKBOX_NAME,
+                    "back_url": reverse("admin:issuance_nfissue_changelist"),
+                    "title": "Confirmar cancelamento no Focus",
+                },
+            )
+
         ok = 0
-        for issue in queryset:
+        for issue in authorized:
             try:
-                cancel_nf_issue(issue, justificativa=QA_CANCEL_JUSTIFICATIVA)
+                cancel_nf_issue(
+                    issue,
+                    justificativa=QA_CANCEL_JUSTIFICATIVA,
+                    actor="admin",
+                )
                 ok += 1
             except (
                 InvalidTransitionError,
@@ -367,7 +525,13 @@ class NfIssueAdmin(admin.ModelAdmin):
             ) as exc:
                 messages.error(request, f"{issue.idempotency_key}: {exc}")
         if ok:
-            messages.success(request, f"{ok} nota(s) cancelada(s).")
+            messages.success(request, f"{ok} nota(s) cancelada(s) no Focus.")
+        if skipped:
+            messages.warning(
+                request,
+                f"{len(skipped)} nota(s) ignorada(s) por não estarem Autorizadas.",
+            )
+        return None
 
     @admin.action(description="Reprocessar (rejeitadas/falhas)")
     def action_reprocess_rejected(self, request, queryset):

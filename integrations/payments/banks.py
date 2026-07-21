@@ -10,6 +10,7 @@ import httpx
 from django.conf import settings
 
 from integrations.payments.errors import PaymentGatewayError
+from integrations.payments.inter_auth import InterAuthClient
 from integrations.payments.port import ChargeRegisterResult
 
 
@@ -257,13 +258,38 @@ class BankPaymentGateway:
 
 
 class InterPaymentGateway(BankPaymentGateway):
-    def __init__(self, *, token: str | None = None, mode: str | None = None):
+    """Inter Cobrança v3 — HTTP com InterAuthClient (mTLS+OAuth) ou Bearer legado."""
+
+    def __init__(
+        self,
+        *,
+        token: str | None = None,
+        mode: str | None = None,
+        auth: InterAuthClient | None = None,
+    ):
+        self.auth = auth
         super().__init__(
             kind="inter",
             token=token,
             base_url=getattr(settings, "INTER_API_BASE_URL", "") or "",
             mode=mode,
         )
+
+    def _extra_headers(self, *, idempotency_key: str) -> dict[str, str]:
+        headers = super()._extra_headers(idempotency_key=idempotency_key)
+        if self.auth and self.auth.credentials.conta_corrente:
+            headers["x-conta-corrente"] = self.auth.credentials.conta_corrente
+        return headers
+
+    def _request(self, method: str, path: str, **kwargs) -> dict[str, Any]:
+        if self.auth is not None:
+            return self.auth.request_json(
+                method,
+                path,
+                headers=kwargs.pop("headers", None),
+                **kwargs,
+            )
+        return super()._request(method, path, **kwargs)
 
 
 class C6PaymentGateway(BankPaymentGateway):

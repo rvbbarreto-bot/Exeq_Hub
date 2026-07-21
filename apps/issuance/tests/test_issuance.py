@@ -211,7 +211,7 @@ def test_cancel_not_authorized_blocked(tenant_a, emission_setup):
     )
     NfIssue.objects.filter(id=issue.id).update(status=NfIssue.Status.POLLING)
     issue.refresh_from_db()
-    with pytest.raises(InvalidTransitionError):
+    with pytest.raises(InvalidTransitionError, match="Autorizada"):
         cancel_nf_issue(
             issue,
             justificativa="Servico cancelado por acordo entre as partes",

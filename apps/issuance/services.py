@@ -191,6 +191,7 @@ def cancel_nf_issue(
     *,
     justificativa: str,
     codigo_cancelamento: int | None = None,
+    actor: str = "api",
 ) -> NfIssue:
     text = (justificativa or "").strip()
     if not (15 <= len(text) <= 255):
@@ -199,7 +200,7 @@ def cancel_nf_issue(
         )
     if issue.status != NfIssue.Status.AUTHORIZED:
         raise InvalidTransitionError(
-            f"Transição inválida: {issue.status} -> {NfIssue.Status.CANCELLED}"
+            f"Só é possível cancelar nota Autorizada. Status atual: {issue.get_status_display()} ({issue.status})"
         )
     if not issue.focus_ref:
         raise FocusCancelFailedError("focus_ref ausente — não é possível cancelar no provedor")
@@ -224,15 +225,30 @@ def cancel_nf_issue(
     issue.save(update_fields=["focus_status_raw", "updated_at"])
 
     status = (result.status or "").lower()
-    if status not in CANCELLED and status != "cancelled":
+    raw_status = str((result.raw or {}).get("status") or "").lower()
+    if (
+        status not in CANCELLED
+        and status != "cancelled"
+        and raw_status not in CANCELLED
+    ):
+        # Cancelamento assíncrono: mantém authorized e deixa QA/poll confirmar
+        if raw_status in {"processando_cancelamento", "cancelamento_solicitado"} or status in {
+            "processando_cancelamento",
+            "cancelamento_solicitado",
+            "processing",
+        }:
+            raise FocusCancelFailedError(
+                "Focus aceitou o pedido, mas o cancelamento ainda está em processamento. "
+                "Use a ação «Consultar status no provedor» em alguns segundos."
+            )
         raise FocusCancelFailedError(
-            f"Cancelamento não confirmado pelo provedor: {status or 'unknown'}"
+            f"Cancelamento não confirmado pelo provedor: {status or raw_status or 'unknown'}"
         )
 
     transition(
         issue,
         to_status=NfIssue.Status.CANCELLED,
-        actor="api",
+        actor=actor or "api",
         metadata={
             "focus_ref": issue.focus_ref,
             "justificativa": text[:80],

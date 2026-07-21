@@ -19,4 +19,9 @@ Docs/_extracted/
 Docs/_factory_spec_body.txt
 *.pfx
 *.p12
+# Credenciais bancárias / certificados (nunca versionar)
+Docs/Certificados Bancos/
+**/Keys.txt
+*.crt
+*.key
 local_media/

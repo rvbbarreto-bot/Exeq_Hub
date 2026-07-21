@@ -3,6 +3,7 @@ from django.conf import settings
 
 from integrations.payments.asaas import AsaasPaymentGateway
 from integrations.payments.banks import C6PaymentGateway, InterPaymentGateway
+from integrations.payments.inter_auth import build_inter_auth_client
 from integrations.payments.port import PaymentGateway
 from integrations.payments.router import (
     PROVIDER_ASAAS,
@@ -38,7 +39,8 @@ def get_payment_gateway(
         token = getattr(settings, "C6_API_TOKEN", "") or ""
 
     if kind == PROVIDER_INTER:
-        return InterPaymentGateway(token=token or None)
+        auth = build_inter_auth_client(tenant=tenant)
+        return InterPaymentGateway(token=token or None, auth=auth)
     if kind == PROVIDER_C6:
         return C6PaymentGateway(token=token or None)
     return AsaasPaymentGateway(token=token or None)

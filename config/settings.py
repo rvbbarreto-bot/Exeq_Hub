@@ -126,7 +126,7 @@ CELERY_TASK_EAGER_PROPAGATES = True
 NF_SYNC_PROCESSING = env("NF_SYNC_PROCESSING", "false").lower() == "true"
 WEBHOOK_GATEWAY_SECRET = env("WEBHOOK_GATEWAY_SECRET", "dev-webhook-secret")
 PAYMENT_HTTP_MODE = env("PAYMENT_HTTP_MODE", "stub")  # stub | http
-PAYMENT_DEFAULT_PROVIDER = env("PAYMENT_DEFAULT_PROVIDER", "asaas")  # asaas|inter|c6
+PAYMENT_DEFAULT_PROVIDER = env("PAYMENT_DEFAULT_PROVIDER", "inter")  # inter|asaas|c6
 ASAAS_API_TOKEN = env("ASAAS_API_TOKEN", "")
 ASAAS_API_BASE_URL = env(
     "ASAAS_API_BASE_URL",
@@ -138,7 +138,18 @@ INTER_API_BASE_URL = env(
     "https://cdpj-sandbox.partners.uatinter.co",
 )
 INTER_API_TOKEN = env("INTER_API_TOKEN", "")
+INTER_CLIENT_ID = env("INTER_CLIENT_ID", "")
+INTER_CLIENT_SECRET = env("INTER_CLIENT_SECRET", "")
+INTER_CERT_PATH = env("INTER_CERT_PATH", "")
+INTER_KEY_PATH = env("INTER_KEY_PATH", "")
+INTER_CERT_PEM = env("INTER_CERT_PEM", "")
+INTER_KEY_PEM = env("INTER_KEY_PEM", "")
 INTER_CONTA_CORRENTE = env("INTER_CONTA_CORRENTE", "")
+INTER_OAUTH_TOKEN_PATH = env("INTER_OAUTH_TOKEN_PATH", "/oauth/v2/token")
+INTER_OAUTH_SCOPE = env(
+    "INTER_OAUTH_SCOPE",
+    "boleto-cobranca.read boleto-cobranca.write",
+)
 INTER_CHARGE_PATH = env("INTER_CHARGE_PATH", "/cobranca/v3/cobrancas")
 INTER_CANCEL_PATH_TMPL = env(
     "INTER_CANCEL_PATH_TMPL",

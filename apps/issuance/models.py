@@ -53,7 +53,7 @@ class NfIssue(TenantOwnedModel):
     )
     ibge_code = models.CharField(max_length=7, verbose_name="Código IBGE")
     competence_date = models.DateField(verbose_name="Data de competência")
-    amount_cents = models.BigIntegerField(verbose_name="Valor (centavos)")
+    amount_cents = models.BigIntegerField(verbose_name="Valor")
     resolved_rule = models.ForeignKey(
         "fiscal.MunicipalTaxRule",
         on_delete=models.SET_NULL,

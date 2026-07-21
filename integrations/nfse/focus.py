@@ -19,8 +19,10 @@ AUTHORIZED = frozenset(
 CANCELLED = frozenset(
     {
         "cancelado",
+        "cancelada",
         "cancelled",
         "nfe_cancelada",
+        "nfse_cancelada",
     }
 )
 
@@ -103,15 +105,21 @@ class FocusNfseProvider:
         body: dict[str, Any] = {"justificativa": justificativa}
         if codigo_cancelamento is not None:
             body["codigo_cancelamento"] = codigo_cancelamento
+        elif self.layout == LAYOUT_NFSE:
+            # Municipal costuma exigir código; 1 = erro na emissão (uso comum em QA)
+            body["codigo_cancelamento"] = 1
         response = self._request("DELETE", f"{self._api_root}/{ref}", json=body)
-        result = self._to_result(ref=ref, data=response, fallback_status="cancelled")
+        erros = response.get("erros") or response.get("errors") or []
+        if erros:
+            raise FocusHttpError(f"Focus recusou cancelamento: {erros}")
         status_raw = str(response.get("status") or "").lower()
-        if status_raw in CANCELLED:
+        if status_raw in CANCELLED or not status_raw:
             return NfseEmitResult(
-                external_ref=result.external_ref,
+                external_ref=str(response.get("ref") or ref),
                 status="cancelled",
-                raw=result.raw,
+                raw={"provider": "focus", "mode": "http", "layout": self.layout, **response},
             )
+        result = self._to_result(ref=ref, data=response, fallback_status=status_raw or "cancelled")
         return result
 
     def _request(self, method: str, path: str, **kwargs) -> dict[str, Any]:

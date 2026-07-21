@@ -1,0 +1,35 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block content %}
+<h1>Confirmar cancelamento no Focus</h1>
+<p>
+  Serão canceladas <strong>{{ authorized|length }}</strong> nota(s) com status
+  <strong>Autorizada</strong>. O Hub chama a Focus (DELETE) com a justificativa abaixo.
+</p>
+<p><strong>Justificativa:</strong> {{ justificativa }}</p>
+
+{% if skipped %}
+<p class="warning">
+  Ignoradas (não autorizadas): {{ skipped|length }} —
+  {% for item in skipped %}{{ item.idempotency_key }}{% if not forloop.last %}, {% endif %}{% endfor %}
+</p>
+{% endif %}
+
+<ul>
+  {% for issue in authorized %}
+  <li>{{ issue.idempotency_key }} — focus_ref={{ issue.focus_ref|default:"—" }}</li>
+  {% endfor %}
+</ul>
+
+<form method="post">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="action_cancel_authorized">
+  <input type="hidden" name="apply" value="1">
+  {% for obj in authorized %}
+  <input type="hidden" name="{{ action_checkbox_name }}" value="{{ obj.pk }}">
+  {% endfor %}
+  <input type="submit" class="default" value="Confirmar cancelamento">
+  <a href="{{ back_url }}" class="button cancel-link" style="margin-left:12px">Voltar</a>
+</form>
+{% endblock %}

@@ -1,0 +1,23 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<h1>Confirmar cancelamento no Focus</h1>
+<p>
+  Nota: <strong>{{ issue.idempotency_key }}</strong><br>
+  Status atual: <strong>{{ issue.get_status_display }}</strong><br>
+  focus_ref: <code>{{ issue.focus_ref|default:"—" }}</code>
+</p>
+<p><strong>Justificativa enviada à Focus:</strong> {{ justificativa }}</p>
+<p class="help">
+  A Focus exige nota já autorizada. Após confirmar, o status no Hub deve ir para
+  <strong>Cancelada</strong>. Se a Focus responder que o cancelamento ainda está
+  processando, use «Consultar status no provedor» na lista.
+</p>
+
+<form method="post">
+  {% csrf_token %}
+  <input type="hidden" name="confirm" value="1">
+  <input type="submit" class="default" value="Confirmar cancelamento" style="background:#ba2121">
+  <a href="{{ back_url }}" class="button" style="margin-left:12px">Voltar sem cancelar</a>
+</form>
+{% endblock %}

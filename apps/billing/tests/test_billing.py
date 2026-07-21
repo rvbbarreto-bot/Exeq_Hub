@@ -67,7 +67,7 @@ def test_create_charge_idempotent(tenant_a, customer):
     second = create_charge(**kwargs)
     assert first.id == second.id
     assert first.status == Charge.Status.REGISTERED
-    assert first.gateway_ref.startswith("asaas_")
+    assert first.gateway_ref.startswith("inter_")
     assert OutboxMessage.objects.filter(
         aggregate_id=first.id,
         event_type="charge.registered",

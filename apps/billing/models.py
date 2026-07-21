@@ -29,11 +29,35 @@ class Charge(TenantOwnedModel):
         related_name="charges",
         verbose_name="Tomador",
     )
-    amount_cents = models.BigIntegerField(verbose_name="Valor (centavos)")
+    amount_cents = models.BigIntegerField(verbose_name="Valor")
     due_date = models.DateField(verbose_name="Vencimento")
     description = models.TextField(blank=True, default="", verbose_name="Descrição")
     gateway_ref = models.CharField(
         max_length=128, blank=True, default="", verbose_name="Referência gateway"
+    )
+    billing_type = models.CharField(
+        max_length=32,
+        blank=True,
+        default="BOLETO",
+        verbose_name="Tipo de cobrança",
+    )
+    payment_url = models.URLField(
+        max_length=512, blank=True, default="", verbose_name="URL do boleto"
+    )
+    digitable_line = models.CharField(
+        max_length=64, blank=True, default="", verbose_name="Linha digitável"
+    )
+    barcode = models.CharField(
+        max_length=64, blank=True, default="", verbose_name="Código de barras"
+    )
+    boleto_pdf_url = models.URLField(
+        max_length=512, blank=True, default="", verbose_name="URL PDF do boleto"
+    )
+    pix_copy_paste = models.TextField(
+        blank=True, default="", verbose_name="PIX copia e cola"
+    )
+    gateway_payload = models.JSONField(
+        null=True, blank=True, verbose_name="Payload do gateway"
     )
     nf_issue = models.ForeignKey(
         "issuance.NfIssue",
@@ -73,23 +97,44 @@ class WebhookInbox(TenantOwnedModel):
         PROCESSED = "processed", "Processado"
         FAILED = "failed", "Falhou"
 
-    provider = models.CharField(max_length=32, default="asaas")
-    idempotency_key = models.CharField(max_length=128)
+    class Provider(models.TextChoices):
+        INTER = "inter", "Inter"
+        ASAAS = "asaas", "Asaas"
+        C6 = "c6", "C6"
+
+    provider = models.CharField(
+        max_length=32,
+        choices=Provider.choices,
+        default=Provider.INTER,
+        verbose_name="Provedor",
+    )
+    idempotency_key = models.CharField(
+        max_length=128, verbose_name="Chave de idempotência"
+    )
     status = models.CharField(
         max_length=16,
         choices=Status.choices,
         default=Status.RECEIVED,
+        verbose_name="Status",
     )
-    signature = models.CharField(max_length=256, blank=True, default="")
-    signature_valid = models.BooleanField(default=False)
-    raw_payload = models.JSONField(default=dict)
-    payload_hash = models.CharField(max_length=64)
-    error_message = models.TextField(blank=True, default="")
-    processed_at = models.DateTimeField(null=True, blank=True)
+    signature = models.CharField(
+        max_length=256, blank=True, default="", verbose_name="Assinatura"
+    )
+    signature_valid = models.BooleanField(
+        default=False, verbose_name="Assinatura válida"
+    )
+    raw_payload = models.JSONField(default=dict, verbose_name="Payload bruto")
+    payload_hash = models.CharField(max_length=64, verbose_name="Hash do payload")
+    error_message = models.TextField(
+        blank=True, default="", verbose_name="Mensagem de erro"
+    )
+    processed_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Processado em"
+    )
 
     class Meta:
-        verbose_name = "Inbox de webhook"
-        verbose_name_plural = "Inboxes de webhook"
+        verbose_name = "Caixa de entrada de webhook"
+        verbose_name_plural = "Caixas de entrada de webhook"
         constraints = [
             models.UniqueConstraint(
                 fields=["tenant", "provider", "idempotency_key"],
@@ -110,11 +155,13 @@ class PaymentEvent(UUIDPrimaryKeyModel):
         "accounts.Tenant",
         on_delete=models.PROTECT,
         related_name="payment_events",
+        verbose_name="Tenant",
     )
     charge = models.ForeignKey(
         Charge,
         on_delete=models.PROTECT,
         related_name="payment_events",
+        verbose_name="Cobrança",
     )
     webhook_inbox = models.ForeignKey(
         WebhookInbox,
@@ -122,12 +169,15 @@ class PaymentEvent(UUIDPrimaryKeyModel):
         null=True,
         blank=True,
         related_name="payment_events",
+        verbose_name="Caixa de entrada de webhook",
     )
-    amount_cents = models.BigIntegerField()
-    paid_at = models.DateTimeField()
-    gateway_ref = models.CharField(max_length=128, blank=True, default="")
-    metadata = models.JSONField(null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
+    amount_cents = models.BigIntegerField(verbose_name="Valor")
+    paid_at = models.DateTimeField(verbose_name="Pago em")
+    gateway_ref = models.CharField(
+        max_length=128, blank=True, default="", verbose_name="Referência gateway"
+    )
+    metadata = models.JSONField(null=True, blank=True, verbose_name="Metadados")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
 
     class Meta:
         verbose_name = "Evento de pagamento"

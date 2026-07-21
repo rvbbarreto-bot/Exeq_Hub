@@ -9,6 +9,7 @@ Repositório: https://github.com/rvbbarreto-bot/Exeq_Hub
 | v2 Arquitetura | `Exeq_Hub_v2_Platform_Architecture_Engineering_Guide.md` | **2.1.0 expandido** |
 | v3 DER | `Exeq_Hub_v3.1_Database_Design_ERD.md` (+ `.docx`) | **3.1.0** |
 | NFS-e integração | `Exeq_Hub_NFSe_Emission_Architecture_Reference.md` | **1.0.0** (Focus/Nacional/Betha + prompt fábrica) |
+| Billing Inter | `Exeq_Hub_Inter_Billing_Integration_Study.md` | **1.0.0** (Sprint 5 — Inter first / BolePix v3) |
 | v4 API | `Exeq_Hub_v4_API_OpenAPI.md` + `openapi-v4.yaml` | **4.1.0-draft** (DAS + billing + proxies) |
 | v5 UX | — | Pendente |
 
