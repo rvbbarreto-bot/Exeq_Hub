@@ -297,7 +297,7 @@ components:
       properties:
         idempotency_key: { type: string }
         customer_id: { type: string, format: uuid }
-        amount_cents: { type: integer, minimum: 1 }
+        amount_cents: { type: integer, minimum: 250, description: "Mínimo Inter R$ 2,50 (250 centavos)" }
         due_date: { type: string, format: date }
         description: { type: string }
         seu_numero:

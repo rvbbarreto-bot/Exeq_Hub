@@ -2,6 +2,7 @@ import json
 
 from rest_framework import serializers
 
+from apps.billing.amount_rules import CHARGE_MIN_AMOUNT_CENTS
 from apps.billing.exceptions import GatewayRegistrationError, InvalidChargeInputError
 from apps.billing.models import Charge, WebhookInbox
 from apps.billing.services import create_charge
@@ -10,6 +11,8 @@ from apps.master_data.models import Customer
 
 
 class ChargeSerializer(serializers.ModelSerializer):
+    has_boleto_pdf = serializers.SerializerMethodField()
+
     class Meta:
         model = Charge
         fields = (
@@ -34,6 +37,8 @@ class ChargeSerializer(serializers.ModelSerializer):
             "barcode",
             "pix_copy_paste",
             "payment_url",
+            "boleto_pdf_url",
+            "has_boleto_pdf",
             "nf_issue",
             "correlation_id",
             "created_at",
@@ -47,6 +52,8 @@ class ChargeSerializer(serializers.ModelSerializer):
             "barcode",
             "pix_copy_paste",
             "payment_url",
+            "boleto_pdf_url",
+            "has_boleto_pdf",
             "schedule_group_id",
             "installment_number",
             "installment_count",
@@ -59,11 +66,14 @@ class ChargeSerializer(serializers.ModelSerializer):
             "updated_at",
         )
 
+    def get_has_boleto_pdf(self, obj: Charge) -> bool:
+        return bool(obj.pdf_file_id)
+
 
 class ChargeCreateSerializer(serializers.Serializer):
     idempotency_key = serializers.CharField(max_length=128)
     customer_id = serializers.UUIDField()
-    amount_cents = serializers.IntegerField(min_value=1)
+    amount_cents = serializers.IntegerField(min_value=CHARGE_MIN_AMOUNT_CENTS)
     due_date = serializers.DateField()
     description = serializers.CharField(required=False, allow_blank=True, default="")
     seu_numero = serializers.CharField(
@@ -85,6 +95,29 @@ class ChargeCreateSerializer(serializers.Serializer):
     )
     recurrence_end_date = serializers.DateField(required=False, allow_null=True)
     nf_issue_id = serializers.UUIDField(required=False, allow_null=True)
+
+    def validate_amount_cents(self, value):
+        from apps.billing.amount_rules import (
+            CHARGE_MIN_AMOUNT_BRL,
+            validate_charge_amount_cents,
+        )
+
+        try:
+            validate_charge_amount_cents(value)
+        except ValueError:
+            raise serializers.ValidationError(
+                f"Valor mínimo da cobrança é {CHARGE_MIN_AMOUNT_BRL}."
+            )
+        return value
+
+    def validate_due_date(self, value):
+        from apps.billing.due_date_rules import validate_due_date
+
+        try:
+            validate_due_date(value)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc)) from exc
+        return value
 
     def create(self, validated_data):
         tenant = self.context["request"].tenant

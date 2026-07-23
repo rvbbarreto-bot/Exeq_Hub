@@ -1,0 +1,50 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block content %}
+<h1>Confirmar cancelamento no gateway</h1>
+<p>
+  Serão canceladas <strong>{{ eligible|length }}</strong> cobrança(s)
+  (pending / registered / overdue). O Hub chama o provedor com o motivo Inter abaixo.
+</p>
+
+{% if skipped %}
+<p class="warning">
+  Ignoradas (status incompatível): {{ skipped|length }} —
+  {% for item in skipped %}{{ item.idempotency_key }}{% if not forloop.last %}, {% endif %}{% endfor %}
+</p>
+{% endif %}
+
+<ul>
+  {% for charge in eligible %}
+  <li>
+    {{ charge.idempotency_key }} —
+    {{ charge.get_status_display }} —
+    ref={{ charge.gateway_ref|default:"—" }}
+  </li>
+  {% endfor %}
+</ul>
+
+<form method="post">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="cancelar_cobrancas">
+  <input type="hidden" name="apply" value="1">
+  {% for obj in eligible %}
+  <input type="hidden" name="{{ action_checkbox_name }}" value="{{ obj.pk }}">
+  {% endfor %}
+
+  <div style="margin:16px 0;">
+    <label for="id_motivo_cancelamento"><strong>Motivo (Inter)</strong></label><br>
+    <select name="motivo_cancelamento" id="id_motivo_cancelamento" required>
+      {% for m in motivos %}
+      <option value="{{ m.value }}"{% if m.selected %} selected{% endif %}>
+        {{ m.label }} ({{ m.value }})
+      </option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <input type="submit" class="default" value="Confirmar cancelamento">
+  <a href="{{ back_url }}" class="button cancel-link" style="margin-left:12px">Voltar</a>
+</form>
+{% endblock %}

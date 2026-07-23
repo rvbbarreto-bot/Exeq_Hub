@@ -112,6 +112,14 @@ class Charge(TenantOwnedModel):
     pix_copy_paste = models.TextField(
         blank=True, default="", verbose_name="PIX copia e cola"
     )
+    pdf_file = models.ForeignKey(
+        "ops.StoredFile",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="charges",
+        verbose_name="PDF do boleto",
+    )
     gateway_payload = models.JSONField(
         null=True, blank=True, verbose_name="Payload do gateway"
     )
@@ -262,6 +270,8 @@ class PaymentProviderAudit(UUIDPrimaryKeyModel):
         PROVIDER_CHANGED = "provider_changed", "Provedor alterado"
         CREDENTIALS_UPDATED = "credentials_updated", "Credenciais atualizadas"
         CONNECTION_TESTED = "connection_tested", "Conexão testada"
+        WEBHOOK_CONFIGURED = "webhook_configured", "Webhook configurado"
+        WEBHOOK_RETRY = "webhook_retry", "Retry de callbacks"
 
     tenant = models.ForeignKey(
         "accounts.Tenant",

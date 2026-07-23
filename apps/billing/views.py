@@ -1,9 +1,13 @@
 import json
+from io import BytesIO
 
+from django.db.models import Count
+from django.http import FileResponse
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework.throttling import AnonRateThrottle
 from rest_framework.views import APIView
 
 from apps.accounts.permissions import IsTenantWriter
@@ -22,18 +26,45 @@ from apps.billing.serializers import (
 )
 from apps.billing.services import (
     cancel_charge,
+    ensure_charge_pdf,
     ingest_gateway_webhook,
     reprocess_webhook,
     sync_charge_from_gateway,
 )
+from apps.billing.webhook_security import webhook_ip_allowed
+from shared.pagination import HubPageNumberPagination
+from shared.storage import StorageError, get_storage
+
+
+class GatewayWebhookThrottle(AnonRateThrottle):
+    scope = "webhook_gateway"
 
 
 class ChargeViewSet(viewsets.ModelViewSet):
     permission_classes = [IsTenantWriter]
     http_method_names = ["get", "post", "head", "options"]
+    pagination_class = HubPageNumberPagination
 
     def get_queryset(self):
-        return Charge.objects.filter(tenant=self.request.tenant).order_by("-created_at")
+        qs = Charge.objects.filter(tenant=self.request.tenant).order_by("-created_at")
+        status_filter = (self.request.query_params.get("status") or "").strip().lower()
+        if status_filter and status_filter != "all":
+            valid = {c.value for c in Charge.Status}
+            if status_filter in valid:
+                qs = qs.filter(status=status_filter)
+        return qs
+
+    @action(detail=False, methods=["get"], url_path="summary")
+    def summary(self, request):
+        """Contagens por status (tabs Hub) sem carregar a lista completa."""
+        rows = (
+            Charge.objects.filter(tenant=request.tenant)
+            .values("status")
+            .annotate(count=Count("id"))
+        )
+        by_status = {r["status"]: r["count"] for r in rows}
+        total = sum(by_status.values())
+        return Response({"total": total, "by_status": by_status})
 
     def get_serializer_class(self):
         if self.action == "create":
@@ -71,7 +102,7 @@ class ChargeViewSet(viewsets.ModelViewSet):
         charge.refresh_from_db()
         return Response(ChargeSerializer(charge).data)
 
-    @action(detail=True, methods=["post", "get"], url_path="sync")
+    @action(detail=True, methods=["post"], url_path="sync")
     def sync(self, request, pk=None):
         """Consulta situação/pagamento no gateway (Inter GET /cobrancas/{codigo})."""
         charge = self.get_object()
@@ -84,13 +115,53 @@ class ChargeViewSet(viewsets.ModelViewSet):
         charge.refresh_from_db()
         return Response(ChargeSerializer(charge).data)
 
+    @action(detail=True, methods=["get", "post"], url_path="pdf")
+    def pdf(self, request, pk=None):
+        """Garante StoredFile e faz stream do PDF do boleto."""
+        charge = self.get_object()
+        try:
+            ensure_charge_pdf(charge)
+        except ChargeNotFoundError as exc:
+            return Response({"detail": str(exc), "code": exc.code}, status=400)
+        except GatewayRegistrationError as exc:
+            return Response({"detail": str(exc), "code": exc.code}, status=502)
+        charge.refresh_from_db()
+        if not charge.pdf_file_id:
+            return Response(
+                {"detail": "PDF indisponível", "code": "charge_not_found"},
+                status=404,
+            )
+        stored = charge.pdf_file
+        try:
+            data = get_storage().get(key=stored.object_key)
+        except StorageError as exc:
+            return Response({"detail": str(exc)}, status=404)
+        filename = f"boleto-{charge.seu_numero or charge.id}.pdf"
+        return FileResponse(
+            BytesIO(data),
+            as_attachment=True,
+            filename=filename,
+            content_type=stored.content_type or "application/pdf",
+        )
+
 
 class GatewayWebhookView(APIView):
+    """
+    Callback público do gateway (proxy Inter → Hub).
+
+    Auth: HMAC X-Webhook-Signature + allowlist IP opcional (estudo Inter §9.2).
+    """
+
     authentication_classes = []
     permission_classes = [AllowAny]
+    throttle_classes = [GatewayWebhookThrottle]
 
     def post(self, request):
+        if not webhook_ip_allowed(request):
+            return Response({"detail": "Origem não autorizada", "code": "forbidden"}, status=403)
         raw = request.body
+        if len(raw) > 256_000:
+            return Response({"detail": "Payload muito grande"}, status=413)
         signature = request.headers.get("X-Webhook-Signature", "")
         try:
             payload = json.loads(raw.decode() or "{}")
@@ -104,7 +175,12 @@ class GatewayWebhookView(APIView):
             )
         except InvalidWebhookSignatureError as exc:
             return Response({"detail": str(exc), "code": exc.code}, status=401)
-        except (ChargeNotFoundError, IncompatiblePaymentError, GatewayRegistrationError) as exc:
+        except (
+            ChargeNotFoundError,
+            IncompatiblePaymentError,
+            GatewayRegistrationError,
+            InvalidChargeInputError,
+        ) as exc:
             return Response({"detail": str(exc), "code": exc.code}, status=400)
         if inbox.status == WebhookInbox.Status.FAILED:
             code = (

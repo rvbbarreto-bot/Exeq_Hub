@@ -141,6 +141,11 @@ class AsaasPaymentGateway:
             extras={"situacao": asaas_status},
         )
 
+    def baixar_pdf(self, *, ref: str) -> bytes:
+        raise PaymentGatewayError(
+            "Asaas: use bankSlipUrl (boleto_pdf_url); download StoredFile via URL externa"
+        )
+
     def _ensure_customer(self, *, document: str, name: str) -> str:
         digits = "".join(ch for ch in document if ch.isdigit())
         found = self._request("GET", "/customers", params={"cpfCnpj": digits})

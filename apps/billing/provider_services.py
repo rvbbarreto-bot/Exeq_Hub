@@ -99,7 +99,22 @@ def set_billing_provider(*, tenant, provider: str, actor_user=None) -> dict:
         actor_user=actor_user,
         metadata={"previous": previous, "provider": kind},
     )
-    return get_billing_provider_status(tenant=tenant)
+    status_payload = get_billing_provider_status(tenant=tenant)
+    # D1 — ao ativar Inter, tenta cadastrar webhook se URL pública estiver configurada.
+    if kind == PROVIDER_INTER:
+        from django.conf import settings
+
+        if (getattr(settings, "INTER_WEBHOOK_PUBLIC_URL", "") or "").strip():
+            try:
+                status_payload["webhook"] = register_inter_webhook(
+                    tenant=tenant, actor_user=actor_user
+                )
+            except (PaymentGatewayError, InvalidProviderCredentialsError) as exc:
+                status_payload["webhook"] = {
+                    "status": "error",
+                    "detail": str(exc)[:300],
+                }
+    return status_payload
 
 
 def get_inter_credentials_metadata(*, tenant) -> dict:
@@ -280,3 +295,189 @@ def test_inter_connection(*, tenant, actor_user=None) -> dict:
         return {"status": "error", "detail": detail[:300], "http_status": 502}
     finally:
         auth.close()
+
+
+def resolve_inter_webhook_url(explicit: str | None = None) -> str:
+    """Resolve URL pública do Hub para cadastro no Inter (estudo §9.1).
+
+    Em produção (DEBUG=False): ignora URL arbitrária do cliente e usa
+    INTER_WEBHOOK_PUBLIC_URL (mitiga hijack de callback).
+    """
+    from django.conf import settings
+
+    configured = (getattr(settings, "INTER_WEBHOOK_PUBLIC_URL", "") or "").strip()
+    requested = (explicit or "").strip()
+
+    if not settings.DEBUG:
+        url = configured
+        if requested and configured and requested.rstrip("/") != configured.rstrip("/"):
+            raise InvalidProviderCredentialsError(
+                "webhookUrl deve coincidir com INTER_WEBHOOK_PUBLIC_URL"
+            )
+    else:
+        url = requested or configured
+
+    if not url:
+        raise InvalidProviderCredentialsError(
+            "Informe webhookUrl ou configure INTER_WEBHOOK_PUBLIC_URL "
+            "(HTTPS pública → /api/v1/webhooks/gateway)"
+        )
+    lower = url.lower()
+    allow_http_local = lower.startswith("http://127.0.0.1") or lower.startswith(
+        "http://localhost"
+    )
+    if not (lower.startswith("https://") or allow_http_local):
+        raise InvalidProviderCredentialsError(
+            "webhookUrl deve ser HTTPS pública (ou http://localhost em dev)"
+        )
+    return url
+
+
+def _require_inter_gateway(*, tenant):
+    from integrations.payments.factory import get_payment_gateway
+
+    active = resolve_payment_provider_kind(tenant=tenant)
+    if active != PROVIDER_INTER:
+        raise InvalidPaymentProviderError(
+            f"Webhook Cobrança Inter exige provedor ativo 'inter' (atual: {active})"
+        )
+    gw = get_payment_gateway(tenant=tenant)
+    if getattr(gw, "kind", None) != PROVIDER_INTER:
+        raise InvalidPaymentProviderError("Gateway ativo não é Inter")
+    if not hasattr(gw, "registrar_webhook"):
+        raise InvalidPaymentProviderError("Gateway sem suporte a webhook Cobrança")
+    return gw
+
+
+def register_inter_webhook(
+    *, tenant, webhook_url: str | None = None, actor_user=None
+) -> dict:
+    """D1 — PUT webhook no Inter para o tenant."""
+    url = resolve_inter_webhook_url(webhook_url)
+    gw = _require_inter_gateway(tenant=tenant)
+    try:
+        raw = gw.registrar_webhook(webhook_url=url)
+    except PaymentGatewayError as exc:
+        PaymentProviderAudit.objects.create(
+            tenant=tenant,
+            provider=PROVIDER_INTER,
+            action=PaymentProviderAudit.Action.WEBHOOK_CONFIGURED,
+            actor_user=actor_user,
+            metadata={"status": "error", "op": "put", "detail": str(exc)[:200]},
+        )
+        raise
+    PaymentProviderAudit.objects.create(
+        tenant=tenant,
+        provider=PROVIDER_INTER,
+        action=PaymentProviderAudit.Action.WEBHOOK_CONFIGURED,
+        actor_user=actor_user,
+        metadata={"status": "ok", "op": "put", "webhookUrl": url},
+    )
+    return {
+        "status": "ok",
+        "provider": PROVIDER_INTER,
+        "webhookUrl": url,
+        "gateway": raw if isinstance(raw, dict) else {"raw": raw},
+    }
+
+
+def get_inter_webhook(*, tenant, actor_user=None) -> dict:
+    """D1 — GET webhook cadastrado no Inter."""
+    gw = _require_inter_gateway(tenant=tenant)
+    try:
+        raw = gw.consultar_webhook()
+    except PaymentGatewayError as exc:
+        raise InvalidProviderCredentialsError(str(exc)) from exc
+    return {
+        "status": "ok",
+        "provider": PROVIDER_INTER,
+        "gateway": raw if isinstance(raw, dict) else {"raw": raw},
+    }
+
+
+def delete_inter_webhook(*, tenant, actor_user=None) -> dict:
+    """D1 — DELETE webhook no Inter."""
+    gw = _require_inter_gateway(tenant=tenant)
+    try:
+        raw = gw.remover_webhook()
+    except PaymentGatewayError as exc:
+        PaymentProviderAudit.objects.create(
+            tenant=tenant,
+            provider=PROVIDER_INTER,
+            action=PaymentProviderAudit.Action.WEBHOOK_CONFIGURED,
+            actor_user=actor_user,
+            metadata={"status": "error", "op": "delete", "detail": str(exc)[:200]},
+        )
+        raise InvalidProviderCredentialsError(str(exc)) from exc
+    PaymentProviderAudit.objects.create(
+        tenant=tenant,
+        provider=PROVIDER_INTER,
+        action=PaymentProviderAudit.Action.WEBHOOK_CONFIGURED,
+        actor_user=actor_user,
+        metadata={"status": "ok", "op": "delete"},
+    )
+    return {
+        "status": "ok",
+        "provider": PROVIDER_INTER,
+        "gateway": raw if isinstance(raw, dict) else {"raw": raw},
+    }
+
+
+def retry_inter_webhook_callbacks(
+    *,
+    tenant,
+    codigo_solicitacao: list[str],
+    actor_user=None,
+    reprocess_local_inbox: bool = True,
+) -> dict:
+    """D2 — POST retry de callbacks no Inter + opcional reprocess da inbox Hub."""
+    refs = [str(x).strip() for x in (codigo_solicitacao or []) if str(x).strip()]
+    gw = _require_inter_gateway(tenant=tenant)
+    try:
+        raw = gw.retry_webhook_callbacks(codigo_solicitacao=refs)
+    except PaymentGatewayError as exc:
+        PaymentProviderAudit.objects.create(
+            tenant=tenant,
+            provider=PROVIDER_INTER,
+            action=PaymentProviderAudit.Action.WEBHOOK_RETRY,
+            actor_user=actor_user,
+            metadata={"status": "error", "detail": str(exc)[:200]},
+        )
+        raise InvalidProviderCredentialsError(str(exc)) from exc
+    PaymentProviderAudit.objects.create(
+        tenant=tenant,
+        provider=PROVIDER_INTER,
+        action=PaymentProviderAudit.Action.WEBHOOK_RETRY,
+        actor_user=actor_user,
+        metadata={
+            "status": "ok",
+            "count": len(refs),
+            "codigoSolicitacao": refs[:50],
+        },
+    )
+
+    inbox_reprocessed: list[str] = []
+    if reprocess_local_inbox and refs:
+        from apps.billing.models import WebhookInbox
+        from apps.billing.services import reprocess_webhook
+
+        qs = WebhookInbox.objects.filter(
+            tenant=tenant,
+            provider=PROVIDER_INTER,
+            status=WebhookInbox.Status.FAILED,
+        )
+        ref_set = set(refs)
+        for inbox in qs.iterator():
+            payload = inbox.raw_payload or {}
+            gateway_ref = str(payload.get("gateway_ref") or "")
+            if gateway_ref in ref_set:
+                updated = reprocess_webhook(inbox)
+                inbox_reprocessed.append(str(updated.id))
+
+    return {
+        "status": "ok",
+        "provider": PROVIDER_INTER,
+        "codigoSolicitacao": refs,
+        "inbox_reprocessed": inbox_reprocessed,
+        "gateway": raw if isinstance(raw, dict) else {"raw": raw},
+    }

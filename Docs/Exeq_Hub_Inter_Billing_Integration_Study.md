@@ -216,10 +216,11 @@ URL deve ser **HTTPS** pública. Reenvio: `POST .../webhook/callbacks/retry` com
 
 ### 9.2 Assinatura
 
-O Hub valida HMAC com `WEBHOOK_GATEWAY_SECRET` (`X-Webhook-Signature`).  
-O Inter Cobrança **não** usa o mesmo esquema Asaas por padrão — validar no portal o mecanismo oficial (certificado cliente, IP allowlist, ou header próprio).
+**Gap (auth):** o Inter Cobrança **não** usa o mesmo HMAC Asaas por padrão — validar no portal (certificado cliente, IP allowlist ou header próprio). O Hub **não desliga** HMAC: contrato = `WEBHOOK_GATEWAY_SECRET` + `X-Webhook-Signature` (hex ou `sha256=<hex>`). Em sandbox/prod: **proxy assinador** Inter → proxy → Hub + `WEBHOOK_ALLOWED_IPS` + fail-closed de segredos fracos (`DEBUG=False` / `FORCE_SECURE_SECRETS`).
 
-**Gap:** normalizer atual cobre canônico Hub + Asaas-like; **falta parser Inter** (`situacao`, `codigoSolicitacao`, valor, data).
+Controles e checklist: `Docs/Exeq_Hub_Inter_Security_Hardening.md`.
+
+**Normalize:** canônico Hub + Asaas-like + **Inter** (`situacao` / `codigoSolicitacao` / valor / data). Callback leve (só código) → processador faz GET detalhe antes do `PaymentEvent`.
 
 ### 9.3 Payload canônico Hub (alvo)
 
@@ -258,14 +259,19 @@ Se o callback Inter for “leve” (só código), o processador deve **GET detal
 | Body mínimo emitir | OK (enriquecer endereço/email) |
 | Stub mode | OK |
 | Default provider | **→ `inter`** (esta entrega) |
-| OAuth + mTLS | **Falta** |
-| Persistência artefatos | Campos no model em andamento; service ainda não grava |
-| GET detalhe pós-emissão | **OK** — `POST/GET /charges/{id}/sync` → `consultar_cobranca` |
+| OAuth + mTLS | OK (adapter Inter) |
+| Persistência artefatos | OK — emit enrich + sync |
+| GET detalhe pós-emissão | **OK** — enrich no create + `POST /charges/{id}/sync` |
 | Cancelar | **OK** — `POST /charges/{id}/cancel` + `motivoCancelamento` enum; bloqueia paid/failed |
-| GET PDF → StoredFile | **Falta** |
-| Normalize webhook Inter | **Falta** |
-| PUT webhook na ativação do tenant | **Falta** |
-| Admin linha digitável / PDF | **Falta** |
+| GET PDF → StoredFile | **OK** — `ensure_charge_pdf` + `GET /charges/{id}/pdf/` |
+| Normalize webhook Inter | **OK** — `normalize_gateway_payload` + enrich leve |
+| PUT webhook na ativação do tenant | **OK** — `PUT /billing/providers/inter/webhook` + auto ao ativar provider `inter` |
+| Retry callbacks Inter | **OK** — `POST .../webhook/callbacks/retry` (+ reprocess inbox) |
+| Admin linha digitável / PDF | **OK** — artefatos + link Admin PDF |
+| Smoke sandbox | **OK** — `Docs/Exeq_Hub_Inter_Smoke_Sandbox.md` |
+| Hub UI única / parcelada / recorrente | **OK** — form Cobranças (D7); backend orquestra N× SIMPLES |
+| Admin bulk cancel com motivo | **OK** — D10 intermediate form (enum Inter) |
+| Sync periódico open charges | **OK** — D11 `billing.sync_open_charges` + beat schedule |
 
 ---
 
@@ -275,7 +281,7 @@ Se o callback Inter for “leve” (só código), o processador deve **GET detal
 2. **Emitir + enriquecer** — POST → GET detalhe → gravar `gateway_ref`, linha, barras, PIX, payload.
 3. **PDF** — GET pdf → `StoredFile` + ação Admin/API download.
 4. **Webhook** — normalizer Inter + inbox + `paid` só com valor compatível.
-5. **Ops** — registrar webhook URL; retry callbacks; smoke sandbox.
+5. **Ops** — registrar webhook URL; retry callbacks; smoke sandbox. → **OK** (D1/D2/D3)
 6. **Depois** — Asaas / C6 com o mesmo contrato de artefatos.
 
 ---
@@ -311,5 +317,5 @@ Deprecar progressivamente `INTER_API_TOKEN` (não reflete o modelo OAuth+mTLS).
 - [ ] Default `inter` em stub e HTTP.
 - [ ] Cobrança registrada no sandbox com `codigoSolicitacao` + linha digitável + PIX (se BolePix).
 - [ ] PDF baixável no Admin.
-- [ ] Webhook `RECEBIDO` → `Charge.paid` via `PaymentEvent` idempotente.
+- [x] Webhook `RECEBIDO` → `Charge.paid` via `PaymentEvent` idempotente.
 - [ ] Sem chamar Asaas no caminho feliz do tenant default.

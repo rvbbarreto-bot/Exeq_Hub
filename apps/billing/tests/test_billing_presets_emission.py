@@ -129,21 +129,28 @@ def test_create_installment_charges(tenant_a, customer):
 
 @pytest.mark.django_db
 def test_create_recurring_by_end_date(tenant_a, customer):
+    from apps.billing.due_date_rules import min_due_date
+
+    start = min_due_date()
+    # Três ocorrências mensais: start, +1 mês, +2 meses.
+    from apps.billing.schedule import add_months
+
+    end = add_months(start, 2)
     result = create_charge(
         tenant=tenant_a,
         idempotency_key="chg-rec",
         customer=customer,
         amount_cents=500,
-        due_date=date(2026, 1, 10),
+        due_date=start,
         description="Mensalidade",
         seu_numero="REC01",
         charge_kind=Charge.ChargeKind.RECURRING,
-        recurrence_end_date=date(2026, 3, 10),
+        recurrence_end_date=end,
     )
     assert isinstance(result, list)
     assert len(result) == 3
     assert all(c.amount_cents == 500 for c in result)
-    assert result[2].due_date == date(2026, 3, 10)
+    assert result[2].due_date == end
 
 
 @pytest.mark.django_db
@@ -182,3 +189,13 @@ def test_billing_presets_api(api_client, auth_header, tenant_a):
     assert put.data["num_dias_agenda"] == 10
     tenant_a.refresh_from_db()
     assert tenant_a.settings["billing_preset"]["multa_percent"] == "2.5"
+
+
+@pytest.mark.django_db
+def test_cancel_motivos_api(api_client, auth_header):
+    response = api_client.get("/api/v1/billing/cancel-motivos", **auth_header)
+    assert response.status_code == 200
+    assert response.data["default"] == "ACERTOS"
+    values = {m["value"] for m in response.data["motivos"]}
+    assert "ACERTOS" in values
+    assert "SUBSTITUICAO" in values

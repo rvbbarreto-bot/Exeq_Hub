@@ -177,6 +177,41 @@ class InterAuthClient:
             raise PaymentGatewayError(f"inter HTTP {response.status_code}: {data}")
         return data if isinstance(data, dict) else {"data": data}
 
+    def request_bytes(
+        self,
+        method: str,
+        path: str,
+        *,
+        headers: dict[str, str] | None = None,
+        **kwargs: Any,
+    ) -> bytes:
+        """HTTP autenticado (Bearer + mTLS). Retorna corpo binário (ex.: PDF)."""
+        token = self.get_access_token()
+        mtls = self._ensure_mtls()
+        url = f"{self.base_url}{path if path.startswith('/') else '/' + path}"
+        req_headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/pdf",
+            **(headers or {}),
+        }
+        conta = (self.credentials.conta_corrente or "").strip()
+        if conta and "x-conta-corrente" not in {
+            k.lower() for k in req_headers
+        }:
+            req_headers["x-conta-corrente"] = conta
+
+        try:
+            with httpx.Client(timeout=self.timeout, verify=mtls.ssl_context) as client:
+                response = client.request(method, url, headers=req_headers, **kwargs)
+        except httpx.HTTPError as exc:
+            raise PaymentGatewayError(f"Falha de rede Inter: {exc}") from exc
+
+        if response.status_code >= 400:
+            raise PaymentGatewayError(
+                f"inter HTTP {response.status_code}: {response.text[:300]}"
+            )
+        return response.content
+
 
 def resolve_inter_credentials(*, tenant=None) -> InterCredentials:
     """Monta credenciais a partir de TenantSecret e settings/env."""
@@ -189,19 +224,32 @@ def resolve_inter_credentials(*, tenant=None) -> InterCredentials:
             tenant=tenant, provider="inter", key_name=key
         ) or ""
 
-    client_id = _secret("client_id") or getattr(settings, "INTER_CLIENT_ID", "") or ""
-    client_secret = (
-        _secret("client_secret") or getattr(settings, "INTER_CLIENT_SECRET", "") or ""
+    allow_env = bool(
+        getattr(settings, "ALLOW_ENV_INTER_CREDENTIALS_FALLBACK", True)
     )
-    cert_pem = _secret("cert_pem") or getattr(settings, "INTER_CERT_PEM", "") or ""
-    key_pem = _secret("key_pem") or getattr(settings, "INTER_KEY_PEM", "") or ""
-    cert_path = getattr(settings, "INTER_CERT_PATH", "") or ""
-    key_path = getattr(settings, "INTER_KEY_PATH", "") or ""
-    conta = (
-        _secret("conta_corrente")
-        or getattr(settings, "INTER_CONTA_CORRENTE", "")
-        or ""
-    )
+    # Multi-tenant: com tenant explícito, não herdar INTER_* global (bleed).
+    if tenant is not None and not allow_env:
+        client_id = _secret("client_id")
+        client_secret = _secret("client_secret")
+        cert_pem = _secret("cert_pem")
+        key_pem = _secret("key_pem")
+        conta = _secret("conta_corrente")
+        cert_path = ""
+        key_path = ""
+    else:
+        client_id = _secret("client_id") or getattr(settings, "INTER_CLIENT_ID", "") or ""
+        client_secret = (
+            _secret("client_secret") or getattr(settings, "INTER_CLIENT_SECRET", "") or ""
+        )
+        cert_pem = _secret("cert_pem") or getattr(settings, "INTER_CERT_PEM", "") or ""
+        key_pem = _secret("key_pem") or getattr(settings, "INTER_KEY_PEM", "") or ""
+        cert_path = getattr(settings, "INTER_CERT_PATH", "") or ""
+        key_path = getattr(settings, "INTER_KEY_PATH", "") or ""
+        conta = (
+            _secret("conta_corrente")
+            or getattr(settings, "INTER_CONTA_CORRENTE", "")
+            or ""
+        )
     scope = getattr(settings, "INTER_OAUTH_SCOPE", "") or DEFAULT_INTER_SCOPE
     return InterCredentials(
         client_id=client_id.strip(),

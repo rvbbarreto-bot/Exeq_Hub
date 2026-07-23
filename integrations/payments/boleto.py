@@ -33,6 +33,7 @@ def extract_boleto_artifacts(raw: dict[str, Any] | None) -> dict[str, str]:
         data,
         "barCode",
         "barcode",
+        "bar_code",
         "codigoBarras",
         "codigo_barras",
     )

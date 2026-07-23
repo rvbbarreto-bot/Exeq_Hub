@@ -112,6 +112,9 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": (
         "apps.accounts.permissions.IsTenantMember",
     ),
+    "DEFAULT_THROTTLE_RATES": {
+        "webhook_gateway": env("WEBHOOK_GATEWAY_THROTTLE", "60/min"),
+    },
 }
 
 SIMPLE_JWT = {
@@ -123,8 +126,31 @@ CELERY_BROKER_URL = env("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
 CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", "redis://127.0.0.1:6379/1")
 CELERY_TASK_ALWAYS_EAGER = env("CELERY_TASK_ALWAYS_EAGER", "false").lower() == "true"
 CELERY_TASK_EAGER_PROPAGATES = True
+# Beat: rede de segurança se webhook atrasar (D11). Requer celery beat rodando.
+CELERY_BEAT_SCHEDULE = {
+    "billing-sync-open-charges": {
+        "task": "billing.sync_open_charges",
+        "schedule": float(env("BILLING_SYNC_INTERVAL_SECONDS", "300") or "300"),
+        "kwargs": {"limit": int(env("BILLING_SYNC_BATCH_LIMIT", "100") or "100")},
+    },
+}
 NF_SYNC_PROCESSING = env("NF_SYNC_PROCESSING", "false").lower() == "true"
 WEBHOOK_GATEWAY_SECRET = env("WEBHOOK_GATEWAY_SECRET", "dev-webhook-secret")
+# Fail-closed em DEBUG=False (ou FORCE_SECURE_SECRETS=true). Ver shared/security_checks.py
+FORCE_SECURE_SECRETS = env("FORCE_SECURE_SECRETS", "false").lower() == "true"
+# Allowlist de IPs do originador do webhook (proxy Inter). Vazio = sem filtro (só lab).
+WEBHOOK_ALLOWED_IPS = [
+    ip.strip()
+    for ip in env("WEBHOOK_ALLOWED_IPS", "").split(",")
+    if ip.strip()
+]
+WEBHOOK_TRUST_X_FORWARDED_FOR = (
+    env("WEBHOOK_TRUST_X_FORWARDED_FOR", "false").lower() == "true"
+)
+# Em multi-tenant, NÃO usar INTER_* do .env quando o tenant não tem TenantSecret.
+ALLOW_ENV_INTER_CREDENTIALS_FALLBACK = (
+    env("ALLOW_ENV_INTER_CREDENTIALS_FALLBACK", "true").lower() == "true"
+)
 PAYMENT_HTTP_MODE = env("PAYMENT_HTTP_MODE", "stub")  # stub | http
 PAYMENT_DEFAULT_PROVIDER = env("PAYMENT_DEFAULT_PROVIDER", "inter")  # inter|asaas|c6
 ASAAS_API_TOKEN = env("ASAAS_API_TOKEN", "")
@@ -157,6 +183,10 @@ INTER_CANCEL_PATH_TMPL = env(
 )
 INTER_CANCEL_MOTIVO = env("INTER_CANCEL_MOTIVO", "ACERTOS")
 INTER_NUM_DIAS_AGENDA = int(env("INTER_NUM_DIAS_AGENDA", "0") or "0")
+# URL HTTPS pública do Hub para o Inter chamar (D1). Ex.: https://hub.exemplo.com/api/v1/webhooks/gateway
+INTER_WEBHOOK_PUBLIC_URL = env("INTER_WEBHOOK_PUBLIC_URL", "")
+INTER_WEBHOOK_PATH = env("INTER_WEBHOOK_PATH", "/cobranca/v3/cobrancas/webhook")
+INTER_WEBHOOK_RETRY_MAX = int(env("INTER_WEBHOOK_RETRY_MAX", "50") or "50")
 # C6 BaaS bank_slips — https://developers.c6bank.com.br/
 C6_API_BASE_URL = env(
     "C6_API_BASE_URL",
@@ -209,6 +239,7 @@ STORAGE_BACKEND = env("STORAGE_BACKEND", "local")
 LOCAL_STORAGE_ROOT = env("LOCAL_STORAGE_ROOT", str(BASE_DIR / ".storage"))
 FIELD_ENCRYPTION_KEY = env(
     "FIELD_ENCRYPTION_KEY",
+    # Apenas lab/DEBUG. Produção: obrigatório override (security_checks).
     "n_AQ8FIJHEVdMys3lkm17BygqS8UkBCEfRtzlNaZhhw=",
 )
 FOCUS_POLL_COUNTDOWN = int(env("FOCUS_POLL_COUNTDOWN", "15") or "15")

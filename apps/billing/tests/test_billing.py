@@ -1,12 +1,13 @@
 import hashlib
 import hmac
 import json
-from datetime import date
+from datetime import timedelta
 
 import pytest
 from django.conf import settings
 from django.utils import timezone
 
+from apps.billing.due_date_rules import min_due_date
 from apps.billing.exceptions import InvalidWebhookSignatureError
 from apps.billing.models import Charge, PaymentEvent, WebhookInbox
 from apps.billing.services import (
@@ -29,6 +30,10 @@ def _sign(payload: dict) -> tuple[bytes, str]:
     return body, signature
 
 
+def _due():
+    return min_due_date() + timedelta(days=7)
+
+
 @pytest.fixture
 def customer(tenant_a):
     return create_customer(
@@ -48,7 +53,7 @@ def test_create_charge_uses_tenant_payment_provider(tenant_a, customer):
         idempotency_key="chg-c6",
         customer=customer,
         amount_cents=2000,
-        due_date=date(2024, 7, 1),
+        due_date=_due(),
     )
     assert charge.gateway_ref.startswith("c6_")
     assert charge.status == Charge.Status.REGISTERED
@@ -61,7 +66,7 @@ def test_create_charge_idempotent(tenant_a, customer):
         idempotency_key="chg-1",
         customer=customer,
         amount_cents=5000,
-        due_date=date(2024, 7, 1),
+        due_date=_due(),
     )
     first = create_charge(**kwargs)
     second = create_charge(**kwargs)
@@ -81,7 +86,7 @@ def test_cancel_charge_via_gateway(tenant_a, customer):
         idempotency_key="chg-cancel",
         customer=customer,
         amount_cents=5000,
-        due_date=date(2024, 7, 1),
+        due_date=_due(),
     )
     cancel_charge(charge)
     charge.refresh_from_db()
@@ -99,7 +104,7 @@ def test_webhook_invalid_signature_rejected(tenant_a, customer):
         idempotency_key="chg-2",
         customer=customer,
         amount_cents=5000,
-        due_date=date(2024, 7, 1),
+        due_date=_due(),
     )
     payload = {"tenant_slug": "acme", "idempotency_key": "wh-1"}
     body = json.dumps(payload).encode()
@@ -116,7 +121,7 @@ def test_webhook_pays_charge_once(tenant_a, customer):
         idempotency_key="chg-3",
         customer=customer,
         amount_cents=5000,
-        due_date=date(2024, 7, 1),
+        due_date=_due(),
     )
     payload = {
         "tenant_slug": "acme",
@@ -141,7 +146,7 @@ def test_webhook_incompatible_amount_does_not_pay(tenant_a, customer):
         idempotency_key="chg-amt",
         customer=customer,
         amount_cents=5000,
-        due_date=date(2024, 7, 1),
+        due_date=_due(),
     )
     payload = {
         "tenant_slug": "acme",
@@ -165,7 +170,7 @@ def test_reprocess_failed_webhook_idempotent(tenant_a, customer):
         idempotency_key="chg-repro",
         customer=customer,
         amount_cents=5000,
-        due_date=date(2024, 7, 1),
+        due_date=_due(),
     )
     payload = {
         "tenant_slug": "acme",
@@ -196,7 +201,7 @@ def test_asaas_like_webhook_normalized(tenant_a, customer):
         idempotency_key="chg-asaas",
         customer=customer,
         amount_cents=5000,
-        due_date=date(2024, 7, 1),
+        due_date=_due(),
     )
     payload = {
         "event": "PAYMENT_RECEIVED",
@@ -222,7 +227,7 @@ def test_charges_and_webhook_api(api_client, auth_header, tenant_a, customer):
             "idempotency_key": "api-chg-1",
             "customer_id": str(customer.id),
             "amount_cents": 1500,
-            "due_date": "2024-08-01",
+            "due_date": _due().isoformat(),
             "description": "Teste",
         },
         format="json",

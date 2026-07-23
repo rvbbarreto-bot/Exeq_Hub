@@ -9,6 +9,7 @@ from uuid import uuid4
 import httpx
 from django.conf import settings
 
+from integrations.payments.boleto import stub_boleto_artifacts
 from integrations.payments.errors import PaymentGatewayError
 from integrations.payments.inter_auth import InterAuthClient
 from integrations.payments.inter_cancel import (
@@ -77,6 +78,7 @@ class BankPaymentGateway:
     ) -> ChargeRegisterResult:
         if self.mode != "http":
             ref = f"{self.kind}_{uuid4().hex[:16]}"
+            arts = stub_boleto_artifacts(provider=self.kind, external_ref=ref)
             return ChargeRegisterResult(
                 external_ref=ref,
                 status="registered",
@@ -90,6 +92,11 @@ class BankPaymentGateway:
                     "due_date": due_date.isoformat(),
                     "charge_options": charge_options or {},
                 },
+                digitable_line=arts["digitable_line"],
+                barcode=arts["barcode"],
+                payment_url=arts["payment_url"],
+                boleto_pdf_url=arts["boleto_pdf_url"],
+                pix_copy_paste=arts.get("pix_copy_paste") or "",
             )
 
         body = self._charge_body(
@@ -112,10 +119,25 @@ class BankPaymentGateway:
         ref = self._extract_ref(data)
         if not ref:
             raise PaymentGatewayError(f"{self.kind} sem id na resposta: {data}")
+        # Inter frequentemente só devolve codigoSolicitacao; extrair o que houver.
+        arts = inter_artifacts(data) if self.kind == "inter" else {}
+        from integrations.payments.boleto import extract_boleto_artifacts
+
+        fallback = extract_boleto_artifacts(data if isinstance(data, dict) else {})
         return ChargeRegisterResult(
             external_ref=ref,
             status="registered",
             raw={"provider": self.kind, "mode": "http", **data},
+            digitable_line=str(
+                arts.get("digitable_line") or fallback.get("digitable_line") or ""
+            ),
+            barcode=str(arts.get("barcode") or fallback.get("barcode") or ""),
+            pix_copy_paste=str(
+                arts.get("pix_copy_paste") or fallback.get("pix_copy_paste") or ""
+            ),
+            payment_url=str(fallback.get("payment_url") or ""),
+            boleto_pdf_url=str(fallback.get("boleto_pdf_url") or ""),
+            extras=arts or fallback,
         )
 
     def cancelar(
@@ -143,6 +165,7 @@ class BankPaymentGateway:
 
     def consultar_cobranca(self, *, ref: str) -> ChargeRegisterResult:
         if self.mode != "http":
+            arts = stub_boleto_artifacts(provider=self.kind, external_ref=ref)
             return ChargeRegisterResult(
                 external_ref=ref,
                 status="registered",
@@ -154,8 +177,16 @@ class BankPaymentGateway:
                     "cobranca": {
                         "codigoSolicitacao": ref,
                         "situacao": "A_RECEBER",
+                        "boleto": {
+                            "linhaDigitavel": arts["digitable_line"],
+                            "codigoBarras": arts["barcode"],
+                        },
                     },
                 },
+                digitable_line=arts["digitable_line"],
+                barcode=arts["barcode"],
+                payment_url=arts["payment_url"],
+                boleto_pdf_url=arts["boleto_pdf_url"],
                 extras={"situacao": "A_RECEBER"},
             )
         path = f"{self._charge_path().rstrip('/')}/{ref}"
@@ -171,6 +202,89 @@ class BankPaymentGateway:
             barcode=str(arts.get("barcode") or ""),
             pix_copy_paste=str(arts.get("pix_copy_paste") or ""),
             extras=arts,
+        )
+
+    def baixar_pdf(self, *, ref: str) -> bytes:
+        """GET .../{codigo}/pdf — binário. Stub devolve PDF mínimo válido."""
+        if self.mode != "http":
+            return (
+                b"%PDF-1.4\n"
+                b"1 0 obj<< /Type /Catalog /Pages 2 0 R >>endobj\n"
+                b"2 0 obj<< /Type /Pages /Kids [3 0 R] /Count 1 >>endobj\n"
+                b"3 0 obj<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 144] >>endobj\n"
+                b"xref\n0 4\n0000000000 65535 f \n"
+                b"trailer<< /Size 4 /Root 1 0 R >>\nstartxref\n0\n%%EOF\n"
+            )
+        path = f"{self._charge_path().rstrip('/')}/{ref}/pdf"
+        return self._request_bytes("GET", path)
+
+    def _webhook_path(self) -> str:
+        if self.kind == "inter":
+            return (
+                getattr(settings, "INTER_WEBHOOK_PATH", None)
+                or "/cobranca/v3/cobrancas/webhook"
+            )
+        raise PaymentGatewayError(
+            f"Webhook Cobrança não suportado para provedor {self.kind}"
+        )
+
+    def registrar_webhook(self, *, webhook_url: str) -> dict[str, Any]:
+        """PUT .../webhook — cadastro da URL de callback (estudo Inter §9.1)."""
+        url = (webhook_url or "").strip()
+        if not url:
+            raise PaymentGatewayError("webhookUrl obrigatória")
+        if self.mode != "http":
+            return {
+                "provider": self.kind,
+                "mode": "stub",
+                "action": "registrar_webhook",
+                "webhookUrl": url,
+            }
+        return self._request(
+            "PUT", self._webhook_path(), json={"webhookUrl": url}
+        )
+
+    def consultar_webhook(self) -> dict[str, Any]:
+        if self.mode != "http":
+            return {
+                "provider": self.kind,
+                "mode": "stub",
+                "action": "consultar_webhook",
+                "webhookUrl": getattr(settings, "INTER_WEBHOOK_PUBLIC_URL", "") or "",
+            }
+        return self._request("GET", self._webhook_path())
+
+    def remover_webhook(self) -> dict[str, Any]:
+        if self.mode != "http":
+            return {
+                "provider": self.kind,
+                "mode": "stub",
+                "action": "remover_webhook",
+            }
+        return self._request("DELETE", self._webhook_path())
+
+    def retry_webhook_callbacks(
+        self, *, codigo_solicitacao: list[str]
+    ) -> dict[str, Any]:
+        """POST .../webhook/callbacks/retry — até INTER_WEBHOOK_RETRY_MAX códigos."""
+        refs = [str(x).strip() for x in (codigo_solicitacao or []) if str(x).strip()]
+        if not refs:
+            raise PaymentGatewayError("Informe ao menos um codigoSolicitacao")
+        max_n = int(getattr(settings, "INTER_WEBHOOK_RETRY_MAX", 50) or 50)
+        if len(refs) > max_n:
+            raise PaymentGatewayError(
+                f"Máximo de {max_n} codigoSolicitacao por retry"
+            )
+        if self.mode != "http":
+            return {
+                "provider": self.kind,
+                "mode": "stub",
+                "action": "retry_webhook_callbacks",
+                "codigoSolicitacao": refs,
+            }
+        path = f"{self._webhook_path().rstrip('/')}/callbacks/retry"
+        return self._request(
+            "POST", path, json={"codigoSolicitacao": refs}
         )
 
     def _charge_path(self) -> str:
@@ -394,6 +508,25 @@ class BankPaymentGateway:
             raise PaymentGatewayError(f"{self.kind} HTTP {response.status_code}: {data}")
         return data if isinstance(data, dict) else {"data": data}
 
+    def _request_bytes(self, method: str, path: str, **kwargs) -> bytes:
+        if not self.token:
+            raise PaymentGatewayError(f"Token {self.kind} não configurado")
+        if not self.base_url:
+            raise PaymentGatewayError(f"Base URL {self.kind} não configurada")
+        url = f"{self.base_url}{path if path.startswith('/') else '/' + path}"
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            "Accept": "application/pdf",
+            **(kwargs.pop("headers", None) or {}),
+        }
+        with httpx.Client(timeout=self.timeout) as client:
+            response = client.request(method, url, headers=headers, **kwargs)
+        if response.status_code >= 400:
+            raise PaymentGatewayError(
+                f"{self.kind} HTTP {response.status_code}: {response.text[:300]}"
+            )
+        return response.content
+
 
 def _inter_mensagem(
     *, description: str, message_lines: list[str] | None
@@ -461,6 +594,16 @@ class InterPaymentGateway(BankPaymentGateway):
                 **kwargs,
             )
         return super()._request(method, path, **kwargs)
+
+    def _request_bytes(self, method: str, path: str, **kwargs) -> bytes:
+        if self.auth is not None:
+            return self.auth.request_bytes(
+                method,
+                path,
+                headers=kwargs.pop("headers", None),
+                **kwargs,
+            )
+        return super()._request_bytes(method, path, **kwargs)
 
 
 class C6PaymentGateway(BankPaymentGateway):

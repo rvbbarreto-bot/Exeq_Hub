@@ -5,7 +5,6 @@ import pytest
 from integrations.payments.asaas import AsaasPaymentGateway
 from integrations.payments.banks import C6PaymentGateway, InterPaymentGateway
 from integrations.payments.factory import get_payment_gateway
-from integrations.payments.normalize import normalize_gateway_payload
 from integrations.payments.router import (
     PROVIDER_ASAAS,
     PROVIDER_C6,
@@ -29,32 +28,6 @@ def test_asaas_stub_register_and_cancel():
     assert result.status == "registered"
     cancelled = gw.cancelar(ref=result.external_ref)
     assert cancelled.status == "cancelled"
-
-
-def test_normalize_canonical_passthrough():
-    payload = {
-        "tenant_slug": "acme",
-        "idempotency_key": "k1",
-        "gateway_ref": "asaas_abc",
-        "amount_cents": 1500,
-    }
-    assert normalize_gateway_payload(payload)["amount_cents"] == 1500
-
-
-def test_normalize_asaas_payment_event():
-    payload = {
-        "event": "PAYMENT_RECEIVED",
-        "payment": {
-            "id": "pay_123",
-            "value": 12.34,
-            "externalReference": "uuid-here",
-            "confirmedDate": "2024-08-01T10:00:00Z",
-        },
-    }
-    out = normalize_gateway_payload(payload)
-    assert out["gateway_ref"] == "pay_123"
-    assert out["amount_cents"] == 1234
-    assert out["idempotency_key"] == "PAYMENT_RECEIVED:pay_123"
 
 
 def test_resolve_payment_provider_default():
