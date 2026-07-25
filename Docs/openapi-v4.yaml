@@ -1,12 +1,13 @@
 openapi: 3.0.3
 info:
   title: EXEQ Hub API
-  version: 4.1.2-draft
+  version: 4.1.4-draft
   description: |
     Auth, master data, fiscal, emissão NFS-e, billing (asaas|inter|c6),
     predefinições de cobrança e tipos de emissão (única/parcelada/recorrente),
-    configuração de provedor de cobrança por tenant, DAS/SERPRO,
-    procurações e-CAC, Focus e webhooks.
+    configuração de provedor de cobrança por tenant (Hub + Admin), DAS/SERPRO,
+    procurações e-CAC, certificados A1 (lista + upload), Focus e webhooks
+    (HMAC + Inter normalize). Artefatos boleto/PIX/PDF e PDF de guia DAS.
 servers:
   - url: http://localhost:8000/api/v1
     description: Local
@@ -54,9 +55,34 @@ paths:
   /charges/:
     get:
       tags: [billing]
-      summary: Lista cobranças
+      summary: Lista cobranças (paginação opt-in page/page_size; filtro status)
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string, enum: [pending, registered, paid, overdue, cancelled, failed, all] }
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1 }
+        - in: query
+          name: page_size
+          schema: { type: integer, minimum: 1, maximum: 100 }
       responses:
-        "200": { description: OK }
+        "200":
+          description: Lista ou página
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: array
+                    items: { $ref: "#/components/schemas/Charge" }
+                  - type: object
+                    properties:
+                      count: { type: integer }
+                      next: { type: string, nullable: true }
+                      previous: { type: string, nullable: true }
+                      results:
+                        type: array
+                        items: { $ref: "#/components/schemas/Charge" }
     post:
       tags: [billing]
       summary: Cria cobrança (PaymentGateway asaas|inter|c6)
@@ -67,7 +93,68 @@ paths:
             schema:
               $ref: "#/components/schemas/ChargeCreate"
       responses:
-        "201": { description: registered }
+        "201":
+          description: Charge simples ou envelope parcelado/recorrente
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/Charge"
+                  - $ref: "#/components/schemas/ChargeScheduleEnvelope"
+  /charges/summary/:
+    get:
+      tags: [billing]
+      summary: Contagens por status (tabs Hub)
+      responses:
+        "200":
+          description: "{ total, by_status }"
+  /billing/cancel-motivos:
+    get:
+      tags: [billing]
+      summary: Enum Inter motivoCancelamento (labels PT)
+      responses:
+        "200":
+          description: "{ default, motivos[{value,label}] }"
+  /billing/providers/inter/webhook:
+    get:
+      tags: [billing]
+      summary: Consulta webhook Cobrança cadastrado no Inter
+      responses:
+        "200": { description: OK }
+    put:
+      tags: [billing]
+      summary: Registra/atualiza webhookUrl no Inter (prod = INTER_WEBHOOK_PUBLIC_URL)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                webhookUrl: { type: string, format: uri }
+      responses:
+        "200": { description: OK }
+        "400": { description: URL inválida / provedor ≠ inter }
+    delete:
+      tags: [billing]
+      summary: Remove webhook Inter
+      responses:
+        "200": { description: OK }
+  /billing/providers/inter/webhook/callbacks/retry:
+    post:
+      tags: [billing]
+      summary: Retry callbacks Inter (+ reprocess inbox local opcional)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                codigoSolicitacao:
+                  type: array
+                  items: { type: string }
+                  maxItems: 2
+      responses:
+        "200": { description: OK }
   /billing/provider:
     get:
       tags: [billing]
@@ -199,36 +286,54 @@ paths:
         "200": { description: cancelled }
         "400": { description: status inválido / motivo inválido / gateway }
   /charges/{id}/sync:
-    get:
-      tags: [billing]
-      summary: Consulta situação/pagamento no gateway e sincroniza Hub
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema: { type: string, format: uuid }
-      responses:
-        "200": { description: Charge atualizada }
-        "400": { description: sem gateway_ref }
-        "502": { description: falha no gateway }
     post:
       tags: [billing]
-      summary: Idem GET sync (consulta pagamento Inter)
+      summary: Consulta situação/pagamento no gateway e sincroniza Hub (somente POST)
       parameters:
         - in: path
           name: id
           required: true
           schema: { type: string, format: uuid }
       responses:
-        "200": { description: Charge atualizada }
+        "200":
+          description: Charge atualizada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Charge" }
+        "400": { description: sem gateway_ref }
+        "405": { description: GET não permitido }
+        "502": { description: falha no gateway }
+  /charges/{id}/pdf/:
+    get:
+      tags: [billing]
+      summary: Download PDF do boleto (StoredFile; busca no gateway se ausente)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: application/pdf
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        "400": { description: sem gateway_ref / PDF inválido }
+        "502": { description: falha no gateway }
   /webhooks/gateway:
     post:
       tags: [billing]
       security: []
-      summary: Webhook gateway (HMAC)
+      summary: Webhook gateway (HMAC Hub + IP allowlist opcional + throttle)
+      description: |
+        Exige `X-Webhook-Signature` = HMAC-SHA256 hex do body (`WEBHOOK_GATEWAY_SECRET`).
+        Aceita `sha256=<hex>`. Inter Cobrança não assina nativamente — use proxy assinador.
+        Payload canônico Hub, Asaas-like ou Inter (`situacao`/`codigoSolicitacao`).
       responses:
         "200": { description: inbox }
         "401": { description: assinatura inválida }
+        "403": { description: IP fora da allowlist }
+        "413": { description: payload > 256KB }
   /das/guias/:
     get:
       tags: [das]
@@ -250,6 +355,22 @@ paths:
           description: |
             certificate_not_usable | electronic_proxy_not_usable |
             receita_* | duplicate_das_natural_key
+  /das/guias/{id}/pdf/:
+    get:
+      tags: [das]
+      summary: Download PDF da guia (StoredFile)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: application/pdf
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        "404": { description: das_pdf_missing }
   /electronic-proxies/:
     get:
       tags: [proxies]
@@ -267,6 +388,19 @@ paths:
               $ref: "#/components/schemas/ElectronicProxyCreate"
       responses:
         "201": { description: Created }
+  /certificates/:
+    get:
+      tags: [proxies]
+      summary: Lista certificados A1 do tenant
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string }
+        - name: cnpj
+          in: query
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
   /certificates/upload:
     post:
       tags: [proxies]
@@ -291,6 +425,42 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
+    Charge:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        idempotency_key: { type: string }
+        status:
+          type: string
+          enum: [pending, registered, paid, overdue, cancelled, failed]
+        customer: { type: string, format: uuid }
+        amount_cents: { type: integer }
+        due_date: { type: string, format: date }
+        description: { type: string }
+        seu_numero: { type: string, maxLength: 15 }
+        charge_kind: { type: string, enum: [simple, installment, recurring] }
+        schedule_group_id: { type: string, format: uuid, nullable: true }
+        installment_number: { type: integer, nullable: true }
+        installment_count: { type: integer, nullable: true }
+        gateway_ref: { type: string }
+        digitable_line: { type: string }
+        barcode: { type: string }
+        pix_copy_paste: { type: string }
+        payment_url: { type: string, format: uri }
+        boleto_pdf_url: { type: string, format: uri }
+        has_boleto_pdf: { type: boolean, description: PDF persistido em StoredFile (pdf_file) }
+        nf_issue: { type: string, format: uuid, nullable: true }
+        correlation_id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ChargeScheduleEnvelope:
+      type: object
+      properties:
+        schedule_group_id: { type: string, format: uuid, nullable: true }
+        charge_kind: { type: string, enum: [installment, recurring] }
+        charges:
+          type: array
+          items: { $ref: "#/components/schemas/Charge" }
     ChargeCreate:
       type: object
       required: [idempotency_key, customer_id, amount_cents, due_date]

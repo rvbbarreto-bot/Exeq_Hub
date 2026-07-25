@@ -674,16 +674,26 @@ Para notas multi-serviço futuras. **MVP:** uma nota = um `service_id` em `nf_is
 | idempotency_key | CharField(128) |
 | status | `pending\|registered\|paid\|overdue\|cancelled\|failed` |
 | customer_id | FK PROTECT |
-| amount_cents | BigInteger CHECK > 0 |
+| amount_cents | BigInteger CHECK > 0 (mín. operacional Inter R$ 2,50 = 250) |
 | due_date | DateField |
 | description | TextField null |
-| gateway_ref | CharField(128) null |
+| seu_numero | CharField(15) blank — Inter `seuNumero` / código de controle |
+| charge_kind | `simple\|installment\|recurring` |
+| schedule_group_id | UUID null — liga carnê (N boletos SIMPLES) |
+| installment_number / installment_count | PositiveSmallInteger null |
+| num_dias_agenda / multa_percent / mora_percent_am | agenda Inter (preset) |
+| message_lines | JSON list (até 5×78) |
+| gateway_ref | CharField(128) blank |
+| digitable_line / barcode / pix_copy_paste | artefatos boleto/PIX |
+| payment_url / boleto_pdf_url | URLField blank |
+| pdf_file_id | FK `StoredFile` null SET_NULL — PDF baixado do gateway |
+| gateway_payload | JSONField null |
 | nf_issue_id | FK NfIssue null SET_NULL |
 | correlation_id | UUID |
 | created_at / updated_at | |
 
 **UNIQUE** `(tenant_id, idempotency_key)`.  
-**Índices:** `(tenant_id, status, due_date)`, `(tenant_id, gateway_ref)`.
+**Índices:** `(tenant_id, status, due_date)`, `(tenant_id, gateway_ref)`, `(tenant_id, schedule_group_id)`, `(tenant_id, seu_numero)`.
 
 ---
 
@@ -692,20 +702,20 @@ Para notas multi-serviço futuras. **MVP:** uma nota = um `service_id` em `nf_is
 | Campo | Constraint |
 |-------|------------|
 | tenant_id | FK |
-| provider | CharField(32) — `asaas\|mercado_pago\|focus\|evolution` |
+| provider | CharField(32) — `inter\|asaas\|c6` (default `inter`) |
 | idempotency_key | CharField(128) |
 | status | `received\|processing\|processed\|failed` |
-| signature | CharField(256) null |
-| signature_valid | BooleanField | |
-| raw_payload | JSONField | |
-| payload_hash | CharField(64) | |
-| error_message | TextField null | |
-| processed_at | null | |
+| signature | CharField(256) blank |
+| signature_valid | BooleanField |
+| raw_payload | JSONField |
+| payload_hash | CharField(64) |
+| error_message | TextField blank |
+| processed_at | null |
 | created_at / updated_at | |
 
 **UNIQUE** `(tenant_id, provider, idempotency_key)`.
 
-**ADR-DB-006:** payload só é processado após persistir inbox; assinatura inválida → HTTP 401 e **não** marca como confiável (`signature_valid=false`, preferencialmente nem cria PaymentEvent).
+**ADR-DB-006:** payload só é processado após persistir inbox; assinatura inválida → HTTP 401 e **não** marca como confiável (`signature_valid=false`, preferencialmente nem cria PaymentEvent). Auth Hub: HMAC `X-Webhook-Signature` + allowlist IP opcional (proxy Inter).
 
 ---
 

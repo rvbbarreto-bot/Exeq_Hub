@@ -5,7 +5,7 @@ from rest_framework.views import APIView
 
 from apps.accounts.certificates import PfxParseError, upload_a1_certificate
 from apps.accounts.models import DigitalCertificate
-from apps.accounts.permissions import IsTenantWriter
+from apps.accounts.permissions import IsTenantMember, IsTenantWriter
 from apps.accounts.secrets import set_tenant_secret
 from shared.validators import validate_cnpj
 
@@ -28,6 +28,27 @@ class DigitalCertificateSerializer(serializers.ModelSerializer):
             "created_at",
         )
         read_only_fields = fields
+
+
+class DigitalCertificateListView(APIView):
+    """GET lista A1 do tenant (Hub Certificados)."""
+
+    def get_permissions(self):
+        return [IsTenantMember()]
+
+    def get(self, request):
+        qs = DigitalCertificate.objects.filter(tenant=request.tenant).order_by(
+            "-is_primary", "-not_after", "-created_at"
+        )
+        status_f = (request.query_params.get("status") or "").strip().lower()
+        cnpj = request.query_params.get("cnpj")
+        if status_f:
+            qs = qs.filter(status=status_f)
+        if cnpj:
+            digits = "".join(ch for ch in str(cnpj) if ch.isdigit())
+            if digits:
+                qs = qs.filter(cnpj=digits)
+        return Response(DigitalCertificateSerializer(qs, many=True).data)
 
 
 class UploadCertificateView(APIView):

@@ -52,7 +52,7 @@ Postgres Docker: **5433**. Redis: **6379**.
 - Spec: `GET /api/v1/openapi.json` ← `Docs/openapi-v4.yaml`.
 - **Inter** (primeiro / Cobrança BolePix v3): auth HTTP = **`InterAuthClient`** (OAuth2 `client_credentials` + **mTLS** `.crt`/`.key`). Env: `INTER_CLIENT_ID`, `INTER_CLIENT_SECRET`, `INTER_CERT_PATH`/`INTER_KEY_PATH` (ou PEM / `TenantSecret`). `INTER_API_TOKEN` só legado/stub. Endpoints: `POST /cobranca/v3/cobrancas`, `GET .../{codigoSolicitacao}`, `GET .../pdf`, `POST .../cancelar`, `PUT .../webhook`. Base sandbox `cdpj-sandbox.partners.uatinter.co`. Header opcional `INTER_CONTA_CORRENTE`.
 - **Asaas** / **C6**: secundários após Inter E2E (`ASAAS_API_*`, `C6_API_*` + `TenantSecret`).
-- Webhook: inbox + HMAC Hub; normalizer Asaas-like hoje — **parser Inter pendente**.
+- Webhook: inbox + HMAC Hub (`X-Webhook-Signature`); normalizer **Asaas-like + Inter** (`situacao` / `codigoSolicitacao`); proxy assinador em prod (ver `Docs/Exeq_Hub_Inter_Security_Hardening.md`).
 - `Charge` só vai para `paid` via `PaymentEvent` ligado ao `WebhookInbox`.
 
 NFS-e: **Focus é o provider default** (`NFSE_DEFAULT_PROVIDER=focus`).  

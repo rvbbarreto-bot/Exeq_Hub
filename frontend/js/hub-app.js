@@ -58,6 +58,15 @@
       await HubCharges.loadList();
       if (HubCharges.loadPresets) await HubCharges.loadPresets();
     }
+    if (active.id === "screen-provedor" && global.HubProvider) {
+      await HubProvider.loadScreen();
+    }
+    if (active.id === "screen-certificados" && global.HubCertificates) {
+      await HubCertificates.loadList();
+    }
+    if (active.id === "screen-das" && global.HubDas) {
+      await HubDas.loadList();
+    }
   }
 
   function patchGoTo() {
@@ -101,6 +110,9 @@
     bindLogout();
     if (global.HubNfse) HubNfse.bind();
     if (global.HubCharges) HubCharges.bind();
+    if (global.HubProvider) HubProvider.bind();
+    if (global.HubCertificates) HubCertificates.bind();
+    if (global.HubDas) HubDas.bind();
 
     const loginForm = document.getElementById("form-login");
     if (loginForm) loginForm.addEventListener("submit", onLoginSubmit);

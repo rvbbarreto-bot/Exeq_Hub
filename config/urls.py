@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.urls import include, path
 
 from apps.accounts.certificate_views import (
+    DigitalCertificateListView,
     RegisterFocusEmpresaView,
     SetFocusTokenView,
     UploadCertificateView,
@@ -21,6 +22,7 @@ urlpatterns = [
     path("app/<path:relpath>", HubFrontendFileView.as_view(), name="hub-app-file"),
     path("api/v1/openapi.json", OpenAPIJsonView.as_view()),
     path("api/v1/auth/", include("apps.accounts.urls")),
+    path("api/v1/certificates/", DigitalCertificateListView.as_view()),
     path("api/v1/certificates/upload", UploadCertificateView.as_view()),
     path("api/v1/electronic-proxies/", ElectronicProxyListCreateView.as_view()),
     path("api/v1/integrations/focus/token", SetFocusTokenView.as_view()),

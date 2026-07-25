@@ -286,10 +286,11 @@
       headers.Authorization = `Bearer ${session.access}`;
     }
     let body = opts.body;
-    if (body != null && typeof body !== "string") {
+    if (body != null && typeof body !== "string" && !(body instanceof FormData)) {
       headers["Content-Type"] = "application/json";
       body = JSON.stringify(body);
     }
+    // FormData: browser define multipart boundary — não setar Content-Type.
     const res = await fetch(`${API_BASE}${normalizeApiPath(path)}`, {
       method,
       headers,

@@ -272,6 +272,8 @@ Se o callback Inter for “leve” (só código), o processador deve **GET detal
 | Hub UI única / parcelada / recorrente | **OK** — form Cobranças (D7); backend orquestra N× SIMPLES |
 | Admin bulk cancel com motivo | **OK** — D10 intermediate form (enum Inter) |
 | Sync periódico open charges | **OK** — D11 `billing.sync_open_charges` + beat schedule |
+| Hub Provedor → API | **OK** — D13a `hub-provider.js` |
+| OpenAPI/DER artefatos Charge | **OK** — D12 schema Charge + pdf_file no DER |
 
 ---
 
