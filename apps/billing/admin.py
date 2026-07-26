@@ -594,11 +594,12 @@ class ChargeAdmin(admin.ModelAdmin):
             self.message_user(request, err, level=messages.ERROR)
         return None
 
-    @admin.action(description="Sincronizar status/pagamento com o gateway")
+    @admin.action(description="Atualizar Status (gateway)")
     def sincronizar_gateway(self, request, queryset):
         from apps.billing.exceptions import ChargeNotFoundError, GatewayRegistrationError
-        from apps.billing.services import sync_charge_from_gateway
+        from apps.billing.services import mark_overdue_charges, sync_charge_from_gateway
 
+        mark_overdue_charges()
         ok = 0
         errors = []
         for charge in queryset:
@@ -608,7 +609,7 @@ class ChargeAdmin(admin.ModelAdmin):
             except (ChargeNotFoundError, GatewayRegistrationError) as exc:
                 errors.append(f"{charge.id}: {exc}")
         if ok:
-            self.message_user(request, f"{ok} cobrança(s) sincronizada(s).")
+            self.message_user(request, f"{ok} cobrança(s) com status atualizado.")
         for err in errors[:10]:
             self.message_user(request, err, level=messages.ERROR)
 

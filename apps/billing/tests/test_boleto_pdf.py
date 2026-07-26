@@ -113,6 +113,15 @@ def test_charges_pdf_api(api_client, auth_header, tenant_a, customer, settings, 
     body = b"".join(res.streaming_content) if hasattr(res, "streaming_content") else res.content
     assert body.startswith(b"%PDF")
 
+    # Hub envia Accept: application/pdf — não pode 406 (content negotiation DRF).
+    res_accept = api_client.get(
+        f"/api/v1/charges/{charge.id}/pdf/",
+        HTTP_ACCEPT="application/pdf",
+        **auth_header,
+    )
+    assert res_accept.status_code == 200
+    assert res_accept["Content-Type"].startswith("application/pdf")
+
     detail = api_client.get(f"/api/v1/charges/{charge.id}/", **auth_header)
     assert detail.status_code == 200
     assert detail.data["has_boleto_pdf"] is True

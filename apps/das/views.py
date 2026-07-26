@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from apps.accounts.permissions import IsTenantWriter
 from apps.das.models import GuiaFiscal
 from apps.das.serializers import GuiaFiscalCreateSerializer, GuiaFiscalSerializer
+from shared.renderers import PDF_DOWNLOAD_RENDERERS
 from shared.storage import StorageError, get_storage
 
 
@@ -45,7 +46,12 @@ class GuiaFiscalViewSet(viewsets.ModelViewSet):
         guia = serializer.save()
         return Response(GuiaFiscalSerializer(guia).data, status=status.HTTP_201_CREATED)
 
-    @action(detail=True, methods=["get"], url_path="pdf")
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path="pdf",
+        renderer_classes=PDF_DOWNLOAD_RENDERERS,
+    )
     def pdf(self, request, pk=None):
         """Stream do PDF da guia (StoredFile persistido na emissão)."""
         guia = self.get_object()

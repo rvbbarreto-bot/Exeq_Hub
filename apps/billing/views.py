@@ -28,11 +28,13 @@ from apps.billing.services import (
     cancel_charge,
     ensure_charge_pdf,
     ingest_gateway_webhook,
+    mark_overdue_charges,
     reprocess_webhook,
     sync_charge_from_gateway,
 )
 from apps.billing.webhook_security import webhook_ip_allowed
 from shared.pagination import HubPageNumberPagination
+from shared.renderers import PDF_DOWNLOAD_RENDERERS
 from shared.storage import StorageError, get_storage
 
 
@@ -54,9 +56,14 @@ class ChargeViewSet(viewsets.ModelViewSet):
                 qs = qs.filter(status=status_filter)
         return qs
 
+    def list(self, request, *args, **kwargs):
+        mark_overdue_charges(tenant=request.tenant)
+        return super().list(request, *args, **kwargs)
+
     @action(detail=False, methods=["get"], url_path="summary")
     def summary(self, request):
         """Contagens por status (tabs Hub) sem carregar a lista completa."""
+        mark_overdue_charges(tenant=request.tenant)
         rows = (
             Charge.objects.filter(tenant=request.tenant)
             .values("status")
@@ -115,7 +122,12 @@ class ChargeViewSet(viewsets.ModelViewSet):
         charge.refresh_from_db()
         return Response(ChargeSerializer(charge).data)
 
-    @action(detail=True, methods=["get", "post"], url_path="pdf")
+    @action(
+        detail=True,
+        methods=["get", "post"],
+        url_path="pdf",
+        renderer_classes=PDF_DOWNLOAD_RENDERERS,
+    )
     def pdf(self, request, pk=None):
         """Garante StoredFile e faz stream do PDF do boleto."""
         charge = self.get_object()

@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 from uuid import uuid4
+import base64
+import json
 
 import httpx
 from django.conf import settings
@@ -21,6 +23,33 @@ from integrations.payments.inter_status import (
     map_inter_situacao,
 )
 from integrations.payments.port import ChargeRegisterResult
+
+
+def _coerce_pdf_bytes(payload: bytes) -> bytes:
+    """Inter pode devolver PDF cru ou JSON `{\"pdf\": \"<base64>\"}`."""
+    if not payload:
+        raise PaymentGatewayError("Resposta vazia ao baixar PDF")
+    if payload.startswith(b"%PDF"):
+        return payload
+    stripped = payload.lstrip()
+    if stripped.startswith(b"{") or stripped.startswith(b"["):
+        try:
+            data = json.loads(payload.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise PaymentGatewayError("JSON inválido na resposta do PDF") from exc
+        if not isinstance(data, dict):
+            raise PaymentGatewayError("Resposta JSON do PDF em formato inesperado")
+        b64 = data.get("pdf") or data.get("arquivo") or data.get("pdfBase64")
+        if not b64 or not isinstance(b64, str):
+            raise PaymentGatewayError("Resposta JSON do gateway sem campo pdf")
+        try:
+            raw = base64.b64decode(b64, validate=False)
+        except Exception as exc:  # noqa: BLE001
+            raise PaymentGatewayError("Base64 do PDF inválido") from exc
+        if not raw.startswith(b"%PDF"):
+            raise PaymentGatewayError("Base64 do gateway não é um PDF válido")
+        return raw
+    raise PaymentGatewayError("Resposta do gateway não é um PDF válido")
 
 
 def _digits(value: str) -> str:
@@ -216,7 +245,7 @@ class BankPaymentGateway:
                 b"trailer<< /Size 4 /Root 1 0 R >>\nstartxref\n0\n%%EOF\n"
             )
         path = f"{self._charge_path().rstrip('/')}/{ref}/pdf"
-        return self._request_bytes("GET", path)
+        return _coerce_pdf_bytes(self._request_bytes("GET", path))
 
     def _webhook_path(self) -> str:
         if self.kind == "inter":
@@ -516,7 +545,8 @@ class BankPaymentGateway:
         url = f"{self.base_url}{path if path.startswith('/') else '/' + path}"
         headers = {
             "Authorization": f"Bearer {self.token}",
-            "Accept": "application/pdf",
+            # Inter Cobrança PDF não aceita Accept: application/pdf (retorna 406).
+            "Accept": "*/*",
             **(kwargs.pop("headers", None) or {}),
         }
         with httpx.Client(timeout=self.timeout) as client:

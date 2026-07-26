@@ -219,6 +219,50 @@ def _apply_boleto_result(
     return update_fields
 
 
+def mark_overdue_charges(
+    *,
+    tenant=None,
+    today=None,
+    limit: int = 500,
+) -> dict:
+    """
+    Marca pending/registered como overdue quando due_date < hoje (calendário local).
+
+    Independente do gateway — vencimento contratual do Hub não espera ATRASADO do banco.
+    """
+    from datetime import date as date_cls
+
+    limit = max(1, min(int(limit or 500), 2000))
+    as_of: date_cls = today or timezone.localdate()
+    qs = Charge.objects.filter(
+        status__in=[Charge.Status.PENDING, Charge.Status.REGISTERED],
+        due_date__lt=as_of,
+    )
+    if tenant is not None:
+        qs = qs.filter(tenant=tenant)
+    ids = list(qs.order_by("due_date", "id").values_list("id", flat=True)[:limit])
+    if not ids:
+        return {"marked_overdue": 0, "as_of": as_of.isoformat()}
+    updated = Charge.objects.filter(id__in=ids).update(
+        status=Charge.Status.OVERDUE,
+        updated_at=timezone.now(),
+    )
+    return {"marked_overdue": updated, "as_of": as_of.isoformat()}
+
+
+def apply_local_overdue_if_due(charge: Charge, *, today=None) -> list[str]:
+    """Aplica regra de vencimento local em uma cobrança já carregada (in-memory)."""
+    as_of = today or timezone.localdate()
+    if (
+        charge.status
+        in (Charge.Status.PENDING, Charge.Status.REGISTERED)
+        and charge.due_date < as_of
+    ):
+        charge.status = Charge.Status.OVERDUE
+        return ["status"]
+    return []
+
+
 def _enrich_boleto_artifacts(charge: Charge, gateway, *, attempts: int = 3) -> Charge:
     """Best-effort GET detalhe após emissão (não falha o create se o GET atrasar)."""
     if not charge.gateway_ref:
@@ -530,6 +574,7 @@ def sync_charge_from_gateway(charge: Charge) -> Charge:
     update_fields = _apply_boleto_result(
         charge, result, include_status=True, include_payload=True
     )
+    update_fields.extend(apply_local_overdue_if_due(charge))
     update_fields.append("updated_at")
     charge.save(update_fields=list(dict.fromkeys(update_fields)))
 

@@ -5,7 +5,7 @@
 <title>EXEQ Hub — Protótipo de Interface</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="/app/js/vendor/chart.umd.min.js"></script>
 <style>
   :root{
     --radius: 10px;
@@ -136,6 +136,17 @@
   .nav-item svg{width:17px; height:17px; flex-shrink:0;}
   .nav-item:hover{background:rgba(255,255,255,.06); color:var(--sidebar-text-active);}
   .nav-item.active{background:var(--sidebar-active-bg); color:var(--sidebar-text-active); font-weight:600;}
+  /* XP: hover não usa texto preto sobre sidebar escura */
+  [data-theme="xp"] .nav-item:hover:not(.active){
+    background:rgba(255,221,26,.14);
+    color:#F7F6F1;
+  }
+  [data-theme="xp"] .nav-item:hover:not(.active) svg{stroke:#F7F6F1; color:#F7F6F1;}
+  [data-theme="xp"] .nav-item.active{
+    background:var(--sidebar-active-bg);
+    color:#0B0B0C;
+  }
+  [data-theme="xp"] .nav-item.active svg{stroke:#0B0B0C; color:#0B0B0C;}
 
   .sidebar-footer{margin-top:auto; padding:12px; border-top:1px solid rgba(255,255,255,.08); display:flex; gap:10px; align-items:center;}
   .avatar{width:32px; height:32px; border-radius:50%; background:var(--accent); color:var(--accent-contrast); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; font-family:var(--font-display); flex-shrink:0;}
@@ -295,10 +306,14 @@
   .empty .e-sub{font-size:12.5px; max-width:340px; margin:0 auto;}
 
   .chart-card .card-body{padding:14px 18px 18px;}
-  .chart-box{position:relative; height:230px;}
-  .chart-box.sm{height:170px;}
-  .chart-row{display:grid; grid-template-columns:1.4fr 1fr; gap:14px; margin-bottom:16px;}
-  .chart-row.thirds{grid-template-columns:1fr 1fr 1fr;}
+  .chart-box{position:relative; height:280px; width:100%;}
+  .chart-box.sm{height:240px;}
+  .chart-box canvas{display:block; width:100% !important; height:100% !important;}
+  .chart-empty{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:12.5px; color:var(--text-muted); text-align:center; padding:12px;}
+  .chart-empty[hidden]{display:none !important;}
+  .chart-row{display:grid; grid-template-columns:1fr; gap:14px; margin-bottom:16px;}
+  .chart-row .chart-card{width:100%; max-width:none;}
+  .chart-row.thirds{grid-template-columns:1fr;}
   .legend-inline{display:flex; gap:14px; flex-wrap:wrap; margin-top:10px;}
   .legend-inline span{font-size:11.5px; color:var(--text-muted); display:flex; align-items:center; gap:6px;}
   .legend-inline i{width:8px; height:8px; border-radius:2px; display:inline-block;}
@@ -312,14 +327,17 @@
 
   /* ---------- FASE 1 API: login / modal / toast ---------- */
   .app.is-locked{filter:blur(2px); pointer-events:none; user-select:none;}
+  body.hub-modal-open{overflow:hidden;}
   .login-overlay,.hub-modal{
     display:none; position:fixed; inset:0; z-index:1000;
-    background:rgba(10,12,16,.55); align-items:center; justify-content:center; padding:20px;
+    background:rgba(10,12,16,.55); align-items:flex-start; justify-content:center;
+    padding:24px 20px; overflow-y:auto; -webkit-overflow-scrolling:touch;
   }
   .login-overlay.is-open,.hub-modal.is-open{display:flex;}
   .login-card,.hub-modal-card{
     width:min(520px,100%); background:var(--surface); border:1px solid var(--border);
     border-radius:var(--radius); padding:22px; box-shadow:none;
+    margin:auto 0; flex-shrink:0;
   }
   .hub-modal-card.wide{width:min(640px,100%);}
   .login-card h2,.hub-modal-card h3{font-family:var(--font-display); font-size:18px; margin-bottom:6px;}
@@ -410,7 +428,7 @@
       <div class="brand-mark">EX</div>
       <div>
         <div class="brand-name">EXEQ Hub</div>
-        <div class="brand-sub">Ateliê Contábil</div>
+        <div class="brand-sub" id="hub-brand-tenant">—</div>
       </div>
     </div>
 
@@ -451,10 +469,10 @@
     </div>
 
     <div class="sidebar-footer">
-      <div class="avatar">RB</div>
+      <div class="avatar" id="hub-user-avatar">—</div>
       <div class="who">
-        <b>Renata Barreto</b>
-        <span>tenant_admin · Ateliê Contábil</span>
+        <b id="hub-user-name">Não autenticado</b>
+        <span id="hub-user-meta">Faça login</span>
       </div>
     </div>
   </aside>
@@ -468,7 +486,7 @@
       </div>
       <div class="topbar-right">
         <div class="tenant-pill">
-          <span>Tenant:</span><b>Ateliê Contábil Ltda</b>
+          <span>Tenant:</span><b id="hub-tenant-pill">—</b>
         </div>
         <button type="button" class="btn btn-ghost btn-sm" id="btn-logout">Sair</button>
         <div class="theme-switch" id="themeSwitch">
@@ -485,52 +503,41 @@
       <section class="screen active" id="screen-dashboard">
         <div class="page-head">
           <div>
-            <h2>Bom dia, Renata</h2>
-            <p>Resumo da operação de hoje entre cobranças, emissões fiscais e certificados do tenant.</p>
+            <h2 id="dash-greeting">Painel</h2>
+            <p>Resumo do tenant logado — mesmos registros do Django Admin (PostgreSQL).</p>
           </div>
-          <button type="button" class="btn btn-primary js-nova-cobranca" id="btn-nova-cobranca">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-            Nova cobrança
-          </button>
         </div>
+
+        <p id="dash-empty-hint" class="hint" hidden style="margin-bottom:14px;">
+          Tenant sem dados ainda. Cadastre cobranças, NFS-e ou certificados no Admin (`/admin/`) e atualize este painel.
+        </p>
 
         <div class="kpi-grid">
           <div class="kpi-card">
             <div class="kpi-label">Cobranças em aberto <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="6" width="18" height="13" rx="2"/></svg></div>
-            <div class="kpi-value">R$ 84.230,00</div>
-            <div class="kpi-delta up">▲ 12 novas cobranças esta semana</div>
+            <div class="kpi-value" id="dash-kpi-open-value">—</div>
+            <div class="kpi-delta" id="dash-kpi-open-delta">Carregando…</div>
           </div>
           <div class="kpi-card">
             <div class="kpi-label">Vencendo em 7 dias <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></div>
-            <div class="kpi-value">R$ 19.450,00</div>
-            <div class="kpi-delta warn">9 boletos a vencer</div>
+            <div class="kpi-value" id="dash-kpi-due7-value">—</div>
+            <div class="kpi-delta" id="dash-kpi-due7-delta">Carregando…</div>
           </div>
           <div class="kpi-card">
-            <div class="kpi-label">NFS-e emitidas (mês) <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg></div>
-            <div class="kpi-value">142</div>
-            <div class="kpi-delta up">▲ 8% vs. mês anterior</div>
+            <div class="kpi-label">NFS-e autorizadas <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg></div>
+            <div class="kpi-value" id="dash-kpi-nfse-value">—</div>
+            <div class="kpi-delta" id="dash-kpi-nfse-delta">Carregando…</div>
           </div>
           <div class="kpi-card">
             <div class="kpi-label">Certificados a expirar <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/></svg></div>
-            <div class="kpi-value">2</div>
-            <div class="kpi-delta down">Ação necessária em 18 dias</div>
+            <div class="kpi-value" id="dash-kpi-cert-value">—</div>
+            <div class="kpi-delta" id="dash-kpi-cert-delta">Carregando…</div>
           </div>
         </div>
 
         <div class="chart-row">
           <div class="card chart-card">
-            <div class="card-head"><h3>Recebido vs. pendente — últimos 6 meses</h3><span class="chip">R$ mil</span></div>
-            <div class="card-body">
-              <div class="chart-box"><canvas id="chartRecebidos"></canvas></div>
-            </div>
-            <div class="stat-strip">
-              <div class="s-item"><div class="s-label">Total período</div><div class="s-value">R$ 423.830</div></div>
-              <div class="s-item"><div class="s-label">Ticket médio</div><div class="s-value">R$ 1.980</div></div>
-              <div class="s-item"><div class="s-label">Inadimplência</div><div class="s-value">4,1%</div></div>
-            </div>
-          </div>
-          <div class="card chart-card">
-            <div class="card-head"><h3>Cobranças por status</h3><span class="chip">214 total</span></div>
+            <div class="card-head"><h3>Cobranças por status</h3><span class="chip" id="dash-status-chip">—</span></div>
             <div class="card-body">
               <div class="chart-box"><canvas id="chartStatus"></canvas></div>
             </div>
@@ -543,48 +550,23 @@
             <div class="card-body">
               <table>
                 <thead><tr><th>Tomador</th><th>Vencimento</th><th>Status</th><th class="num">Valor</th></tr></thead>
-                <tbody>
-                  <tr><td><div class="cell-title">Padaria Bom Trigo Ltda</div><div class="cell-sub">CNPJ 12.345.678/0001-90</div></td><td>22/07/2026</td><td><span class="badge success">Paga</span></td><td class="num">R$ 2.480,00</td></tr>
-                  <tr><td><div class="cell-title">Consultório Dra. Helena</div><div class="cell-sub">CNPJ 98.765.432/0001-11</div></td><td>25/07/2026</td><td><span class="badge info">Registrada</span></td><td class="num">R$ 1.150,00</td></tr>
-                  <tr><td><div class="cell-title">Oficina MotorFix</div><div class="cell-sub">CNPJ 45.612.789/0001-30</div></td><td>18/07/2026</td><td><span class="badge danger">Vencida</span></td><td class="num">R$ 3.900,00</td></tr>
-                  <tr><td><div class="cell-title">Studio Fotografia Luz</div><div class="cell-sub">CNPJ 33.221.100/0001-55</div></td><td>29/07/2026</td><td><span class="badge warning">Pendente</span></td><td class="num">R$ 690,00</td></tr>
-                  <tr><td><div class="cell-title">Mercadinho Boa Vista</div><div class="cell-sub">CNPJ 21.998.443/0001-02</div></td><td>10/07/2026</td><td><span class="badge danger">Falhou</span></td><td class="num">R$ 480,00</td></tr>
-                  <tr><td><div class="cell-title">Clínica Odonto Sorriso</div><div class="cell-sub">CNPJ 55.442.109/0001-88</div></td><td>02/08/2026</td><td><span class="badge info">Registrada</span></td><td class="num">R$ 2.100,00</td></tr>
-                  <tr><td><div class="cell-title">Transportadora Vale Sul</div><div class="cell-sub">CNPJ 19.887.665/0001-40</div></td><td>05/08/2026</td><td><span class="badge success">Paga</span></td><td class="num">R$ 5.320,00</td></tr>
+                <tbody id="tbody-dash-charges">
+                  <tr><td colspan="4">Faça login para carregar cobranças do tenant.</td></tr>
                 </tbody>
               </table>
             </div>
             <div class="pager">
-              <span>Exibindo 8 de 214 cobranças</span>
-              <div class="pbtns"><button class="icon-btn">‹</button><button class="icon-btn">›</button></div>
+              <span id="dash-charges-pager">—</span>
             </div>
           </div>
 
           <div class="card">
             <div class="card-head"><h3>Certificados digitais</h3><span class="card-link" onclick="goTo('certificados')">Gerenciar →</span></div>
-            <div class="card-body pad" style="display:flex; flex-direction:column; gap:14px;">
-              <div style="display:flex; justify-content:space-between; align-items:center;">
-                <div>
-                  <div class="cell-title">A1 — Matriz</div>
-                  <div class="cell-sub">Válido até 04/08/2026</div>
-                </div>
-                <span class="badge warning">A expirar</span>
-              </div>
-              <div style="display:flex; justify-content:space-between; align-items:center;">
-                <div>
-                  <div class="cell-title">A1 — Filial SP</div>
-                  <div class="cell-sub">Válido até 14/03/2027</div>
-                </div>
-                <span class="badge success">Ativo</span>
-              </div>
-              <div style="display:flex; justify-content:space-between; align-items:center;">
-                <div>
-                  <div class="cell-title">mTLS — Banco Inter</div>
-                  <div class="cell-sub">Válido até 30/07/2026</div>
-                </div>
-                <span class="badge warning">A expirar</span>
-              </div>
-              <button class="btn btn-ghost btn-sm" style="justify-content:center;">Enviar novo certificado</button>
+            <div class="card-body pad" id="dash-certs-list" style="display:flex; flex-direction:column; gap:14px;">
+              <p class="hint">Faça login para carregar certificados.</p>
+            </div>
+            <div class="card-body pad" style="padding-top:0;">
+              <button type="button" class="btn btn-ghost btn-sm" id="dash-btn-upload-cert" style="justify-content:center; width:100%;">Enviar novo certificado</button>
             </div>
           </div>
         </div>
@@ -776,13 +758,9 @@
           </div>
         </div>
 
-        <div class="chart-row thirds">
-          <div class="card chart-card" style="grid-column:span 2;">
-            <div class="card-head"><h3>Valor cobrado x recebido — 6 meses</h3></div>
-            <div class="card-body"><div class="chart-box sm"><canvas id="chartCobrancasLinha"></canvas></div></div>
-          </div>
+        <div class="chart-row">
           <div class="card chart-card">
-            <div class="card-head"><h3>Por status</h3></div>
+            <div class="card-head"><h3>Por status</h3><span class="chip">tenant</span></div>
             <div class="card-body"><div class="chart-box sm"><canvas id="chartCobrancasStatus"></canvas></div></div>
           </div>
         </div>
@@ -823,11 +801,7 @@
 
         <div class="chart-row">
           <div class="card chart-card">
-            <div class="card-head"><h3>Emissões por mês</h3><span class="chip">últimos 6 meses</span></div>
-            <div class="card-body"><div class="chart-box sm"><canvas id="chartNfse"></canvas></div></div>
-          </div>
-          <div class="card chart-card">
-            <div class="card-head"><h3>Status das notas</h3></div>
+            <div class="card-head"><h3>Status das notas</h3><span class="chip">tenant</span></div>
             <div class="card-body"><div class="chart-box sm"><canvas id="chartNfseStatus"></canvas></div></div>
           </div>
         </div>
@@ -1187,6 +1161,8 @@
 
 
 <script src="/app/js/hub-api.js"></script>
+<script src="/app/js/hub-charts.js"></script>
+<script src="/app/js/hub-dashboard.js"></script>
 <script src="/app/js/hub-nfse.js"></script>
 <script src="/app/js/hub-charges.js"></script>
 <script src="/app/js/hub-provider.js"></script>
@@ -1211,7 +1187,11 @@
     navItems.forEach(n => n.classList.toggle('active', n.dataset.screen === name));
     document.getElementById('pageTitle').textContent = titles[name][0];
     document.getElementById('pageCrumb').textContent = titles[name][1];
-    requestAnimationFrame(() => { if (typeof buildCharts === 'function') buildCharts(); });
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (window.HubCharts && HubCharts.rebuildVisible) HubCharts.rebuildVisible();
+      });
+    });
   }
 
   navItems.forEach(btn => btn.addEventListener('click', () => goTo(btn.dataset.screen)));
@@ -1221,128 +1201,13 @@
       document.body.setAttribute('data-theme', sw.dataset.t);
       document.querySelectorAll('.swatch').forEach(s => s.classList.remove('is-active'));
       sw.classList.add('is-active');
-      requestAnimationFrame(buildCharts);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (window.HubCharts && HubCharts.rebuildVisible) HubCharts.rebuildVisible();
+        });
+      });
     });
   });
-
-  document.querySelectorAll('.tab').forEach(t => {
-    t.addEventListener('click', () => {
-      t.parentElement.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
-      t.classList.add('active');
-    });
-  });
-
-  // ================= GRÁFICOS =================
-  let chartInstances = {};
-  const MONTHS = ['Fev','Mar','Abr','Mai','Jun','Jul'];
-
-  function themeVar(name){ return getComputedStyle(document.body).getPropertyValue(name).trim(); }
-
-  function buildCharts(){
-    Object.values(chartInstances).forEach(c => c.destroy());
-    chartInstances = {};
-
-    const col = {
-      text: themeVar('--text-muted'),
-      grid: themeVar('--border'),
-      accent: themeVar('--accent'),
-      success: themeVar('--success'),
-      danger: themeVar('--danger'),
-      warning: themeVar('--warning'),
-      info: themeVar('--info'),
-      neutral: themeVar('--text-muted'),
-    };
-    Chart.defaults.font.family = "'Inter', sans-serif";
-    Chart.defaults.font.size = 11;
-    Chart.defaults.color = col.text;
-
-    const baseScales = {
-      x:{ grid:{ display:false }, ticks:{ color: col.text } },
-      y:{ grid:{ color: col.grid }, ticks:{ color: col.text } }
-    };
-
-    const el = id => document.getElementById(id);
-
-    if (el('chartRecebidos')) chartInstances.recebidos = new Chart(el('chartRecebidos'), {
-      type:'bar',
-      data:{ labels: MONTHS, datasets:[
-        { label:'Recebido', data:[58.2,61.4,67.9,72.3,79.8,84.2], backgroundColor:col.success, borderRadius:5, maxBarThickness:24 },
-        { label:'Pendente', data:[9.2,7.6,8.8,6.4,10.1,12.4], backgroundColor:col.warning, borderRadius:5, maxBarThickness:24 },
-      ]},
-      options:{ responsive:true, maintainAspectRatio:false,
-        plugins:{ legend:{ position:'bottom', labels:{ boxWidth:8, usePointStyle:true } } },
-        scales:{ x: baseScales.x, y:{ grid:{ color: col.grid }, ticks:{ color: col.text, callback:v=>'R$'+v+'k' } } } }
-    });
-
-    if (el('chartStatus')) chartInstances.status = new Chart(el('chartStatus'), {
-      type:'doughnut',
-      data:{ labels:['Paga','Registrada','Pendente','Vencida','Falhou/Cancelada'],
-        datasets:[{ data:[178,18,9,6,3], backgroundColor:[col.success,col.info,col.warning,col.danger,col.neutral], borderWidth:0 }] },
-      options:{ responsive:true, maintainAspectRatio:false, cutout:'66%',
-        plugins:{ legend:{ position:'bottom', labels:{ boxWidth:8, usePointStyle:true, padding:10 } } } }
-    });
-
-    if (el('chartCobrancasLinha')) chartInstances.cobrancasLinha = new Chart(el('chartCobrancasLinha'), {
-      type:'line',
-      data:{ labels: MONTHS, datasets:[
-        { label:'Cobrado', data:[67.4,69,76.7,78.7,89.9,96.7], borderColor:col.accent, backgroundColor:col.accent, tension:.35, pointRadius:3 },
-        { label:'Recebido', data:[58.2,61.4,67.9,72.3,79.8,84.2], borderColor:col.success, backgroundColor:col.success, tension:.35, pointRadius:3 },
-      ]},
-      options:{ responsive:true, maintainAspectRatio:false,
-        plugins:{ legend:{ position:'bottom', labels:{ boxWidth:8, usePointStyle:true } } },
-        scales:{ x: baseScales.x, y:{ grid:{ color: col.grid }, ticks:{ color: col.text, callback:v=>'R$'+v+'k' } } } }
-    });
-
-    if (el('chartCobrancasStatus')) chartInstances.cobrancasStatus = new Chart(el('chartCobrancasStatus'), {
-      type:'doughnut',
-      data:{ labels:['Paga','Registrada','Pendente','Vencida'],
-        datasets:[{ data:[178,18,9,6], backgroundColor:[col.success,col.info,col.warning,col.danger], borderWidth:0 }] },
-      options:{ responsive:true, maintainAspectRatio:false, cutout:'62%',
-        plugins:{ legend:{ position:'bottom', labels:{ boxWidth:7, usePointStyle:true, font:{size:10} } } } }
-    });
-
-    if (el('chartNfse')) chartInstances.nfse = new Chart(el('chartNfse'), {
-      type:'bar',
-      data:{ labels: MONTHS, datasets:[{ label:'Notas emitidas', data:[104,118,121,133,129,142], backgroundColor: col.info, borderRadius:5, maxBarThickness:28 }] },
-      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } },
-        scales:{ x: baseScales.x, y: baseScales.y } }
-    });
-
-    if (el('chartNfseStatus')) chartInstances.nfseStatus = new Chart(el('chartNfseStatus'), {
-      type:'doughnut',
-      data:{ labels:['Autorizada','Em processamento','Rejeitada'],
-        datasets:[{ data:[128,9,5], backgroundColor:[col.success,col.info,col.danger], borderWidth:0 }] },
-      options:{ responsive:true, maintainAspectRatio:false, cutout:'62%',
-        plugins:{ legend:{ position:'bottom', labels:{ boxWidth:7, usePointStyle:true, font:{size:10} } } } }
-    });
-
-    if (el('chartDas')) chartInstances.das = new Chart(el('chartDas'), {
-      type:'line',
-      data:{ labels:['Fev/26','Mar/26','Abr/26','Mai/26','Jun/26'], datasets:[
-        { label:'PGDASD', data:[1680,1702,1705,1790,1842], borderColor:col.accent, backgroundColor:col.accent, tension:.35, pointRadius:3 },
-        { label:'DARF', data:[190,201,198,205,214], borderColor:col.info, backgroundColor:col.info, tension:.35, pointRadius:3 },
-      ]},
-      options:{ responsive:true, maintainAspectRatio:false,
-        plugins:{ legend:{ position:'bottom', labels:{ boxWidth:8, usePointStyle:true } } },
-        scales:{ x: baseScales.x, y:{ grid:{ color: col.grid }, ticks:{ color: col.text, callback:v=>'R$'+v } } } }
-    });
-
-    if (el('chartCertStatus')) chartInstances.certStatus = new Chart(el('chartCertStatus'), {
-      type:'bar',
-      data:{ labels:['Ativo','A expirar (≤30 dias)','Expirado'], datasets:[{ data:[2,2,2], backgroundColor:[col.success,col.warning,col.danger], borderRadius:6, maxBarThickness:36 }] },
-      options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } },
-        scales:{ x:{ grid:{ color: col.grid }, ticks:{ color: col.text, stepSize:1 } }, y:{ grid:{ display:false }, ticks:{ color: col.text } } } }
-    });
-
-    if (el('chartCertTipo')) chartInstances.certTipo = new Chart(el('chartCertTipo'), {
-      type:'doughnut',
-      data:{ labels:['A1 (fiscal)','mTLS (cobrança)'], datasets:[{ data:[4,2], backgroundColor:[col.info,col.accent], borderWidth:0 }] },
-      options:{ responsive:true, maintainAspectRatio:false, cutout:'62%',
-        plugins:{ legend:{ position:'bottom', labels:{ boxWidth:7, usePointStyle:true, font:{size:10} } } } }
-    });
-  }
-
-  window.addEventListener('load', buildCharts);
 </script>
 </body>
 </html>

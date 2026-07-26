@@ -20,7 +20,12 @@ python manage.py migrate
 pytest
 ```
 
-Opcional (async real): `celery -A config worker -l info`
+Opcional (async real):
+```bash
+celery -A config worker -l info
+celery -A config beat -l info
+```
+Beat agenda `billing.sync_open_charges` a cada **4h** (`BILLING_SYNC_INTERVAL_SECONDS=14400`): marca vencidas por `due_date` e sincroniza gateway.
 
 Postgres Docker: **5433**. Redis: **6379**.
 

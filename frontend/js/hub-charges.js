@@ -187,6 +187,27 @@
     } catch {
       summary = { total: 0, by_status: {} };
     }
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => renderCharts());
+    });
+  }
+
+  function renderCharts() {
+    if (!global.HubCharts) return;
+    const by = summary.by_status || {};
+    const col = HubCharts.palette();
+    HubCharts.renderStatusBars("chartCobrancasStatus", {
+      labels: ["Paga", "Registrada", "Pendente", "Vencida", "Cancelada", "Falhou"],
+      values: [
+        by.paid || 0,
+        by.registered || 0,
+        by.pending || 0,
+        by.overdue || 0,
+        by.cancelled || 0,
+        by.failed || 0,
+      ],
+      colors: [col.success, col.info, col.warning, col.danger, col.neutral, col.danger],
+    });
   }
 
   async function loadList() {
@@ -306,7 +327,7 @@
     );
     if (row.gateway_ref) {
       actions.appendChild(
-        iconBtn("Sincronizar gateway", "sync", () => syncCharge(row.id))
+        iconBtn("Atualizar Status", "sync", () => syncCharge(row.id))
       );
     }
     if (row.has_boleto_pdf || row.boleto_pdf_url || row.payment_url) {
@@ -383,9 +404,9 @@
               ? `<button type="button" class="btn btn-ghost btn-sm" id="btn-detail-pdf">Baixar boleto PDF</button>`
               : ""
           }
-          ${row.gateway_ref ? `<button type="button" class="btn btn-ghost btn-sm" id="btn-detail-sync">Sincronizar</button>` : ""}
+          ${row.gateway_ref ? `<button type="button" class="btn btn-ghost btn-sm" id="btn-detail-sync">Atualizar Status</button>` : ""}
         </div>
-        ${needsSync ? '<div class="full hint">Artefatos ainda vazios — use Sincronizar para buscar linha digitável/PIX no gateway.</div>' : ""}
+        ${needsSync ? '<div class="full hint">Artefatos ainda vazios — use Atualizar Status para buscar linha digitável/PIX no gateway.</div>' : ""}
       </div>`;
     body.querySelectorAll("[data-copy]").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -412,7 +433,7 @@
     const options = opts || {};
     try {
       const updated = await api.api(`/charges/${id}/sync`, { method: "POST", body: {} });
-      api.toast("Cobrança sincronizada.", "success");
+      api.toast("Status atualizado.", "success");
       await loadList();
       if (options.reopenDetails) return updated;
       return updated;
@@ -788,6 +809,8 @@
     loadLookups,
     loadPresets,
     openCreateModal,
+    openCreate: openCreateModal,
     syncCharge,
+    renderCharts,
   };
 })(window);

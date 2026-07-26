@@ -49,7 +49,7 @@
     return p + query;
   }
 
-  /** @type {{ access: string, refresh: string, tenant_slug: string, role_code: string } | null} */
+  /** @type {{ access: string, refresh: string, tenant_slug: string, tenant_legal_name: string, role_code: string, user_name: string, user_email: string } | null} */
   let session = null;
 
   const ERROR_CODES = {
@@ -67,7 +67,10 @@
           access: data.access,
           refresh: data.refresh,
           tenant_slug: data.tenant_slug || "",
+          tenant_legal_name: data.tenant_legal_name || "",
           role_code: data.role_code || "",
+          user_name: data.user_name || "",
+          user_email: data.user_email || "",
         }
       : null;
   }
@@ -279,7 +282,9 @@
     const opts = options || {};
     const method = (opts.method || "GET").toUpperCase();
     const headers = {
-      Accept: opts.blob ? "application/pdf" : "application/json",
+      Accept: opts.blob
+        ? "application/pdf, application/json;q=0.9, */*;q=0.8"
+        : "application/json",
       ...(opts.headers || {}),
     };
     if (session && session.access) {
@@ -391,12 +396,18 @@
 
   function openModal(id) {
     const el = document.getElementById(id);
-    if (el) el.classList.add("is-open");
+    if (!el) return;
+    el.classList.add("is-open");
+    el.scrollTop = 0;
+    document.body.classList.add("hub-modal-open");
   }
 
   function closeModal(id) {
     const el = document.getElementById(id);
     if (el) el.classList.remove("is-open");
+    if (!document.querySelector(".hub-modal.is-open")) {
+      document.body.classList.remove("hub-modal-open");
+    }
   }
 
   async function copyText(text) {

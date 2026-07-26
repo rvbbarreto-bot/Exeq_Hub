@@ -191,7 +191,8 @@ class InterAuthClient:
         url = f"{self.base_url}{path if path.startswith('/') else '/' + path}"
         req_headers = {
             "Authorization": f"Bearer {token}",
-            "Accept": "application/pdf",
+            # Inter Cobrança PDF: Accept application/pdf → 406; usar */*.
+            "Accept": "*/*",
             **(headers or {}),
         }
         conta = (self.credentials.conta_corrente or "").strip()

@@ -126,11 +126,11 @@ CELERY_BROKER_URL = env("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
 CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", "redis://127.0.0.1:6379/1")
 CELERY_TASK_ALWAYS_EAGER = env("CELERY_TASK_ALWAYS_EAGER", "false").lower() == "true"
 CELERY_TASK_EAGER_PROPAGATES = True
-# Beat: rede de segurança se webhook atrasar (D11). Requer celery beat rodando.
+# Beat: sincroniza cobranças abertas + marca vencidas. Default 4h. Requer celery beat.
 CELERY_BEAT_SCHEDULE = {
     "billing-sync-open-charges": {
         "task": "billing.sync_open_charges",
-        "schedule": float(env("BILLING_SYNC_INTERVAL_SECONDS", "300") or "300"),
+        "schedule": float(env("BILLING_SYNC_INTERVAL_SECONDS", "14400") or "14400"),
         "kwargs": {"limit": int(env("BILLING_SYNC_BATCH_LIMIT", "100") or "100")},
     },
 }

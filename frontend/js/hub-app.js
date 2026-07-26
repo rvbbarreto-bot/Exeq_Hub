@@ -4,6 +4,49 @@
 
   const A = () => global.HubApi;
 
+  function initialsFromName(name, email) {
+    const raw = String(name || "").trim();
+    if (raw) {
+      const parts = raw.split(/\s+/).filter(Boolean);
+      if (parts.length >= 2) {
+        return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+      }
+      return raw.slice(0, 2).toUpperCase();
+    }
+    const em = String(email || "").trim();
+    return em ? em.slice(0, 2).toUpperCase() : "—";
+  }
+
+  function refreshSessionChrome() {
+    const s = A().getSession();
+    const brand = document.getElementById("hub-brand-tenant");
+    const pill = document.getElementById("hub-tenant-pill");
+    const avatar = document.getElementById("hub-user-avatar");
+    const nameEl = document.getElementById("hub-user-name");
+    const metaEl = document.getElementById("hub-user-meta");
+
+    if (!s || !s.access) {
+      if (brand) brand.textContent = "—";
+      if (pill) pill.textContent = "—";
+      if (avatar) avatar.textContent = "—";
+      if (nameEl) nameEl.textContent = "Não autenticado";
+      if (metaEl) metaEl.textContent = "Faça login";
+      return;
+    }
+
+    const tenantLabel = s.tenant_legal_name || s.tenant_slug || "—";
+    const shortTenant =
+      s.tenant_slug ||
+      (tenantLabel.length > 28 ? `${tenantLabel.slice(0, 28)}…` : tenantLabel);
+    if (brand) brand.textContent = shortTenant;
+    if (pill) pill.textContent = tenantLabel;
+    if (avatar) avatar.textContent = initialsFromName(s.user_name, s.user_email);
+    if (nameEl) nameEl.textContent = s.user_name || s.user_email || "Usuário";
+    if (metaEl) {
+      metaEl.textContent = `${s.role_code || "—"} · ${shortTenant}`;
+    }
+  }
+
   function showLogin(message) {
     const overlay = document.getElementById("login-overlay");
     const app = document.querySelector(".app");
@@ -11,6 +54,7 @@
     if (app) app.classList.add("is-locked");
     const err = document.getElementById("login-error");
     if (err) err.textContent = message || "";
+    refreshSessionChrome();
   }
 
   function hideLogin() {
@@ -20,6 +64,7 @@
     if (app) app.classList.remove("is-locked");
     const err = document.getElementById("login-error");
     if (err) err.textContent = "";
+    refreshSessionChrome();
   }
 
   async function onLoginSubmit(ev) {
@@ -42,6 +87,7 @@
     } catch (e) {
       const { message } = api.handleApiError(e.body);
       if (err) err.textContent = message || "Falha no login.";
+      refreshSessionChrome();
     } finally {
       if (btn) btn.disabled = false;
     }
@@ -49,8 +95,12 @@
 
   async function refreshActiveScreen() {
     if (!A().isAuthenticated()) return;
+    refreshSessionChrome();
     const active = document.querySelector(".screen.active");
     if (!active) return;
+    if (active.id === "screen-dashboard" && global.HubDashboard) {
+      await HubDashboard.loadScreen();
+    }
     if (active.id === "screen-nfse" && global.HubNfse) {
       await HubNfse.loadList();
     }
@@ -91,7 +141,7 @@
     });
     document.querySelectorAll(".hub-modal").forEach((modal) => {
       modal.addEventListener("click", (ev) => {
-        if (ev.target === modal) modal.classList.remove("is-open");
+        if (ev.target === modal) A().closeModal(modal.id);
       });
     });
   }
@@ -108,6 +158,8 @@
   function init() {
     bindModals();
     bindLogout();
+    refreshSessionChrome();
+    if (global.HubDashboard) HubDashboard.bind();
     if (global.HubNfse) HubNfse.bind();
     if (global.HubCharges) HubCharges.bind();
     if (global.HubProvider) HubProvider.bind();
@@ -117,7 +169,6 @@
     const loginForm = document.getElementById("form-login");
     if (loginForm) loginForm.addEventListener("submit", onLoginSubmit);
 
-    // goTo é definido no script inline abaixo — adia o patch.
     setTimeout(() => {
       patchGoTo();
       if (!A().isAuthenticated()) {
@@ -129,7 +180,13 @@
     }, 0);
   }
 
-  global.HubApp = { showLogin, hideLogin, refreshActiveScreen, init };
+  global.HubApp = {
+    showLogin,
+    hideLogin,
+    refreshActiveScreen,
+    refreshSessionChrome,
+    init,
+  };
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);

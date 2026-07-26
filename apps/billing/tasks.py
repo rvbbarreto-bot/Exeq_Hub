@@ -4,18 +4,20 @@ from __future__ import annotations
 
 from celery import shared_task
 
-from apps.billing.models import Charge
-from apps.billing.services import sync_charge_from_gateway
 from apps.billing.exceptions import ChargeNotFoundError, GatewayRegistrationError
+from apps.billing.models import Charge
+from apps.billing.services import mark_overdue_charges, sync_charge_from_gateway
 
 
 def sync_open_charges(*, limit: int = 100) -> dict:
     """
-    Sincroniza cobranças abertas com gateway_ref (batch).
+    1) Marca vencidas por due_date (domínio Hub).
+    2) Sincroniza cobranças abertas com gateway_ref (batch).
 
     Cobre pending/registered/overdue — webhook é caminho principal; este job é fallback.
     """
     limit = max(1, min(int(limit or 100), 500))
+    overdue = mark_overdue_charges(limit=limit)
     qs = (
         Charge.objects.filter(
             status__in=[
@@ -37,7 +39,12 @@ def sync_open_charges(*, limit: int = 100) -> dict:
             errors += 1
         except Exception:  # noqa: BLE001 — batch não deve abortar
             errors += 1
-    return {"synced": ok, "errors": errors, "limit": limit}
+    return {
+        "synced": ok,
+        "errors": errors,
+        "limit": limit,
+        "marked_overdue": overdue.get("marked_overdue", 0),
+    }
 
 
 @shared_task(name="billing.sync_open_charges")

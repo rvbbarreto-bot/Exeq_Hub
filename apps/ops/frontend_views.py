@@ -1,4 +1,4 @@
-"""Serve o protótipo HTML/JS do Hub (mesma origem da API)."""
+"""Serve o HTML/JS do Hub (mesma origem da API; mesmo BD do Admin)."""
 
 from pathlib import Path
 
@@ -11,7 +11,7 @@ FRONTEND_DIR = Path(settings.BASE_DIR) / "frontend"
 
 
 class HubAppView(View):
-    """GET /app/ — layout v2 com telas NFS-e e Cobranças ligadas à API."""
+    """GET /app/ — layout Hub ligado à API do tenant."""
 
     authentication_classes = []
     permission_classes = []
@@ -27,7 +27,7 @@ class HubAppView(View):
 
 
 class HubFrontendFileView(View):
-    """GET /app/js/... — arquivos JS do frontend (fallback se static não estiver ativo)."""
+    """GET /app/js/... — arquivos JS do frontend."""
 
     authentication_classes = []
     permission_classes = []

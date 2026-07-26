@@ -106,6 +106,32 @@
     } catch {
       summary = { total: 0, by_status: {} };
     }
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => renderCharts());
+    });
+  }
+
+  function renderCharts() {
+    if (!global.HubCharts) return;
+    const by = summary.by_status || {};
+    const col = HubCharts.palette();
+    const processing =
+      (by.draft || 0) +
+      (by.pending_tax || 0) +
+      (by.queued || 0) +
+      (by.submitting || 0) +
+      (by.polling || 0);
+    HubCharts.renderStatusBars("chartNfseStatus", {
+      labels: ["Autorizada", "Em processamento", "Rejeitada", "Cancelada", "Falhou"],
+      values: [
+        by.authorized || 0,
+        processing,
+        by.rejected || 0,
+        by.cancelled || 0,
+        by.failed || 0,
+      ],
+      colors: [col.success, col.info, col.danger, col.neutral, col.warning],
+    });
   }
 
   async function loadList() {
@@ -522,5 +548,6 @@
     loadList,
     loadLookups,
     openCreateModal,
+    renderCharts,
   };
 })(window);
