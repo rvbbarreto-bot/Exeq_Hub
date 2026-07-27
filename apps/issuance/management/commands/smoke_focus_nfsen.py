@@ -42,7 +42,12 @@ class Command(BaseCommand):
             help="Justificativa Focus (15-255 chars)",
         )
         parser.add_argument("--tenant", default="smoke-atibaia")
-        parser.add_argument("--amount-cents", type=int, default=100)
+        parser.add_argument(
+            "--amount-cents",
+            type=int,
+            default=1000,
+            help="Valor em centavos para NFS-e de teste (obrigatório < R$ 15,00 = 1500).",
+        )
         parser.add_argument(
             "--cnpj",
             default="",
@@ -77,6 +82,15 @@ class Command(BaseCommand):
                 "Sem --emit/--emit-and-cancel/--cancel: só conectividade."
             )
             return
+
+        max_cents = int(getattr(settings, "NFSE_TEST_MAX_AMOUNT_CENTS", 1499) or 1499)
+        amount_cents = int(options["amount_cents"])
+        if amount_cents <= 0 or amount_cents > max_cents:
+            raise CommandError(
+                f"Emissões de teste exigem 1..{max_cents} centavos "
+                f"(menor que R$ 15,00). Recebido: {amount_cents}."
+            )
+        options["amount_cents"] = amount_cents
 
         cnpj = "".join(ch for ch in (options["cnpj"] or "") if ch.isdigit())
         if len(cnpj) != 14:

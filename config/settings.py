@@ -103,6 +103,7 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
+STATICFILES_DIRS = [BASE_DIR / "static"]
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
@@ -114,6 +115,7 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_THROTTLE_RATES": {
         "webhook_gateway": env("WEBHOOK_GATEWAY_THROTTLE", "60/min"),
+        "cadastral_lookup": env("CADASTRO_LOOKUP_THROTTLE", "30/min"),
     },
 }
 
@@ -135,6 +137,21 @@ CELERY_BEAT_SCHEDULE = {
     },
 }
 NF_SYNC_PROCESSING = env("NF_SYNC_PROCESSING", "false").lower() == "true"
+# Reforma Tributária (NFS-e Nacional): off | shadow (calcula+snapshot, não envia) | emit
+RTC_NFSEN_MODE = env("RTC_NFSEN_MODE", "shadow").strip().lower()
+RTC_ENFORCE_NATIONAL_CATALOG = (
+    env("RTC_ENFORCE_NATIONAL_CATALOG", "true").lower() == "true"
+)
+# Alíquotas-teste 2026 (ADCT / LC 214) — fração decimal (0.9% = 0.009)
+RTC_TEST_CBS_RATE = env("RTC_TEST_CBS_RATE", "0.009")
+RTC_TEST_IBS_RATE = env("RTC_TEST_IBS_RATE", "0.001")
+# Se serviço está na Lista Nacional e não há regra com o mesmo código,
+# usa regra municipal do perfil/IBGE/regime (ISS da cidade).
+TAX_RULE_NATIONAL_FALLBACK = (
+    env("TAX_RULE_NATIONAL_FALLBACK", "true").lower() == "true"
+)
+# Teto para emissões smoke/fábrica de teste (centavos). R$ 15,00 = 1500 → max 1499.
+NFSE_TEST_MAX_AMOUNT_CENTS = int(env("NFSE_TEST_MAX_AMOUNT_CENTS", "1499") or "1499")
 WEBHOOK_GATEWAY_SECRET = env("WEBHOOK_GATEWAY_SECRET", "dev-webhook-secret")
 # Fail-closed em DEBUG=False (ou FORCE_SECURE_SECRETS=true). Ver shared/security_checks.py
 FORCE_SECURE_SECRETS = env("FORCE_SECURE_SECRETS", "false").lower() == "true"
@@ -216,6 +233,18 @@ FOCUS_API_BASE_URL = env(
 )
 FOCUS_API_TOKEN = env("FOCUS_API_TOKEN", "")  # never commit real tokens
 RECEITA_HTTP_MODE = env("RECEITA_HTTP_MODE", "stub")  # stub | http (SERPRO)
+# Consulta cadastral CNPJ (separada de DAS/DARF). stub | http
+CADASTRO_HTTP_MODE = env("CADASTRO_HTTP_MODE", "http")
+CADASTRO_CNPJ_PROVIDER = env("CADASTRO_CNPJ_PROVIDER", "brasilapi")
+CADASTRO_CNPJ_BASE_URL = env(
+    "CADASTRO_CNPJ_BASE_URL",
+    "https://brasilapi.com.br/api/cnpj/v1",
+)
+CADASTRO_CNPJ_API_TOKEN = env("CADASTRO_CNPJ_API_TOKEN", "")
+CADASTRO_CNPJ_TIMEOUT = float(env("CADASTRO_CNPJ_TIMEOUT", "3") or "3")
+CADASTRO_CEP_BASE_URL = env("CADASTRO_CEP_BASE_URL", "https://viacep.com.br/ws")
+CADASTRO_LOOKUP_CACHE_HOURS = int(env("CADASTRO_LOOKUP_CACHE_HOURS", "24") or "24")
+
 SERPRO_AUTH_URL = env(
     "SERPRO_AUTH_URL",
     "https://autenticacao.sapi.serpro.gov.br/authenticate",

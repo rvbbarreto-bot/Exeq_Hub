@@ -1,0 +1,41 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Cadastros · EXEQ Hub{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'css/exeq-tokens.css' %}">
+</head>
+<body class="exeq-cadastro">
+  <div class="exeq-shell">
+    {% block topbar %}
+    <header class="exeq-topbar">
+      <a class="exeq-brand" href="{% url 'cadastro-home' %}">
+        EXEQ Hub
+        <span>{{ request.session.cadastro_tenant_name|default:"Cadastros" }} · {{ request.session.cadastro_user_name|default:"" }}</span>
+      </a>
+      <nav class="exeq-nav">
+        <a href="{% url 'cadastro-provider-list' %}">Prestadores</a>
+        <a href="{% url 'cadastro-customer-list' %}">Tomadores</a>
+        <form method="post" action="{% url 'cadastro-logout' %}" style="display:inline;">
+          {% csrf_token %}
+          <button type="submit" class="exeq-btn">Sair</button>
+        </form>
+      </nav>
+    </header>
+    {% endblock %}
+
+    {% if messages %}
+    <ul class="exeq-messages">
+      {% for message in messages %}
+      <li class="{% if message.tags %}{{ message.tags }}{% endif %}">{{ message }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+
+    {% block content %}{% endblock %}
+  </div>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

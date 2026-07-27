@@ -18,6 +18,7 @@ admin.site.index_title = "Emissão NFS-e e cadastros"
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    path("cadastros/", include("apps.master_data.web_urls")),
     path("app/", HubAppView.as_view(), name="hub-app"),
     path("app/<path:relpath>", HubFrontendFileView.as_view(), name="hub-app-file"),
     path("api/v1/openapi.json", OpenAPIJsonView.as_view()),

@@ -117,6 +117,13 @@
     if (active.id === "screen-das" && global.HubDas) {
       await HubDas.loadList();
     }
+    if (active.id === "screen-prestadores" && global.HubCadastros) {
+      await HubCadastros.loadProviders();
+    }
+    if (active.id === "screen-tomadores" && global.HubCadastros) {
+      await HubCadastros.loadCustomers();
+    }
+    if (global.HubCadastros) HubCadastros.applyWriterUi();
   }
 
   function patchGoTo() {
@@ -165,12 +172,17 @@
     if (global.HubProvider) HubProvider.bind();
     if (global.HubCertificates) HubCertificates.bind();
     if (global.HubDas) HubDas.bind();
+    if (global.HubCadastros) HubCadastros.bind();
 
     const loginForm = document.getElementById("form-login");
     if (loginForm) loginForm.addEventListener("submit", onLoginSubmit);
 
     setTimeout(() => {
       patchGoTo();
+      const hash = (location.hash || "").replace(/^#/, "");
+      if (hash && typeof global.goTo === "function") {
+        global.goTo(hash);
+      }
       if (!A().isAuthenticated()) {
         showLogin();
       } else {

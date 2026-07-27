@@ -29,6 +29,14 @@ Beat agenda `billing.sync_open_charges` a cada **4h** (`BILLING_SYNC_INTERVAL_SE
 
 Postgres Docker: **5433**. Redis: **6379**.
 
+## Cadastros (Prestador / Tomador)
+
+No Hub unificado (`/app/`), menu **Cadastros → Prestadores / Tomadores** — mesmo login JWT e isolamento por tenant.
+
+- API: `POST /api/v1/master-data/providers/lookup-document` e `.../customers/lookup-document`
+- Escrita: papéis `tenant_admin` e `operator` (readonly/accountant só listam)
+- `/cadastros/` redireciona para `/app/#prestadores` (legado)
+
 ## API
 
 - `POST /api/v1/auth/login` — `{tenant_slug, email, password}`
@@ -77,6 +85,8 @@ Ao autorizar: persiste DANFSe PDF + XML em `NfArtifact` + `StoredFile` (`nf_pdf`
 5. `tenant.focus_layout=nfsen` (default) → `POST /v2/nfsen`. Municipal: `focus_layout=nfse` → `/v2/nfse`.
 6. Municípios nacionais: `NFSE_NATIONAL_IBGE_CODES` (default inclui Atibaia `3504107`).
 7. Serviços: preencha `codigo_tributacao_nacional_iss` no catálogo (distinto de `lc116_item`).
+   Lista nacional (Anexo B): Admin → **Serviços do catálogo** → **Importar Anexo B (XLSX)** (versionável).
+   CLI: `python manage.py import_national_service_list caminho.xlsx --label 2026-01-22`
 
 Webhook Focus (além do poll): `POST /api/v1/webhooks/focus-nfse` com header `X-Focus-Authorization` = `FOCUS_WEBHOOK_SECRET`.
 

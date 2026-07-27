@@ -26,6 +26,16 @@
   let hasPrev = false;
   let pageCount = 0;
 
+  /** Autocomplete Serviço */
+  const serviceAc = {
+    items: /** @type {any[]} */ ([]),
+    filtered: /** @type {any[]} */ ([]),
+    activeIndex: -1,
+    open: false,
+    maxVisible: 60,
+    bound: false,
+  };
+
   const TERMINAL = new Set(["authorized", "rejected", "cancelled", "failed"]);
 
   function statusBadge(status) {
@@ -68,8 +78,8 @@
   function fillSelects() {
     fillSelect("nf-provider", caches.providers, (p) => p.trade_name || p.legal_name || p.document);
     fillSelect("nf-customer", caches.customers, (c) => c.name || c.document);
-    fillSelect("nf-service", caches.services, (s) => s.description || s.service_code);
     fillSelect("nf-profile", caches.profiles, (p) => p.name || p.id);
+    setServiceItems(caches.services);
   }
 
   function fillSelect(id, list, labelFn) {
@@ -86,14 +96,306 @@
     if (current) el.value = current;
   }
 
+  /** item.subitem.desdobro — ex.: 01.03.01 */
+  function formatNationalDisplayCode(codigo) {
+    const digits = String(codigo || "").replace(/\D/g, "");
+    if (digits.length < 5) return String(codigo || "").trim();
+    const desdobro = digits.slice(-2);
+    const subitem = digits.slice(-4, -2);
+    const item = digits.slice(0, -4) || "0";
+    return (
+      String(Number(item)).padStart(2, "0") +
+      "." +
+      subitem.padStart(2, "0") +
+      "." +
+      desdobro.padStart(2, "0")
+    );
+  }
+
+  function serviceCode(s) {
+    if (!s) return "";
+    const raw = s.codigo_tributacao_nacional_iss || s.service_code || "";
+    return formatNationalDisplayCode(raw);
+  }
+
+  function serviceLabel(s) {
+    if (!s) return "—";
+    if (s.display_label) return s.display_label;
+    const code = serviceCode(s);
+    const desc = (s.description || "").trim();
+    if (code && desc) return code + " - " + desc;
+    return desc || code || s.service_code || "—";
+  }
+
+  function normalizeSearch(text) {
+    return String(text || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
+  }
+
+  function serviceSearchBlob(s) {
+    const code = serviceCode(s);
+    const raw = s.codigo_tributacao_nacional_iss || s.service_code || "";
+    return normalizeSearch(
+      [code, raw, s.service_code, s.lc116_item, s.description, s.display_label]
+        .filter(Boolean)
+        .join(" ")
+    );
+  }
+
   function customerName(id) {
     const c = caches.byId.customers[id];
     return c ? c.name || c.document : String(id || "").slice(0, 8);
   }
 
   function serviceName(id) {
-    const s = caches.byId.services[id];
-    return s ? s.description || s.service_code : "—";
+    return serviceLabel(caches.byId.services[id]);
+  }
+
+  function resolveIbgeCode(providerId) {
+    const p = caches.byId.providers[providerId];
+    const addr = (p && p.address) || {};
+    const raw = addr.codigo_municipio_ibge || addr.ibge || "";
+    const digits = String(raw).replace(/\D/g, "").slice(0, 7);
+    return digits.length === 7 ? digits : "3504107";
+  }
+
+  function serviceComboEls() {
+    return {
+      root: document.getElementById("nf-service-combo"),
+      hidden: document.getElementById("nf-service"),
+      input: document.getElementById("nf-service-search"),
+      list: document.getElementById("nf-service-list"),
+      clear: document.getElementById("nf-service-clear"),
+    };
+  }
+
+  function setServiceItems(list) {
+    serviceAc.items = Array.isArray(list) ? list.slice() : [];
+    const { hidden } = serviceComboEls();
+    const selectedId = hidden && hidden.value;
+    if (selectedId && caches.byId.services[selectedId]) {
+      syncServiceInputLabel(caches.byId.services[selectedId]);
+    }
+  }
+
+  function resetServiceCombo() {
+    const { root, hidden, input, list } = serviceComboEls();
+    if (hidden) hidden.value = "";
+    if (input) input.value = "";
+    if (root) root.classList.remove("has-value", "is-open");
+    if (list) {
+      list.innerHTML = "";
+      list.hidden = true;
+    }
+    serviceAc.filtered = [];
+    serviceAc.activeIndex = -1;
+    serviceAc.open = false;
+    if (input) input.setAttribute("aria-expanded", "false");
+  }
+
+  function syncServiceInputLabel(service) {
+    const { root, hidden, input } = serviceComboEls();
+    if (!service || !hidden || !input) return;
+    hidden.value = service.id;
+    input.value = serviceLabel(service);
+    if (root) root.classList.add("has-value");
+  }
+
+  function selectService(service) {
+    if (!service) return;
+    syncServiceInputLabel(service);
+    closeServiceList();
+  }
+
+  function clearServiceSelection() {
+    resetServiceCombo();
+    const { input } = serviceComboEls();
+    if (input) input.focus();
+  }
+
+  function openServiceList() {
+    const { root, input, list } = serviceComboEls();
+    if (!root || !list || !input) return;
+    serviceAc.open = true;
+    root.classList.add("is-open");
+    list.hidden = false;
+    input.setAttribute("aria-expanded", "true");
+  }
+
+  function closeServiceList() {
+    const { root, input, list } = serviceComboEls();
+    serviceAc.open = false;
+    serviceAc.activeIndex = -1;
+    if (root) root.classList.remove("is-open");
+    if (list) list.hidden = true;
+    if (input) input.setAttribute("aria-expanded", "false");
+  }
+
+  function filterServices(query) {
+    const q = normalizeSearch(query);
+    const qDigits = q.replace(/\D/g, "");
+    let list = serviceAc.items;
+    if (q) {
+      list = serviceAc.items.filter((s) => {
+        const blob = serviceSearchBlob(s);
+        if (blob.includes(q)) return true;
+        if (qDigits.length >= 2) {
+          const raw = String(s.codigo_tributacao_nacional_iss || s.service_code || "").replace(
+            /\D/g,
+            ""
+          );
+          const code = serviceCode(s).replace(/\D/g, "");
+          if (raw.includes(qDigits) || code.includes(qDigits)) return true;
+        }
+        return false;
+      });
+    }
+    serviceAc.filtered = list;
+    serviceAc.activeIndex = list.length ? 0 : -1;
+    renderServiceList();
+    openServiceList();
+  }
+
+  function renderServiceList() {
+    const { list } = serviceComboEls();
+    if (!list) return;
+    list.innerHTML = "";
+    const total = serviceAc.filtered.length;
+    if (!total) {
+      const empty = document.createElement("li");
+      empty.className = "ac-combo-empty";
+      empty.textContent = "Nenhum serviço encontrado.";
+      list.appendChild(empty);
+      return;
+    }
+    const slice = serviceAc.filtered.slice(0, serviceAc.maxVisible);
+    slice.forEach((s, idx) => {
+      const li = document.createElement("li");
+      li.setAttribute("role", "presentation");
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "ac-combo-option" + (idx === serviceAc.activeIndex ? " is-active" : "");
+      btn.setAttribute("role", "option");
+      btn.setAttribute("data-id", s.id);
+      btn.setAttribute("aria-selected", idx === serviceAc.activeIndex ? "true" : "false");
+      const code = document.createElement("span");
+      code.className = "ac-combo-code";
+      code.textContent = serviceCode(s) || s.service_code || "—";
+      const desc = document.createElement("span");
+      desc.className = "ac-combo-desc";
+      desc.textContent = (s.description || "").trim() || serviceLabel(s);
+      btn.appendChild(code);
+      btn.appendChild(desc);
+      btn.addEventListener("mousedown", (ev) => {
+        ev.preventDefault();
+        selectService(s);
+      });
+      li.appendChild(btn);
+      list.appendChild(li);
+    });
+    if (total > serviceAc.maxVisible) {
+      const meta = document.createElement("li");
+      meta.className = "ac-combo-meta";
+      meta.textContent =
+        "Mostrando " + serviceAc.maxVisible + " de " + total + ". Refine a busca.";
+      list.appendChild(meta);
+    }
+  }
+
+  function moveServiceActive(delta) {
+    if (!serviceAc.filtered.length) return;
+    const max = Math.min(serviceAc.filtered.length, serviceAc.maxVisible) - 1;
+    let next = serviceAc.activeIndex + delta;
+    if (next < 0) next = max;
+    if (next > max) next = 0;
+    serviceAc.activeIndex = next;
+    renderServiceList();
+    const { list } = serviceComboEls();
+    const active = list && list.querySelector(".ac-combo-option.is-active");
+    if (active && typeof active.scrollIntoView === "function") {
+      active.scrollIntoView({ block: "nearest" });
+    }
+  }
+
+  function commitServiceFromInput() {
+    const { hidden, input } = serviceComboEls();
+    if (!hidden || !input) return;
+    if (hidden.value && caches.byId.services[hidden.value]) {
+      syncServiceInputLabel(caches.byId.services[hidden.value]);
+      return;
+    }
+    const q = normalizeSearch(input.value);
+    if (!q) {
+      resetServiceCombo();
+      return;
+    }
+    const exact = serviceAc.items.find((s) => {
+      const label = normalizeSearch(serviceLabel(s));
+      const code = normalizeSearch(serviceCode(s));
+      return label === q || code === q || normalizeSearch(s.service_code) === q;
+    });
+    if (exact) {
+      selectService(exact);
+      return;
+    }
+    if (serviceAc.filtered.length === 1) {
+      selectService(serviceAc.filtered[0]);
+      return;
+    }
+    input.value = "";
+    hidden.value = "";
+    const { root } = serviceComboEls();
+    if (root) root.classList.remove("has-value");
+  }
+
+  function bindServiceAutocomplete() {
+    if (serviceAc.bound) return;
+    const { root, input, clear } = serviceComboEls();
+    if (!root || !input) return;
+    serviceAc.bound = true;
+
+    input.addEventListener("focus", () => {
+      filterServices(input.value);
+    });
+    input.addEventListener("input", () => {
+      const { hidden, root: r } = serviceComboEls();
+      if (hidden) hidden.value = "";
+      if (r) r.classList.remove("has-value");
+      filterServices(input.value);
+    });
+    input.addEventListener("keydown", (ev) => {
+      if (ev.key === "ArrowDown") {
+        ev.preventDefault();
+        if (!serviceAc.open) filterServices(input.value);
+        else moveServiceActive(1);
+      } else if (ev.key === "ArrowUp") {
+        ev.preventDefault();
+        if (serviceAc.open) moveServiceActive(-1);
+      } else if (ev.key === "Enter") {
+        if (serviceAc.open && serviceAc.activeIndex >= 0) {
+          ev.preventDefault();
+          const s = serviceAc.filtered[serviceAc.activeIndex];
+          if (s) selectService(s);
+        }
+      } else if (ev.key === "Escape") {
+        closeServiceList();
+      }
+    });
+    input.addEventListener("blur", () => {
+      setTimeout(() => {
+        closeServiceList();
+        commitServiceFromInput();
+      }, 120);
+    });
+    if (clear) {
+      clear.addEventListener("mousedown", (ev) => {
+        ev.preventDefault();
+        clearServiceSelection();
+      });
+    }
   }
 
   async function loadSummary() {
@@ -300,12 +602,13 @@
     if (!form || !out) return;
     const profileId = form.fiscal_profile_id.value;
     const serviceId = form.service_id.value;
-    const ibge = form.ibge_code.value.trim();
+    const providerId = form.provider_id.value;
+    const ibge = resolveIbgeCode(providerId);
     const competence = form.competence_date.value;
     const service = caches.byId.services[serviceId];
     const profile = caches.byId.profiles[profileId];
-    if (!profileId || !serviceId || !ibge || !competence || !service || !profile) {
-      out.textContent = "Preencha perfil, serviço, IBGE e competência para pré-visualizar o imposto.";
+    if (!profileId || !serviceId || !providerId || !competence || !service || !profile) {
+      out.textContent = "Preencha prestador, perfil, serviço e competência para pré-visualizar o imposto.";
       return;
     }
     out.textContent = "Resolvendo regra fiscal…";
@@ -343,13 +646,20 @@
       return;
     }
 
+    if (!form.service_id.value) {
+      api.showFieldErrors(form, { service_id: "Selecione um serviço da lista." });
+      const search = document.getElementById("nf-service-search");
+      if (search) search.focus();
+      return;
+    }
+
     const body = {
       idempotency_key: ensureIdempotency(),
       provider_id: form.provider_id.value,
       customer_id: form.customer_id.value,
       service_id: form.service_id.value,
       fiscal_profile_id: form.fiscal_profile_id.value,
-      ibge_code: form.ibge_code.value.trim(),
+      ibge_code: resolveIbgeCode(form.provider_id.value),
       competence_date: form.competence_date.value,
       amount_cents,
     };
@@ -367,6 +677,7 @@
       await startPolling(created.id, statusEl);
       api.closeModal("modal-nfse");
       form.reset();
+      resetServiceCombo();
       await loadList();
     } catch (err) {
       const { message, fields } = api.handleApiError(err.body);
@@ -483,12 +794,11 @@
       form.reset();
       A().clearFieldErrors(form);
     }
+    resetServiceCombo();
     const statusEl = document.getElementById("nf-emit-status");
     if (statusEl) statusEl.textContent = "";
     const preview = document.getElementById("nf-tax-preview");
     if (preview) preview.textContent = "";
-    const ibge = form && form.ibge_code;
-    if (ibge && !ibge.value) ibge.value = "3504107";
 
     // Competência: sem min=hoje — Admin permite retroativa.
     const competence = document.getElementById("nf-competence");
@@ -510,6 +820,7 @@
   }
 
   function bind() {
+    bindServiceAutocomplete();
     const btn = document.getElementById("btn-emitir-nfse");
     if (btn) btn.addEventListener("click", openCreateModal);
     const form = document.getElementById("form-nfse");

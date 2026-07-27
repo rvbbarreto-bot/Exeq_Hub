@@ -19,6 +19,9 @@
     "/billing/providers/inter/test-connection",
     "/billing/providers/inter/webhook",
     "/billing/providers/inter/webhook/callbacks/retry",
+    "/master-data/providers/lookup-document",
+    "/master-data/customers/lookup-document",
+    "/master-data/lookup-cep",
     "/webhooks/gateway",
     "/webhooks/focus-nfse",
     "/openapi.json",
@@ -59,6 +62,12 @@
     gateway: "Falha ao comunicar com o gateway de cobrança.",
     authentication_failed: "Sessão expirada. Faça login novamente.",
     min_amount: "Valor abaixo do mínimo permitido.",
+    cadastro_document_invalid: "Documento inválido (dígito verificador).",
+    cadastro_cpf_lookup_not_supported:
+      "Consulta por CPF não disponível (LGPD). Preencha manualmente.",
+    cadastro_not_found: "CNPJ não encontrado na base cadastral.",
+    cadastro_provider_unavailable:
+      "Consulta cadastral indisponível. Preencha os dados manualmente.",
   };
 
   function setSession(data) {

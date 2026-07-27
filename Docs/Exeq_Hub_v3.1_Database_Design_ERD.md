@@ -1028,6 +1028,38 @@ Toda tabela MVP deve ter:
 
 ---
 
+## 23.1 Amend RTC (ADR-RTC-001) — tabelas globais Reforma Tributária
+
+> Não substituem `municipal_tax_rules`. São referência normativa nacional (não tenant-owned).
+
+### `rtc_normative_versions`
+
+| Campo | Constraint |
+|-------|------------|
+| version_label | UNIQUE |
+| status | `draft\|published\|superseded` |
+| nt_refs | CharField |
+| changelog | Text |
+| owner | CharField |
+| published_at | null |
+
+### `rtc_classification_codes`
+
+| Campo | Constraint |
+|-------|------------|
+| version_id | FK CASCADE |
+| kind | `cst\|c_class_trib\|c_ind_op` |
+| code | CharField |
+| description | CharField |
+| requires_group | CharField (ex. gIBSCBS) |
+| is_active | bool |
+
+**UNIQUE** `(version_id, kind, code)`.
+
+`FiscalRuleSnapshot.snapshot` passa a aceitar chaves `forensic`, `rtc`, `national_catalog` (JSON evolutivo; sem migration de coluna).
+
+---
+
 ## 24. Histórico
 
 | Versão | Mudança |
@@ -1035,6 +1067,7 @@ Toda tabela MVP deve ter:
 | 3.0 | Outline conceitual (não implementável) |
 | **3.1.0** | DER completo para kickoff: Platform + Core + Fiscal + Issuance + Billing + DAS; Membership; Certificates; Outbox; RLS; glossário; ADRs DB-001..007 |
 | **3.1.1** | `electronic_proxies` (e-CAC) + ADR-DB-008; gate DAS HTTP SERPRO |
+| **3.1.2** | Amend RTC (§23.1): `rtc_normative_versions` + `rtc_classification_codes` (ADR-RTC-001) |
 
 ---
 

@@ -1,9 +1,14 @@
 from django.conf import settings
 from django.db import transaction
 
-from apps.fiscal.exceptions import TaxRuleNotFoundError
+from apps.fiscal.exceptions import (
+    NationalCatalogError,
+    RtcClassificationError,
+    TaxRuleNotFoundError,
+)
 from apps.fiscal.models import FiscalProfile, TaxRuleCatalog
-from apps.fiscal.tax_engine import resolve_tax_rule, rule_to_payload
+from apps.fiscal.tax_engine import resolve_tax_rule_detailed, rule_to_payload
+from apps.fiscal.rtc_emission import build_rtc_emission_context, rtc_mode
 from apps.issuance.exceptions import (
     CancelJustificationError,
     FiscalProfileRequiredError,
@@ -27,6 +32,35 @@ def _enqueue_process(issue: NfIssue) -> None:
     transaction.on_commit(
         lambda: process_nf_issue.delay(str(issue.tenant_id), str(issue.id))
     )
+
+
+def _refresh_forensic_after_emit(issue: NfIssue, *, layout: str) -> None:
+    """Pilar 4 — amarra hash do payload enviado ao snapshot forense."""
+    from apps.fiscal.rtc_forensic import build_forensic_snapshot, merge_snapshot
+
+    snap = getattr(issue, "rule_snapshot", None)
+    if snap is None:
+        return
+    base = dict(snap.snapshot or {})
+    forensic = build_forensic_snapshot(
+        iss_payload={k: v for k, v in base.items() if k not in {"forensic", "rtc", "national_catalog"}},
+        rtc_block=base.get("rtc"),
+        national_catalog=base.get("national_catalog"),
+        internal_payload=issue.internal_payload,
+        focus_ref=issue.focus_ref or "",
+        layout=layout,
+    )
+    snap.snapshot = merge_snapshot(
+        {k: v for k, v in base.items() if k not in {"forensic", "rtc", "national_catalog"}},
+        forensic,
+    )
+    snap.save(update_fields=["snapshot"])
+    params = dict(issue.resolved_params or {})
+    params["forensic"] = forensic
+    params["rtc"] = forensic.get("rtc")
+    params["national_catalog"] = forensic.get("national_catalog")
+    issue.resolved_params = params
+    issue.save(update_fields=["resolved_params", "updated_at"])
 
 
 @transaction.atomic
@@ -69,13 +103,14 @@ def create_nf_issue(
     transition(issue, to_status=NfIssue.Status.PENDING_TAX, actor="api")
 
     try:
-        rule = resolve_tax_rule(
+        rule, resolve_meta = resolve_tax_rule_detailed(
             tenant=tenant,
             fiscal_profile=fiscal_profile,
             ibge_code=ibge_code,
             service_code=service.service_code,
             tax_regime=fiscal_profile.tax_regime,
             competence_date=competence_date,
+            service=service,
         )
     except TaxRuleNotFoundError:
         issue.rejection_code = "TAX_RULE_NOT_FOUND"
@@ -89,7 +124,54 @@ def create_nf_issue(
         return issue
 
     catalog = TaxRuleCatalog.objects.get(id=rule.catalog_id)
-    payload = rule_to_payload(rule)
+    iss_payload = rule_to_payload(rule, resolve_meta=resolve_meta)
+    if service.codigo_tributacao_nacional_iss:
+        iss_payload["codigo_tributacao_nacional_iss"] = (
+            service.codigo_tributacao_nacional_iss
+        )
+
+    route = resolve_nfse_route(
+        ibge_code=ibge_code,
+        tenant=tenant,
+        tax_regime=fiscal_profile.tax_regime,
+        competence_date=competence_date,
+    )
+    layout = getattr(route, "layout", "") or "nfsen"
+
+    try:
+        rtc_ctx = build_rtc_emission_context(
+            service=service,
+            rule=rule,
+            amount_cents=amount_cents,
+            competence_date=competence_date,
+            iss_payload=iss_payload,
+            layout=layout,
+        )
+    except (NationalCatalogError, RtcClassificationError) as exc:
+        issue.rejection_code = getattr(exc, "code", "rtc_error") or "rtc_error"
+        issue.save(update_fields=["rejection_code", "updated_at"])
+        transition(
+            issue,
+            to_status=NfIssue.Status.REJECTED,
+            actor="api",
+            metadata={"code": issue.rejection_code, "detail": str(exc)},
+        )
+        return issue
+
+    if rtc_mode() == "emit":
+        classification = (rtc_ctx["params"].get("rtc") or {}).get("classification") or {}
+        if classification.get("status") != "ok":
+            issue.rejection_code = "rtc_classification_unresolved"
+            issue.save(update_fields=["rejection_code", "updated_at"])
+            transition(
+                issue,
+                to_status=NfIssue.Status.REJECTED,
+                actor="api",
+                metadata={"code": issue.rejection_code},
+            )
+            return issue
+
+    payload = rtc_ctx["params"]
     FiscalRuleSnapshot.objects.create(
         tenant=tenant,
         nf_issue=issue,
@@ -159,6 +241,7 @@ def process_queued_issue(issue: NfIssue) -> NfIssue:
             "updated_at",
         ]
     )
+    _refresh_forensic_after_emit(issue, layout=route.layout)
     transition(issue, to_status=NfIssue.Status.POLLING, actor="worker")
     if result.status == "authorized":
         transition(
@@ -274,13 +357,14 @@ def reprocess_nf_issue(issue: NfIssue) -> NfIssue:
     # Re-enter create path tax resolution by rebuilding from current fields
     profile = issue.fiscal_profile
     try:
-        rule = resolve_tax_rule(
+        rule, resolve_meta = resolve_tax_rule_detailed(
             tenant=issue.tenant,
             fiscal_profile=profile,
             ibge_code=issue.ibge_code,
             service_code=issue.service.service_code,
             tax_regime=profile.tax_regime,
             competence_date=issue.competence_date,
+            service=issue.service,
         )
     except TaxRuleNotFoundError:
         issue.rejection_code = "TAX_RULE_NOT_FOUND"
@@ -294,7 +378,11 @@ def reprocess_nf_issue(issue: NfIssue) -> NfIssue:
         return issue
 
     catalog = TaxRuleCatalog.objects.get(id=rule.catalog_id)
-    payload = rule_to_payload(rule)
+    payload = rule_to_payload(rule, resolve_meta=resolve_meta)
+    if issue.service.codigo_tributacao_nacional_iss:
+        payload["codigo_tributacao_nacional_iss"] = (
+            issue.service.codigo_tributacao_nacional_iss
+        )
     FiscalRuleSnapshot.objects.update_or_create(
         nf_issue=issue,
         defaults={

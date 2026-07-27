@@ -150,3 +150,83 @@ class MunicipalTaxRule(TenantOwnedModel):
 
     def __str__(self) -> str:
         return f"{self.ibge_code}:{self.service_code}"
+
+
+class RtcNormativeVersion(models.Model):
+    """Pilar 3 — pacote normativo RTC (NT / LC) versionado globalmente."""
+
+    class Status(models.TextChoices):
+        DRAFT = "draft", "Rascunho"
+        PUBLISHED = "published", "Publicado"
+        SUPERSEDED = "superseded", "Substituído"
+
+    version_label = models.CharField(max_length=64, unique=True, verbose_name="Rótulo")
+    status = models.CharField(
+        max_length=16, choices=Status.choices, default=Status.DRAFT, verbose_name="Status"
+    )
+    nt_refs = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name="Referências NT",
+        help_text="Ex.: SE/CGNFS-e NT 009; LC 214/2025; ADCT art. 125",
+    )
+    changelog = models.TextField(blank=True, default="", verbose_name="Changelog")
+    owner = models.CharField(
+        max_length=128, blank=True, default="", verbose_name="Responsável conformidade"
+    )
+    published_at = models.DateTimeField(null=True, blank=True, verbose_name="Publicado em")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Versão normativa RTC"
+        verbose_name_plural = "Versões normativas RTC"
+        ordering = ["-published_at", "-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.version_label} ({self.status})"
+
+
+class RtcClassificationCode(models.Model):
+    """Pilar 2 — CST / cClassTrib / cIndOp oficiais por versão normativa."""
+
+    class Kind(models.TextChoices):
+        CST = "cst", "CST IBS/CBS"
+        C_CLASS_TRIB = "c_class_trib", "cClassTrib"
+        C_IND_OP = "c_ind_op", "cIndOp"
+
+    version = models.ForeignKey(
+        RtcNormativeVersion,
+        on_delete=models.CASCADE,
+        related_name="codes",
+        verbose_name="Versão normativa",
+    )
+    kind = models.CharField(max_length=16, choices=Kind.choices, verbose_name="Tipo")
+    code = models.CharField(max_length=16, verbose_name="Código")
+    description = models.CharField(max_length=255, blank=True, default="", verbose_name="Descrição")
+    requires_group = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        verbose_name="Grupo XML exigido",
+        help_text="Ex.: gIBSCBS, gIBSCBSMono, vazio se não aplicável",
+    )
+    is_active = models.BooleanField(default=True, verbose_name="Ativo")
+
+    class Meta:
+        verbose_name = "Código classificação RTC"
+        verbose_name_plural = "Códigos classificação RTC"
+        ordering = ["kind", "code"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["version", "kind", "code"],
+                name="uq_rtc_classification_version_kind_code",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["kind", "code"], name="idx_rtc_class_kind_code"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.kind}:{self.code}"

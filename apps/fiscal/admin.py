@@ -1,6 +1,13 @@
 from django.contrib import admin, messages
 
-from apps.fiscal.models import FiscalProfile, MunicipalTaxRule, TaxRuleCatalog
+from apps.fiscal.models import (
+    FiscalProfile,
+    MunicipalTaxRule,
+    RtcClassificationCode,
+    RtcNormativeVersion,
+    TaxRuleCatalog,
+)
+from apps.fiscal.rtc_classification import publish_rtc_version, seed_minimal_rtc_pack
 from apps.fiscal.tax_engine import publish_catalog
 
 
@@ -60,3 +67,36 @@ class MunicipalTaxRuleAdmin(admin.ModelAdmin):
     list_filter = ("ibge_code", "tax_regime", "tenant")
     search_fields = ("ibge_code", "service_code", "municipio_nome")
     autocomplete_fields = ("tenant", "catalog", "fiscal_profile")
+
+
+class RtcClassificationCodeInline(admin.TabularInline):
+    model = RtcClassificationCode
+    extra = 0
+    fields = ("kind", "code", "description", "requires_group", "is_active")
+
+
+@admin.register(RtcNormativeVersion)
+class RtcNormativeVersionAdmin(admin.ModelAdmin):
+    list_display = ("version_label", "status", "owner", "published_at", "nt_refs")
+    list_filter = ("status",)
+    search_fields = ("version_label", "nt_refs", "owner", "changelog")
+    inlines = [RtcClassificationCodeInline]
+    actions = ("action_publish", "action_seed_minimal")
+
+    @admin.action(description="Publicar versão normativa RTC")
+    def action_publish(self, request, queryset):
+        for version in queryset:
+            publish_rtc_version(version)
+            messages.success(request, f"RTC {version.version_label} publicada.")
+
+    @admin.action(description="Seed mínimo RTC 2026 (se vazio)")
+    def action_seed_minimal(self, request, queryset):
+        version = seed_minimal_rtc_pack()
+        messages.success(request, f"Seed publicado: {version.version_label}")
+
+
+@admin.register(RtcClassificationCode)
+class RtcClassificationCodeAdmin(admin.ModelAdmin):
+    list_display = ("kind", "code", "version", "requires_group", "is_active")
+    list_filter = ("kind", "is_active", "version")
+    search_fields = ("code", "description")

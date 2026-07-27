@@ -1,0 +1,18 @@
+{% extends "admin/change_list.html" %}
+
+{% block object-tools-items %}
+  <li>
+    <a href="{{ import_anexo_b_url }}" class="addlink">Importar Anexo B (XLSX)</a>
+  </li>
+  <li>
+    <a href="{{ materialize_national_url }}" class="addlink">Materializar no tenant</a>
+  </li>
+  {% if national_version %}
+  <li>
+    <a href="{% url 'admin:master_data_nationalserviceitem_changelist' %}?version__id__exact={{ national_version.pk }}">
+      Lista nacional ativa: {{ national_version.version_label }} ({{ national_version.row_count }})
+    </a>
+  </li>
+  {% endif %}
+  {{ block.super }}
+{% endblock %}

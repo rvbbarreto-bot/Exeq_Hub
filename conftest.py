@@ -69,3 +69,5 @@ def _celery_eager(settings):
     settings.FOCUS_HTTP_MODE = "stub"
     settings.PAYMENT_HTTP_MODE = "stub"
     settings.EVOLUTION_HTTP_MODE = "stub"
+    settings.CADASTRO_HTTP_MODE = "stub"
+    settings.RECEITA_HTTP_MODE = "stub"

@@ -132,6 +132,7 @@
     color:var(--sidebar-text); font-size:13.5px; font-weight:500;
     border:none; background:transparent; text-align:left; width:100%;
     transition:background .15s ease, color .15s ease;
+    text-decoration:none; box-sizing:border-box;
   }
   .nav-item svg{width:17px; height:17px; flex-shrink:0;}
   .nav-item:hover{background:rgba(255,255,255,.06); color:var(--sidebar-text-active);}
@@ -349,6 +350,81 @@
   }
   .field textarea{min-height:72px; resize:vertical;}
   .field-error{font-size:11.5px; color:var(--danger); min-height:1em;}
+
+  /* Combobox / autocomplete (Serviço NFS-e) */
+  .ac-combo{position:relative;}
+  .ac-combo-control{
+    display:flex; align-items:center; gap:6px;
+    border:1px solid var(--border); border-radius:var(--radius-sm);
+    background:var(--surface-alt); padding:0 8px 0 0;
+  }
+  .ac-combo-control:focus-within{
+    border-color:var(--accent);
+    box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+  .ac-combo-control input{
+    flex:1; border:none !important; background:transparent !important;
+    box-shadow:none !important; outline:none; min-width:0;
+    font-family:var(--font-body); font-size:13px; padding:10px 12px; color:var(--text);
+  }
+  .ac-combo-clear{
+    flex-shrink:0; width:28px; height:28px; border:none; border-radius:6px;
+    background:transparent; color:var(--text-muted); cursor:pointer;
+    display:none; align-items:center; justify-content:center; font-size:16px; line-height:1;
+  }
+  .ac-combo.has-value .ac-combo-clear{display:inline-flex;}
+  .ac-combo-clear:hover{background:var(--chip-bg); color:var(--text);}
+  .ac-combo-list{
+    display:none; position:absolute; z-index:40; left:0; right:0; top:calc(100% + 4px);
+    max-height:260px; overflow:auto; margin:0; padding:4px;
+    list-style:none; background:var(--surface); border:1px solid var(--border);
+    border-radius:var(--radius-sm); box-shadow:0 10px 28px rgba(15,23,42,.12);
+  }
+  .ac-combo.is-open .ac-combo-list{display:block;}
+  .ac-combo-option{
+    display:flex; flex-direction:column; gap:2px; width:100%; text-align:left;
+    padding:9px 10px; border:none; border-radius:6px; background:transparent;
+    cursor:pointer; color:var(--text); font-family:var(--font-body);
+  }
+  .ac-combo-option:hover,
+  .ac-combo-option.is-active{background:var(--info-bg);}
+  [data-theme="xp"] .ac-combo-option:hover,
+  [data-theme="xp"] .ac-combo-option.is-active{background:rgba(255,221,26,.22);}
+  .ac-combo-code{
+    font-family:var(--font-mono); font-size:12.5px; font-weight:600; letter-spacing:.02em;
+  }
+  .ac-combo-desc{
+    font-size:11.5px; color:var(--text-muted); line-height:1.35;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+  }
+  .ac-combo-empty,
+  .ac-combo-meta{
+    padding:10px 12px; font-size:12px; color:var(--text-muted);
+  }
+  .ac-combo-meta{border-top:1px solid var(--border); margin-top:2px;}
+  .field.is-locked input,.field.is-locked select,.field.is-locked textarea{
+    background:var(--chip-bg); color:var(--text);
+  }
+  .field.is-locked label::after{
+    content:" 🔒";
+    font-size:10px;
+    opacity:.7;
+  }
+  .lookup-banner{
+    display:none; margin-bottom:12px; padding:10px 12px; border-radius:8px;
+    font-size:12.5px; border:1px solid var(--border);
+  }
+  .lookup-banner.is-visible{display:block;}
+  .lookup-banner.ok{background:var(--success-bg); color:var(--success); border-color:transparent;}
+  .lookup-banner.warn{background:var(--danger-bg); color:var(--danger); border-color:transparent;}
+  .lookup-banner.info{background:var(--chip-bg); color:var(--text-muted);}
+  .hub-modal-card.xl{width:min(820px,100%);}
+  .section-label{
+    grid-column:1/-1; font-size:12px; font-weight:700; letter-spacing:.04em;
+    text-transform:uppercase; color:var(--text-muted); margin-top:4px;
+  }
+  .section-label.manual{color:var(--warning);}
+  .js-writer-only[hidden],.is-readonly-hidden[hidden],.js-tomador-cnpj-only[hidden],.js-tomador-cpf-only[hidden]{display:none !important;}
   .form-actions{display:flex; gap:8px; justify-content:flex-end; margin-top:16px; flex-wrap:wrap;}
   .hub-toast{
     position:fixed; right:18px; bottom:18px; z-index:1100; max-width:360px;
@@ -433,6 +509,20 @@
     </div>
 
     <div>
+      <div class="nav-group-label">Cadastros</div>
+      <nav class="nav">
+        <a class="nav-item" href="/cadastros/providers/" title="Cadastro oficial (Django)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21h18"/><path d="M5 21V8l7-4 7 4v13"/><path d="M9 21v-6h6v6"/></svg>
+          Prestadores
+        </a>
+        <a class="nav-item" href="/cadastros/customers/" title="Cadastro oficial (Django)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c1.5-3.5 4-5 7-5s5.5 1.5 7 5"/></svg>
+          Tomadores
+        </a>
+      </nav>
+    </div>
+
+    <div>
       <div class="nav-group-label">Operação</div>
       <nav class="nav" id="nav">
         <button class="nav-item active" data-screen="dashboard">
@@ -498,6 +588,50 @@
     </header>
 
     <main class="content">
+
+      <!-- ===================== PRESTADORES ===================== -->
+      <section class="screen" id="screen-prestadores">
+        <div class="page-head">
+          <div>
+            <h2>Prestadores</h2>
+            <p>CNPJ do tenant com consulta à Receita (dados públicos). Escopo do tenant logado.</p>
+          </div>
+          <button type="button" class="btn btn-primary js-writer-only" id="btn-novo-prestador">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+            Novo prestador
+          </button>
+        </div>
+        <div class="card">
+          <div class="card-body">
+            <table>
+              <thead><tr><th>CNPJ</th><th>Razão social</th><th>Regime</th><th>Origem</th><th></th></tr></thead>
+              <tbody id="tbody-prestadores"><tr><td colspan="5">Faça login para carregar prestadores.</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== TOMADORES ===================== -->
+      <section class="screen" id="screen-tomadores">
+        <div class="page-head">
+          <div>
+            <h2>Tomadores</h2>
+            <p>CNPJ com consulta Receita; CPF só validação + preenchimento manual (LGPD).</p>
+          </div>
+          <button type="button" class="btn btn-primary js-writer-only" id="btn-novo-tomador">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+            Novo tomador
+          </button>
+        </div>
+        <div class="card">
+          <div class="card-body">
+            <table>
+              <thead><tr><th>Documento</th><th>Tipo</th><th>Nome</th><th>Origem</th><th></th></tr></thead>
+              <tbody id="tbody-tomadores"><tr><td colspan="5">Faça login para carregar tomadores.</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
 
       <!-- ===================== DASHBOARD ===================== -->
       <section class="screen active" id="screen-dashboard">
@@ -885,19 +1019,31 @@
           <select id="nf-customer" name="customer_id" required></select>
           <div class="field-error"></div>
         </div>
-        <div class="field">
-          <label>Serviço</label>
-          <select id="nf-service" name="service_id" required></select>
+        <div class="field full">
+          <label for="nf-service-search">Serviço</label>
+          <div class="ac-combo" id="nf-service-combo" data-ac="service">
+            <input type="hidden" id="nf-service" name="service_id" value="" required>
+            <div class="ac-combo-control">
+              <input
+                id="nf-service-search"
+                type="text"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-expanded="false"
+                aria-controls="nf-service-list"
+                autocomplete="off"
+                placeholder="Digite o código (01.03.01) ou a descrição…"
+              >
+              <button type="button" class="ac-combo-clear" id="nf-service-clear" title="Limpar" aria-label="Limpar serviço">×</button>
+            </div>
+            <ul class="ac-combo-list" id="nf-service-list" role="listbox" hidden></ul>
+          </div>
+          <div class="hint">Busque por código nacional ou texto. Use ↑ ↓ Enter para navegar.</div>
           <div class="field-error"></div>
         </div>
         <div class="field">
           <label>Perfil fiscal</label>
           <select id="nf-profile" name="fiscal_profile_id" required></select>
-          <div class="field-error"></div>
-        </div>
-        <div class="field">
-          <label>IBGE município</label>
-          <input name="ibge_code" value="3504107" required maxlength="7">
           <div class="field-error"></div>
         </div>
         <div class="field">
@@ -1120,6 +1266,176 @@
   </div>
 </div>
 
+<div id="modal-prestador" class="hub-modal">
+  <div class="hub-modal-card xl">
+    <div class="modal-head">
+      <div>
+        <h3 id="modal-prestador-title">Novo prestador</h3>
+        <div class="modal-sub">Consulta CNPJ da Receita (dados públicos). WhatsApp, contato, IM e regime são manuais.</div>
+      </div>
+      <button type="button" class="icon-btn" data-close-modal="modal-prestador">✕</button>
+    </div>
+    <div id="prestador-lookup-banner" class="lookup-banner info">Informe um CNPJ e consulte a Receita para pré-preencher.</div>
+    <form id="form-prestador">
+      <input type="hidden" name="id" value="">
+      <input type="hidden" name="data_source" value="manual">
+      <input type="hidden" name="receita_raw_payload" value="">
+      <div class="form-grid">
+        <div class="section-label">Documento</div>
+        <div class="field">
+          <label>CNPJ</label>
+          <input name="document" class="mono" required maxlength="18" placeholder="00.000.000/0000-00">
+          <div class="field-error"></div>
+        </div>
+        <div class="field" style="display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;">
+          <button type="button" class="btn btn-primary btn-sm js-writer-only" id="btn-prestador-lookup">Consultar Receita</button>
+          <button type="button" class="btn btn-ghost btn-sm js-writer-only" id="btn-prestador-refresh" hidden>Atualizar dados da Receita</button>
+        </div>
+        <div class="section-label">Dados cadastrais (Receita)</div>
+        <div class="field is-locked"><label>Razão social</label><input name="legal_name" required><div class="field-error"></div></div>
+        <div class="field is-locked"><label>Nome fantasia</label><input name="trade_name"></div>
+        <div class="field is-locked"><label>Situação cadastral</label><input name="situacao_cadastral"></div>
+        <div class="field is-locked"><label>Data de abertura</label><input name="data_abertura" type="date"></div>
+        <div class="field is-locked full"><label>Natureza jurídica</label><input name="natureza_juridica"></div>
+        <div class="field is-locked full"><label>CNAE principal</label><input name="cnae_principal"></div>
+        <div class="field is-locked"><label>Porte</label><input name="porte"></div>
+        <div class="field is-locked"><label>Telefone (Receita)</label><input name="telefone_receita"></div>
+        <div class="field is-locked"><label>E-mail (Receita)</label><input name="email_receita"></div>
+        <div class="section-label">Endereço</div>
+        <div class="field is-locked full"><label>Logradouro</label><input name="logradouro"></div>
+        <div class="field is-locked"><label>Número</label><input name="numero"></div>
+        <div class="field is-locked"><label>Complemento</label><input name="complemento"></div>
+        <div class="field is-locked"><label>Bairro</label><input name="bairro"></div>
+        <div class="field is-locked"><label>CEP</label><input name="cep" class="mono"></div>
+        <div class="field is-locked"><label>Município</label><input name="municipio"></div>
+        <div class="field is-locked"><label>UF</label><input name="uf" maxlength="2"></div>
+        <div class="field is-locked"><label>IBGE</label><input name="codigo_municipio_ibge" class="mono"></div>
+        <div class="section-label manual">Contato operacional (manual)</div>
+        <div class="field"><label>WhatsApp</label><input name="whatsapp" placeholder="(11) 9…"><div class="hint">Não vem da Receita.</div></div>
+        <div class="field"><label>Nome do responsável</label><input name="contato_nome"></div>
+        <div class="field"><label>Inscrição municipal</label><input name="municipal_registration"></div>
+        <div class="field">
+          <label>Regime tributário</label>
+          <select name="tax_regime" required>
+            <option value="simples_nacional">Simples Nacional</option>
+            <option value="lucro_presumido">Lucro Presumido</option>
+            <option value="lucro_real">Lucro Real</option>
+          </select>
+          <div class="hint">Indicador Simples da Receita é auxiliar — não substitui o FiscalProfile.</div>
+          <div class="field-error"></div>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-ghost" data-close-modal="modal-prestador">Cancelar</button>
+        <button type="submit" class="btn btn-primary js-writer-only">Salvar prestador</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-tomador" class="hub-modal">
+  <div class="hub-modal-card xl">
+    <div class="modal-head">
+      <div>
+        <h3 id="modal-tomador-title">Novo tomador</h3>
+        <div class="modal-sub">CNPJ: consulta Receita. CPF: preenchimento manual (LGPD).</div>
+      </div>
+      <button type="button" class="icon-btn" data-close-modal="modal-tomador">✕</button>
+    </div>
+    <div id="tomador-lookup-banner" class="lookup-banner info">Selecione o tipo de documento.</div>
+    <form id="form-tomador">
+      <input type="hidden" name="id" value="">
+      <input type="hidden" name="data_source" value="manual">
+      <input type="hidden" name="receita_raw_payload" value="">
+      <div class="form-grid">
+        <div class="section-label">Documento</div>
+        <div class="field">
+          <label>Tipo</label>
+          <select name="document_type" id="tomador-document-type">
+            <option value="cnpj">CNPJ</option>
+            <option value="cpf">CPF</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Documento</label>
+          <input name="document" class="mono" required maxlength="18">
+          <div class="field-error"></div>
+        </div>
+        <div class="field full js-tomador-cnpj-only" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+          <button type="button" class="btn btn-primary btn-sm js-writer-only" id="btn-tomador-lookup">Consultar Receita</button>
+          <button type="button" class="btn btn-ghost btn-sm js-writer-only" id="btn-tomador-refresh" hidden>Atualizar dados da Receita</button>
+        </div>
+        <div class="field full js-tomador-cpf-only" hidden style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+          <button type="button" class="btn btn-primary btn-sm js-writer-only" id="btn-tomador-validate-cpf">Validar CPF</button>
+          <span class="hint">A Receita não libera cadastro de CPF a terceiros (LGPD). Nome e endereço são manuais.</span>
+        </div>
+        <div class="section-label">Identificação</div>
+        <div class="field full js-tomador-receita-field"><label>Nome / Razão social</label><input name="name" required><div class="field-error"></div></div>
+        <div class="field"><label>E-mail operacional</label><input name="email" type="email"></div>
+        <div class="field is-locked js-tomador-cnpj-only"><label>E-mail (Receita)</label><input name="email_receita"></div>
+        <div class="section-label js-tomador-cnpj-only">Dados cadastrais (Receita)</div>
+        <div class="field is-locked js-tomador-cnpj-only"><label>Situação cadastral</label><input name="situacao_cadastral"></div>
+        <div class="field is-locked js-tomador-cnpj-only"><label>Data de abertura</label><input name="data_abertura" type="date"></div>
+        <div class="field is-locked full js-tomador-cnpj-only"><label>Natureza jurídica</label><input name="natureza_juridica"></div>
+        <div class="field is-locked full js-tomador-cnpj-only"><label>CNAE principal</label><input name="cnae_principal"></div>
+        <div class="field is-locked js-tomador-cnpj-only"><label>Porte</label><input name="porte"></div>
+        <div class="field is-locked js-tomador-cnpj-only"><label>Telefone (Receita)</label><input name="telefone_receita"></div>
+        <div class="section-label">Endereço</div>
+        <div class="field js-tomador-receita-field">
+          <label>CEP</label>
+          <input name="cep" class="mono" required maxlength="9" inputmode="numeric" placeholder="00000-000" autocomplete="postal-code">
+          <div class="hint">Se souber, digite o CEP primeiro para completar logradouro, bairro, município, UF e IBGE automaticamente.</div>
+          <div class="field-error"></div>
+        </div>
+        <div class="field" style="display:flex;align-items:flex-end;">
+          <button type="button" class="btn btn-ghost btn-sm js-writer-only" id="btn-tomador-lookup-cep">Buscar CEP</button>
+        </div>
+        <div class="field full js-tomador-receita-field">
+          <label>Logradouro</label>
+          <input name="logradouro" required>
+          <div class="field-error"></div>
+        </div>
+        <div class="field js-tomador-receita-field">
+          <label>Número</label>
+          <input name="numero" required>
+          <div class="field-error"></div>
+        </div>
+        <div class="field js-tomador-receita-field">
+          <label>Complemento</label>
+          <input name="complemento" placeholder="Opcional">
+        </div>
+        <div class="field js-tomador-receita-field">
+          <label>Bairro</label>
+          <input name="bairro" required>
+          <div class="field-error"></div>
+        </div>
+        <div class="field js-tomador-receita-field">
+          <label>Município</label>
+          <input name="municipio" required>
+          <div class="field-error"></div>
+        </div>
+        <div class="field js-tomador-receita-field">
+          <label>UF</label>
+          <input name="uf" maxlength="2" required>
+          <div class="field-error"></div>
+        </div>
+        <div class="field js-tomador-receita-field">
+          <label>IBGE</label>
+          <input name="codigo_municipio_ibge" class="mono" required>
+          <div class="field-error"></div>
+        </div>
+        <div class="section-label manual">Contato operacional (manual)</div>
+        <div class="field"><label>WhatsApp</label><input name="whatsapp"></div>
+        <div class="field"><label>Nome do responsável</label><input name="contato_nome"></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-ghost" data-close-modal="modal-tomador">Cancelar</button>
+        <button type="submit" class="btn btn-primary js-writer-only">Salvar tomador</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <div id="modal-das" class="hub-modal">
   <div class="hub-modal-card">
     <div class="modal-head">
@@ -1163,6 +1479,7 @@
 <script src="/app/js/hub-api.js"></script>
 <script src="/app/js/hub-charts.js"></script>
 <script src="/app/js/hub-dashboard.js"></script>
+<script src="/app/js/hub-cadastros.js"></script>
 <script src="/app/js/hub-nfse.js"></script>
 <script src="/app/js/hub-charges.js"></script>
 <script src="/app/js/hub-provider.js"></script>
@@ -1175,6 +1492,8 @@
   const navItems = document.querySelectorAll('.nav-item');
   const titles = {
     dashboard:['Painel','EXEQ Hub / Painel'],
+    prestadores:['Prestadores','EXEQ Hub / Cadastros / Prestadores'],
+    tomadores:['Tomadores','EXEQ Hub / Cadastros / Tomadores'],
     provedor:['Provedor de cobrança','EXEQ Hub / Configuração / Provedor de cobrança'],
     certificados:['Certificados digitais','EXEQ Hub / Configuração / Certificados digitais'],
     cobrancas:['Cobranças','EXEQ Hub / Operação / Cobranças'],
@@ -1183,10 +1502,12 @@
   };
 
   function goTo(name){
+    if (!titles[name]) name = 'dashboard';
     screens.forEach(s => s.classList.toggle('active', s.id === 'screen-' + name));
     navItems.forEach(n => n.classList.toggle('active', n.dataset.screen === name));
     document.getElementById('pageTitle').textContent = titles[name][0];
     document.getElementById('pageCrumb').textContent = titles[name][1];
+    try { history.replaceState(null, '', '#' + name); } catch (e) {}
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         if (window.HubCharts && HubCharts.rebuildVisible) HubCharts.rebuildVisible();
@@ -1194,7 +1515,10 @@
     });
   }
 
-  navItems.forEach(btn => btn.addEventListener('click', () => goTo(btn.dataset.screen)));
+  navItems.forEach(btn => {
+    if (!btn.dataset.screen) return;
+    btn.addEventListener('click', () => goTo(btn.dataset.screen));
+  });
 
   document.querySelectorAll('.swatch').forEach(sw => {
     sw.addEventListener('click', () => {
