@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     "apps.billing",
     "apps.das",
     "apps.channel",
+    "apps.scheduling",
 ]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",

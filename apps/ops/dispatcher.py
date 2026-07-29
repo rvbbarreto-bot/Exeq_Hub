@@ -66,6 +66,10 @@ def _handle(msg: OutboxMessage) -> None:
         "nf_issue.authorized": _notify_nf_authorized,
         "charge.paid": _notify_charge_paid,
         "guia_fiscal.available": _notify_guia_available,
+        "appointment.pending": _notify_appointment,
+        "appointment.confirmed": _notify_appointment,
+        "appointment.cancelled": _notify_appointment,
+        "appointment.completed": _notify_appointment,
     }
     handler = handlers.get(msg.event_type)
     if handler is None:
@@ -75,6 +79,22 @@ def _handle(msg: OutboxMessage) -> None:
 
 def _notify_phone(tenant) -> str:
     return str((tenant.settings or {}).get("notify_phone") or "").strip()
+
+
+def _notify_appointment(msg: OutboxMessage) -> None:
+    payload = msg.payload or {}
+    phone = str(payload.get("phone_e164") or "").strip()
+    body = str(payload.get("message_body") or "").strip()
+    if not phone or not body:
+        return
+    from apps.channel.services import enqueue_notification
+
+    enqueue_notification(
+        tenant=msg.tenant,
+        phone_e164=phone,
+        event_type=msg.event_type,
+        message_body=body,
+    )
 
 
 def _notify_nf_authorized(msg: OutboxMessage) -> None:
