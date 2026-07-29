@@ -38,4 +38,5 @@ urlpatterns = [
     path("api/v1/", include("apps.billing.urls")),
     path("api/v1/", include("apps.das.urls")),
     path("api/v1/", include("apps.channel.urls")),
+    path("api/v1/", include("apps.scheduling.urls")),
 ]

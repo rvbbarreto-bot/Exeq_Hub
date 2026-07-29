@@ -7,7 +7,9 @@ Repositório: https://github.com/rvbbarreto-bot/Exeq_Hub
 | Contrato | `EXEQ Hub - Contrato de Desenvolvimento da Plataforma.docx` | Ativo |
 | v1 Domínio | `Exeq_Hub_v1_Business_Domain_Functional_Specification.md` | **1.1.0 promovido** |
 | v2 Arquitetura | `Exeq_Hub_v2_Platform_Architecture_Engineering_Guide.md` | **2.1.0 expandido** |
-| v3 DER | `Exeq_Hub_v3.1_Database_Design_ERD.md` (+ `.docx`) | **3.1.0** |
+| v3 DER | `Exeq_Hub_v3.1_Database_Design_ERD.md` (+ `.docx`) | **3.1.1** (amend SCHEDULING / Agendador) |
+| ADR Agendamento | `ADR_SCHED_001_Agendamento_Exeq_Hub.md` | **Aprovado** (PO 2026-07-28) |
+| Estudo split Agendador | `Exeq_Agendador_Split_Payment_Estudo_Arquitetura.md` | Estudo (sem implementação PSP) |
 | NFS-e integração | `Exeq_Hub_NFSe_Emission_Architecture_Reference.md` | **1.0.0** (Focus/Nacional/Betha + prompt fábrica) |
 | Reforma Tributária / RTC | `Exeq_Hub_Reforma_Tributaria_RTC_MultiDocumento_Estudo_Tecnico.md` | **0.1.0-draft** (estudo direção — IBS/CBS/IS, multi-DF-e, contábil) |
 | ADR RTC execução | `ADR_RTC_001_Priorizacao_Pilares.md` | **Aceito** (PO 2026-07-26 — pilares 1→5→2→4→3) |

@@ -1,8 +1,9 @@
-from datetime import date
+from datetime import date, timedelta
 from unittest.mock import MagicMock
 
 import pytest
 
+from apps.billing.due_date_rules import min_due_date
 from apps.billing.exceptions import IncompatiblePaymentError, InvalidChargeInputError
 from apps.billing.models import Charge, PaymentEvent
 from apps.billing.services import cancel_charge, create_charge, sync_charge_from_gateway
@@ -20,6 +21,10 @@ def customer(tenant_a):
     )
 
 
+def _future_due() -> date:
+    return min_due_date() + timedelta(days=3)
+
+
 @pytest.mark.django_db
 def test_cancel_rejects_paid(tenant_a, customer):
     charge = create_charge(
@@ -27,7 +32,7 @@ def test_cancel_rejects_paid(tenant_a, customer):
         idempotency_key="c-paid",
         customer=customer,
         amount_cents=1000,
-        due_date=date(2026, 8, 1),
+        due_date=_future_due(),
     )
     charge.status = Charge.Status.PAID
     charge.save(update_fields=["status"])
@@ -42,7 +47,7 @@ def test_cancel_rejects_failed(tenant_a, customer):
         idempotency_key="c-fail",
         customer=customer,
         amount_cents=1000,
-        due_date=date(2026, 8, 1),
+        due_date=_future_due(),
     )
     charge.status = Charge.Status.FAILED
     charge.save(update_fields=["status"])
@@ -57,7 +62,7 @@ def test_cancel_idempotent_when_already_cancelled(tenant_a, customer):
         idempotency_key="c-canc",
         customer=customer,
         amount_cents=1000,
-        due_date=date(2026, 8, 1),
+        due_date=_future_due(),
     )
     cancel_charge(charge, motivo_cancelamento="ACERTOS")
     again = cancel_charge(charge, motivo_cancelamento="ACERTOS")
@@ -71,7 +76,7 @@ def test_cancel_rejects_invalid_motivo(tenant_a, customer):
         idempotency_key="c-mot",
         customer=customer,
         amount_cents=1000,
-        due_date=date(2026, 8, 1),
+        due_date=_future_due(),
     )
     with pytest.raises(InvalidChargeInputError):
         cancel_charge(charge, motivo_cancelamento="XYZ")
@@ -84,7 +89,7 @@ def test_cancel_accepts_inter_motivo(tenant_a, customer):
         idempotency_key="c-cli",
         customer=customer,
         amount_cents=1000,
-        due_date=date(2026, 8, 1),
+        due_date=_future_due(),
     )
     cancel_charge(charge, motivo_cancelamento="CLIENTE_DESISTIU")
     charge.refresh_from_db()
@@ -99,7 +104,7 @@ def test_sync_marks_paid_from_gateway(tenant_a, customer, monkeypatch):
         idempotency_key="c-sync",
         customer=customer,
         amount_cents=600,
-        due_date=date(2026, 7, 27),
+        due_date=_future_due(),
     )
 
     fake = MagicMock()

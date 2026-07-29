@@ -3,9 +3,9 @@
 | Campo | Valor |
 |-------|-------|
 | Documento | Exeq_Hub_v3 — Database Design & ERD |
-| Versão | **3.1.0** |
-| Status | **Aprovado para kickoff de desenvolvimento (schema MVP)** |
-| Data | 2026-07-19 |
+| Versão | **3.1.1** |
+| Status | **Aprovado para kickoff de desenvolvimento (schema MVP + Agendador)** |
+| Data | 2026-07-19 (amend Agendador 2026-07-28) |
 | Substitui | Exeq_Hub_v3.0 (outline conceitual) |
 | Hierarquia | Documento 3 do Contrato de Desenvolvimento |
 | Stack alvo | PostgreSQL 16 + Django 5.x ORM |
@@ -18,7 +18,8 @@
 Este documento é a **única referência oficial de banco** para criar models, migrations e políticas RLS do EXEQ Hub.
 
 - **Pode** iniciar Sprint 0 / `accounts` / `master_data` / `fiscal` / `issuance` / `billing` / `das` com base neste DER.
-- **Não pode** criar tabelas de CRM, Car Wash ou outros módulos fora da seção 15 (fora de escopo MVP).
+- **Pode** (amend **v3.1.1**, ADR-SCHED-001 aprovado pelo PO em 2026-07-28) criar o domínio **SCHEDULING / EXEQ Agendador** (§12A).
+- **Não pode** criar tabelas de CRM, Car Wash ou outros módulos fora da seção 15 / §12A (fora de escopo).
 - Conflito com v1 funcional → **parar** e escalar (Contrato). Este v3.1 alinha-se à especificação Django de domínio (fábrica) e aos princípios do v2/Contrato.
 
 ### Relação com outros documentos
@@ -93,10 +94,21 @@ Nomes **oficiais no banco/ORM** (coluna esquerda). Sinônimos do v3.0 e da spec 
 | `GuiaFiscal` | DAS / guia DAS\|DARF | `das` |
 | `ChannelSession` | sessão WhatsApp | `channel` |
 | `ChannelNotification` | notificação WhatsApp | `channel` |
+| `Professional` | profissional da agenda | `scheduling` |
+| `Service` (scheduling) | serviço agendável (duração/preço/buffer) | `scheduling` |
+| `ProfessionalService` | N:N profissional↔serviço agenda | `scheduling` |
+| `BusinessHours` | horário comercial | `scheduling` |
+| `TimeOff` / `RecurringTimeOff` | folgas | `scheduling` |
+| `CalendarBlock` | bloqueio manual de agenda | `scheduling` |
+| `Appointment` | agendamento | `scheduling` |
+| `CustomerRestriction` | restrições de booking do tomador | `scheduling` |
+| `CommissionRule` | regra de comissão (split operacional) | `scheduling` |
+| `AppointmentFinancial` | snapshot financeiro do atendimento | `scheduling` |
+| `CommissionEntry` | lançamento de comissão (ledger) | `scheduling` |
 
 **ADR-DB-001 — Nomenclatura:** manter `NfIssue` / `GuiaFiscal` (não renomear para Invoice/DAS genérico) para preservar rastreabilidade com regras do v1 e testes de referência. O termo “Invoice” do v3.0 é **alias documental**, não nome de tabela.
 
-**ADR-DB-002 — Escopo:** CRM e Car Wash **fora do schema MVP**. Reservar apps futuros sem tabelas neste documento.
+**ADR-DB-002 — Escopo:** CRM e Car Wash **fora do schema**. **SCHEDULING** entrou no schema via **ADR-SCHED-001** (PO 2026-07-28) — ver §12A.
 
 ---
 
@@ -811,6 +823,124 @@ Implementação de migrations: **Sprint channel**; criar tabelas já no início 
 
 ---
 
+## 12A. SCHEDULING — EXEQ Agendador (amend v3.1.1 / ADR-SCHED-001)
+
+Produto: **EXEQ Agendador**. App Django: `scheduling`. Mesmo Postgres / mesmo `tenant_id` do Hub (monólito modular).  
+Referência de regra: barbearia-saas. Sprint 1 = fundação de dados (sem API / sem lock de concorrência).
+
+### 12A.1 `professionals`
+
+| Campo | Tipo / notas |
+|-------|----------------|
+| tenant_id | FK Tenant PROTECT |
+| provider_id | FK Provider PROTECT |
+| user_id | FK User SET_NULL null — vínculo opcional a login |
+| name | CharField |
+| timezone | CharField default `America/Sao_Paulo` |
+| is_active | bool default true |
+| created_at / updated_at | |
+
+**Índices:** `(tenant_id, is_active)`, `(tenant_id, provider_id)`.
+
+### 12A.2 `services` (app `scheduling` — **não** confundir com `ServiceCatalogItem` fiscal)
+
+| Campo | Tipo / notas |
+|-------|----------------|
+| tenant_id | FK |
+| catalog_item_id | FK ServiceCatalogItem SET_NULL null — vínculo fiscal opcional |
+| name | CharField |
+| duration_minutes | int CHECK 5..480 |
+| price_cents | bigint CHECK >= 0 |
+| buffer_before_minutes / buffer_after_minutes | int CHECK >= 0 default 0 |
+| is_active | bool |
+
+**UNIQUE** opcional futuro `(tenant_id, name)` — Sprint 1: sem unique de nome (permite homônimos por unidade futura).
+
+### 12A.3 `professional_services`
+
+N:N. **UNIQUE** `(tenant_id, professional_id, service_id)`.
+
+### 12A.4 `business_hours`
+
+`professional_id` null = horário padrão do tenant. `weekday` **0=domingo … 6=sábado** (paridade PostgreSQL `DOW` / barbearia-saas), `starts_at`/`ends_at` Time, CHECK ends > starts.
+
+### 12A.5 `time_offs` / `recurring_time_offs`
+
+Folgas pontuais (timestamptz) e recorrentes (weekday + time). CHECK ends > starts.
+
+### 12A.6 `calendar_blocks`
+
+Bloqueio manual. `created_by_id` User SET_NULL null. CHECK ends > starts.
+
+### 12A.7 `appointments`
+
+| Campo | Notas |
+|-------|--------|
+| professional_id / customer_id / service_id | PROTECT |
+| starts_at / ends_at | timestamptz; CHECK ends > starts |
+| price_cents | >= 0 |
+| status | `pending\|confirmed\|no_show_pending\|no_show\|checked_in\|in_progress\|completed\|cancelled` |
+| source | `whatsapp\|portal\|walk_in\|admin` |
+| explicit_confirmation | bool |
+| notes | text |
+| idempotency_key | CharField; **UNIQUE** `(tenant_id, idempotency_key)` |
+
+**Índices:** `(tenant_id, professional_id, starts_at)`, `(tenant_id, status)`.  
+**Overlap:** Sprint 2 valida footprint (buffers) na aplicação + `SELECT FOR UPDATE` no profissional. Exclude GIST fica para hardening futuro.
+
+### 12A.8 `customer_restrictions`
+
+OneToOne com `Customer`. `requires_deposit`, `manual_booking_only`.
+
+### 12A.9 `commission_rules` (split operacional — ledger; não é split PSP)
+
+| Campo | Notas |
+|-------|--------|
+| branch_id | UUID null — sem model Branch nesta fase |
+| professional_id / service_id | FK null = wildcard |
+| rule_kind | `percent\|fixed_cents` |
+| percent_basis_points | 0..10000 quando percent |
+| fixed_cents | >= 0 quando fixed |
+| priority | int default 0 |
+
+CHECK: percent ⇔ basis_points; fixed ⇔ fixed_cents.  
+`is_active` bool (default true) — Sprint 4.
+
+### 12A.10 `appointment_financials` (Sprint 4 — split operacional)
+
+OneToOne com `Appointment`. Snapshot financeiro do atendimento.
+
+| Campo | Notas |
+|-------|--------|
+| service_price_cents | >= 0 |
+| deposit_paid_cents | >= 0 |
+| discount_cents | >= 0 |
+| discount_reason | text |
+| balance_payment_method | `cash\|pix\|debit\|credit\|other` null |
+| deposit_recorded_at / settled_at | timestamptz null |
+| CHECK | deposit + discount <= service_price |
+
+**UNIQUE** `(tenant_id, appointment_id)`.
+
+### 12A.11 `commission_entries` (Sprint 4 — ledger)
+
+Gerado na transição para `completed` (idempotente por appointment).
+
+| Campo | Notas |
+|-------|--------|
+| appointment_id | UNIQUE com tenant |
+| professional_id / service_id | |
+| branch_id | UUID null |
+| commission_rule_id | SET_NULL |
+| base_amount_cents / commission_cents | >= 0 |
+| status | `pending\|approved\|paid\|cancelled` |
+
+**Fora desta seção:** split Asaas/PSP, Google Calendar sync, lembrete Celery beat.
+
+**RBAC pendente:** papéis `professional` / `attendant` não existem no Hub — Admin usa `tenant_admin` / `operator`.
+
+---
+
 ## 13. Matriz de exclusão (soft vs hard)
 
 | Entidade | Política |
@@ -818,7 +948,9 @@ Implementação de migrations: **Sprint channel**; criar tabelas já no início 
 | Tenant | Suspender (`status`); sem hard delete |
 | User | `is_active=False` |
 | Membership | `is_active=False` |
-| Provider / Customer / Service | `is_active=False` |
+| Provider / Customer / Service (fiscal) | `is_active=False` |
+| Professional / Service (scheduling) | `is_active=False` |
+| Appointment / CommissionRule | Soft via status / is_active; sem hard delete de negócio na operação |
 | Tax catalogs published | Nunca delete; só `superseded` |
 | NfIssue / Events / Artifacts | Sem hard delete de negócio |
 | Charge / PaymentEvent | Sem hard delete |
@@ -1014,7 +1146,8 @@ Toda tabela MVP deve ter:
 7. billing + webhook_inbox.  
 8. das.  
 9. channel (quando autorizado).  
-10. partição nf_issues quando métrica atingir limiar.
+10. **scheduling / EXEQ Agendador** (ADR-SCHED-001 — Sprint 1 fundação).  
+11. partição nf_issues quando métrica atingir limiar.
 
 ---
 
