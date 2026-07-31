@@ -1,0 +1,30 @@
+{% extends "master_data/base.html" %}
+{% block title %}Entrar · Cadastros EXEQ{% endblock %}
+{% block topbar %}{% endblock %}
+{% block content %}
+<div class="exeq-card exeq-login-card">
+  <h1>Cadastros</h1>
+  <p class="lead">Prestador e Tomador com consulta CNPJ da Receita (dados públicos).</p>
+  {% if error %}
+  <div class="exeq-banner warn">{{ error }}</div>
+  {% endif %}
+  <form method="post" class="exeq-grid">
+    {% csrf_token %}
+    <div class="exeq-field full">
+      <label for="tenant_slug">Tenant (slug)</label>
+      <input class="mono" id="tenant_slug" name="tenant_slug" required placeholder="ex.: exeq-atibaia" value="{{ request.POST.tenant_slug }}">
+    </div>
+    <div class="exeq-field full">
+      <label for="email">E-mail</label>
+      <input id="email" name="email" type="email" required value="{{ request.POST.email }}">
+    </div>
+    <div class="exeq-field full">
+      <label for="password">Senha</label>
+      <input id="password" name="password" type="password" required>
+    </div>
+    <div class="exeq-actions full">
+      <button type="submit" class="exeq-btn exeq-btn-primary">Entrar</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -89,10 +89,22 @@ def test_inter_http_official_paths(monkeypatch, settings):
         customer_name="Pagador",
         external_reference="ref-1",
         idempotency_key="idem-h",
+        customer_address={
+            "logradouro": "Rua B",
+            "numero": "1",
+            "bairro": "Centro",
+            "cep": "12940001",
+            "uf": "SP",
+            "codigo_municipio": "3504107",
+        },
     )
     assert reg.external_ref == "INT-99"
     assert seen["bodies"][0]["pagador"]["tipoPessoa"] == "FISICA"
+    assert seen["bodies"][0]["pagador"]["cidade"] == "ATIBAIA"
+    assert seen["bodies"][0]["pagador"]["cep"] == "12940001"
     assert seen["bodies"][0]["seuNumero"] == "ref-1"
+    assert seen["bodies"][0]["mensagem"]["linha1"] == "HTTP"
+    assert "linha5" in seen["bodies"][0]["mensagem"]
     assert seen["headers"][0]["x-conta-corrente"] == "123456789"
     assert gw.cancelar(ref="INT-99").status == "cancelled"
     assert seen["urls"][1] == (
@@ -345,4 +357,41 @@ def test_default_paths_match_official(settings):
     assert settings.INTER_CHARGE_PATH == "/cobranca/v3/cobrancas"
     assert "{ref}" in settings.INTER_CANCEL_PATH_TMPL
     assert settings.C6_CHARGE_PATH == "/v1/bank_slips"
-    assert settings.C6_CANCEL_PATH_TMPL.endswith("/cancel")
+
+
+def test_inter_body_includes_multa_mora_and_agenda():
+    gw = InterPaymentGateway(mode="stub", token="")
+    body = gw._inter_charge_body(
+        amount_cents=600,
+        due_date=date(2026, 8, 1),
+        description="Desc",
+        customer_document="52998224725",
+        customer_name="Pagador",
+        external_reference="fallback",
+        charge_options={
+            "seu_numero": "CTRL01",
+            "num_dias_agenda": 30,
+            "multa_percent": 2.0,
+            "mora_percent_am": 1.0,
+            "message_lines": ["L1", "L2", "", "", ""],
+        },
+    )
+    assert body["seuNumero"] == "CTRL01"
+    assert body["numDiasAgenda"] == 30
+    assert body["multa"] == {"codigo": "PERCENTUAL", "taxa": 2.0, "valor": 0}
+    assert body["mora"] == {"codigo": "TAXAMENSAL", "taxa": 1.0, "valor": 0}
+    assert body["mensagem"]["linha1"] == "L1"
+    assert body["mensagem"]["linha2"] == "L2"
+
+
+def test_inter_cancel_requires_valid_motivo():
+    gw = InterPaymentGateway(mode="http", token="tok")
+    with pytest.raises(PaymentGatewayError, match="motivoCancelamento"):
+        gw._cancel_spec("REF", motivo_cancelamento="INVALIDO")
+
+
+def test_inter_consultar_stub():
+    gw = InterPaymentGateway(mode="stub", token="")
+    result = gw.consultar_cobranca(ref="abc")
+    assert result.external_ref == "abc"
+    assert result.extras["situacao"] == "A_RECEBER"

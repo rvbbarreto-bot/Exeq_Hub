@@ -7,8 +7,15 @@ from apps.ops.openapi_views import load_openapi_dict
 
 REQUIRED_PATHS = (
     "/das/guias/",
+    "/das/guias/{id}/pdf/",
     "/charges/",
+    "/charges/summary/",
+    "/charges/{id}/pdf/",
+    "/billing/provider",
+    "/billing/cancel-motivos",
     "/electronic-proxies/",
+    "/certificates/",
+    "/certificates/upload",
     "/openapi.json",
     "/nf-issue/",
 )
@@ -22,9 +29,16 @@ def test_openapi_yaml_loads_with_required_paths():
     paths = spec["paths"]
     for p in REQUIRED_PATHS:
         assert p in paths, f"missing {p}"
-    assert "GuiaCreate" in spec["components"]["schemas"]
-    assert "ChargeCreate" in spec["components"]["schemas"]
-    assert "ElectronicProxyCreate" in spec["components"]["schemas"]
+    schemas = spec["components"]["schemas"]
+    assert "GuiaCreate" in schemas
+    assert "ChargeCreate" in schemas
+    assert "Charge" in schemas
+    assert "has_boleto_pdf" in schemas["Charge"]["properties"]
+    assert "ElectronicProxyCreate" in schemas
+    sync_path = paths.get("/charges/{id}/sync/") or paths.get("/charges/{id}/sync")
+    assert sync_path is not None
+    assert "get" not in sync_path
+    assert "post" in sync_path
 
 
 @pytest.mark.django_db

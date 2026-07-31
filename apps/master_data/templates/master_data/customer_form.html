@@ -1,0 +1,159 @@
+{% extends "master_data/base.html" %}
+{% load static %}
+{% block title %}{% if obj %}Editar{% else %}Novo{% endif %} tomador · EXEQ{% endblock %}
+{% block content %}
+<div class="exeq-card">
+  <h1>{% if obj %}Editar tomador{% else %}Novo tomador{% endif %}</h1>
+  <p class="lead">CNPJ: consulta pública. CPF: preenchimento manual (sem bureau / LGPD).</p>
+
+  <div id="lookup-banner" class="exeq-banner info">
+    Selecione o tipo de documento. CNPJ permite consulta à Receita.
+  </div>
+
+  <form method="post" id="customer-form">
+    {% csrf_token %}
+    <input type="hidden" name="data_source" value="{{ obj.data_source|default:'manual' }}">
+    <input type="hidden" name="receita_raw_payload" value="">
+
+    <div class="exeq-grid">
+      <div class="exeq-section-title receita">Documento</div>
+      <div class="exeq-field">
+        <label>Tipo</label>
+        <select name="document_type" id="document_type">
+          <option value="cnpj" {% if not obj or obj.document_type == 'cnpj' %}selected{% endif %}>CNPJ</option>
+          <option value="cpf" {% if obj.document_type == 'cpf' %}selected{% endif %}>CPF</option>
+        </select>
+      </div>
+      <div class="exeq-field">
+        <label>Documento</label>
+        <input class="mono" name="document" required maxlength="18"
+               value="{{ obj.document|default:'' }}">
+      </div>
+      <div class="exeq-field full" data-cnpj-only style="display:flex;gap:8px;align-items:flex-end;">
+        <button type="button" class="exeq-btn exeq-btn-primary" id="btn-lookup">Consultar Receita</button>
+        {% if obj and obj.document_type == 'cnpj' %}
+        <button type="button" class="exeq-btn exeq-btn-gold" id="btn-refresh-lookup">Atualizar dados da Receita</button>
+        {% endif %}
+      </div>
+
+      <div class="exeq-section-title receita">Identificação
+        <span class="exeq-lock-badge" data-cnpj-only>🔒 CNPJ via Receita</span>
+      </div>
+      <div class="exeq-field is-locked full">
+        <label>Nome / Razão social</label>
+        <input name="name" required value="{{ obj.name|default:'' }}">
+      </div>
+      <div class="exeq-field is-manual">
+        <label>E-mail operacional</label>
+        <input type="email" name="email" value="{{ obj.email|default:'' }}">
+        <span class="hint">Contato operacional — pode diferir do e-mail da Receita.</span>
+      </div>
+      <div class="exeq-field is-locked" data-cnpj-only>
+        <label>E-mail (Receita)</label>
+        <input name="email_receita" value="{{ obj.address.email|default:'' }}">
+      </div>
+
+      <div class="exeq-section-title receita" data-cnpj-only>Dados cadastrais (Receita)</div>
+      <div class="exeq-field is-locked" data-cnpj-only>
+        <label>Situação cadastral</label>
+        <input name="situacao_cadastral" value="{{ obj.situacao_cadastral|default:'' }}">
+      </div>
+      <div class="exeq-field is-locked" data-cnpj-only>
+        <label>Data de abertura</label>
+        <input type="date" name="data_abertura" value="{{ obj.data_abertura|date:'Y-m-d'|default:'' }}">
+      </div>
+      <div class="exeq-field is-locked full" data-cnpj-only>
+        <label>Natureza jurídica</label>
+        <input name="natureza_juridica" value="{{ obj.natureza_juridica|default:'' }}">
+      </div>
+      <div class="exeq-field is-locked full" data-cnpj-only>
+        <label>CNAE principal</label>
+        <input name="cnae_principal" value="{{ obj.cnae_principal|default:'' }}">
+      </div>
+      <div class="exeq-field is-locked" data-cnpj-only>
+        <label>Porte</label>
+        <input name="porte" value="{{ obj.porte|default:'' }}">
+      </div>
+      <div class="exeq-field is-locked" data-cnpj-only>
+        <label>Telefone (Receita)</label>
+        <input name="telefone_receita" value="{{ obj.address.telefone|default:'' }}">
+      </div>
+
+      <div class="exeq-section-title receita">Endereço</div>
+      <div class="exeq-field is-locked full">
+        <label>Logradouro</label>
+        <input name="logradouro" value="{{ obj.address.logradouro|default:'' }}">
+      </div>
+      <div class="exeq-field is-locked">
+        <label>Número</label>
+        <input name="numero" value="{{ obj.address.numero|default:'' }}">
+      </div>
+      <div class="exeq-field is-locked">
+        <label>Complemento</label>
+        <input name="complemento" value="{{ obj.address.complemento|default:'' }}">
+      </div>
+      <div class="exeq-field is-locked">
+        <label>Bairro</label>
+        <input name="bairro" value="{{ obj.address.bairro|default:'' }}">
+      </div>
+      <div class="exeq-field is-locked">
+        <label>CEP</label>
+        <input class="mono" name="cep" value="{{ obj.address.cep|default:'' }}">
+      </div>
+      <div class="exeq-field is-locked">
+        <label>Município</label>
+        <input name="municipio" value="{{ obj.address.municipio|default:'' }}">
+      </div>
+      <div class="exeq-field is-locked">
+        <label>UF</label>
+        <input name="uf" maxlength="2" value="{{ obj.address.uf|default:'' }}">
+      </div>
+      <div class="exeq-field is-locked">
+        <label>IBGE</label>
+        <input class="mono" name="codigo_municipio_ibge" value="{{ obj.address.codigo_municipio_ibge|default:'' }}">
+      </div>
+
+      <div class="exeq-section-title manual">Contato operacional (manual)</div>
+      <div class="exeq-field is-manual">
+        <label>WhatsApp</label>
+        <input name="whatsapp" value="{{ obj.whatsapp|default:'' }}">
+      </div>
+      <div class="exeq-field is-manual">
+        <label>Nome do responsável</label>
+        <input name="contato_nome" value="{{ obj.contato_nome|default:'' }}">
+      </div>
+    </div>
+
+    <div class="exeq-actions">
+      <button type="submit" class="exeq-btn exeq-btn-primary">Salvar tomador</button>
+      <a class="exeq-btn" href="{% url 'cadastro-customer-list' %}">Voltar</a>
+      {% if obj and obj.last_lookup_at %}
+      <span class="hint">Última consulta: {{ obj.last_lookup_at }}</span>
+      {% endif %}
+    </div>
+  </form>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{% static 'js/exeq-cadastro-lookup.js' %}"></script>
+{% if obj and obj.receita_raw_payload %}
+{{ obj.receita_raw_payload|json_script:"receita-raw-seed" }}
+{% endif %}
+<script>
+  ExeqCadastroLookup.bind({
+    lookupUrl: "{{ lookup_url }}",
+    accessToken: "{{ access_token|escapejs }}",
+    nameField: "name",
+    documentTypeSelect: document.getElementById("document_type"),
+    objId: {% if obj %}"{{ obj.pk }}"{% else %}null{% endif %}
+  });
+  (function () {
+    var seed = document.getElementById("receita-raw-seed");
+    if (seed) {
+      document.querySelector('[name="receita_raw_payload"]').value = seed.textContent;
+    }
+    var dt = document.getElementById("document_type");
+    if (dt) dt.dispatchEvent(new Event("change"));
+  })();
+</script>
+{% endblock %}

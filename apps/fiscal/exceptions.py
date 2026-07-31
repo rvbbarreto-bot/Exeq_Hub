@@ -15,3 +15,11 @@ class PublishChecklistIncompleteError(DomainError):
 
 class TaxRuleNotFoundError(DomainError):
     code = "tax_rule_not_found"
+
+
+class NationalCatalogError(DomainError):
+    code = "national_catalog_error"
+
+
+class RtcClassificationError(DomainError):
+    code = "rtc_classification_error"

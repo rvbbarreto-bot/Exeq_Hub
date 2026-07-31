@@ -197,14 +197,31 @@ Salvar → o Admin chama `create_nf_issue` (não é save cru).
 
 ---
 
-## 7. Cancelamento (opcional, só se `authorized`)
+## 7. Cancelamento (obrigatório para aceite QA, só se `authorized`)
 
-Selecionar a nota → **Cancelar no Focus (authorized)**.
+Pré-condição: status da nota = **Autorizada** e `focus_ref` preenchido.
+
+### Caminho A — detalhe da nota (recomendado)
+
+1. Abrir a nota Autorizada em **Emissões NFS-e**.
+2. Na seção **Cancelamento (QA)**, clicar **Cancelar esta nota no Focus**.
+3. Confirmar na tela intermediária (justificativa já preenchida pelo Hub).
+
+### Caminho B — lista (ação em massa)
+
+1. Na lista, **marcar o checkbox** da(s) nota(s) Autorizada(s).
+2. Ação: **Cancelar no Focus (autorizadas)** → Ir.
+3. Confirmar na tela intermediária.
 
 | # | Critério | OK? |
 |---|----------|-----|
-| 7.1 | Status → `cancelled` (pode precisar poll) | ☐ |
-| 7.2 | Evento de cancelamento no inline | ☐ |
+| 7.1 | Botão/ação visível só faz sentido com status Autorizada | ☐ |
+| 7.2 | Após confirmar: status → **Cancelada** | ☐ |
+| 7.3 | Inline de eventos mostra `authorized → cancelled` (ator admin) | ☐ |
+| 7.4 | Se Focus ainda processa: mensagem clara + poll até Cancelada | ☐ |
+| 7.5 | Nota não autorizada: mensagem de erro clara (sem 500) | ☐ |
+
+API alternativa: `POST /api/v1/nf-issue/{id}/cancel/` com `{"justificativa":"..."}` (15–255 chars).
 
 ---
 

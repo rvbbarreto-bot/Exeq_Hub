@@ -38,6 +38,7 @@ def poll_nf_issue_status(issue: NfIssue) -> NfIssue:
         tenant=issue.tenant,
         tax_regime=issue.provider.tax_regime,
         competence_date=issue.competence_date,
+        provider_cnpj=getattr(issue.provider, "document", "") or "",
     )
     result = provider.consultar(ref=issue.focus_ref)
     issue.focus_status_raw = result.raw

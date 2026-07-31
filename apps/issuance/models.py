@@ -53,7 +53,7 @@ class NfIssue(TenantOwnedModel):
     )
     ibge_code = models.CharField(max_length=7, verbose_name="Código IBGE")
     competence_date = models.DateField(verbose_name="Data de competência")
-    amount_cents = models.BigIntegerField(verbose_name="Valor (centavos)")
+    amount_cents = models.BigIntegerField(verbose_name="Valor")
     resolved_rule = models.ForeignKey(
         "fiscal.MunicipalTaxRule",
         on_delete=models.SET_NULL,
@@ -69,10 +69,10 @@ class NfIssue(TenantOwnedModel):
         null=True, blank=True, verbose_name="Payload interno"
     )
     focus_status_raw = models.JSONField(
-        null=True, blank=True, verbose_name="Status bruto Focus"
+        null=True, blank=True, verbose_name="Status bruto Provedor Exeq"
     )
     focus_ref = models.CharField(
-        max_length=128, blank=True, default="", verbose_name="Referência Focus"
+        max_length=128, blank=True, default="", verbose_name="Referência Provedor Exeq"
     )
     payload_hash = models.CharField(
         max_length=64, blank=True, default="", verbose_name="Hash do payload"

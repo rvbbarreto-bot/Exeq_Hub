@@ -114,6 +114,27 @@ def test_assert_certificate_blocks_missing_and_expired(tenant_a, tmp_path, setti
 
 
 @pytest.mark.django_db
+def test_assert_certificate_blocks_revoked_nfse(tenant_a, tmp_path, settings):
+    """EX-PRE-02 — revogado bloqueia uso nfse."""
+    settings.LOCAL_STORAGE_ROOT = str(tmp_path)
+    cert = upload_a1_certificate(
+        tenant=tenant_a,
+        label="Revoked",
+        cnpj="00000000000191",
+        pfx_bytes=_make_pfx(days=90),
+        password="secret",
+        key_usage=["nfse", "das"],
+    )
+    DigitalCertificate.objects.filter(id=cert.id).update(
+        status=DigitalCertificate.Status.REVOKED
+    )
+    with pytest.raises(CertificateNotUsableError, match="revogado"):
+        assert_certificate_usable(
+            tenant=tenant_a, cnpj="00000000000191", purpose="nfse"
+        )
+
+
+@pytest.mark.django_db
 def test_rotation_demotes_previous_primary(tenant_a, tmp_path, settings):
     settings.LOCAL_STORAGE_ROOT = str(tmp_path)
     first = upload_a1_certificate(
@@ -283,3 +304,44 @@ def test_evolution_http_send(monkeypatch, settings):
     result = gateway.send_text(phone_e164="+5511999999999", text="oi")
     assert result["ok"] is True
     assert result["ref"] == "msg-1"
+
+
+@pytest.mark.django_db
+def test_certificates_list_and_upload_api(api_client, auth_header, tenant_a, tmp_path, settings):
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    settings.LOCAL_STORAGE_ROOT = str(tmp_path)
+    empty = api_client.get("/api/v1/certificates/", **auth_header)
+    assert empty.status_code == 200
+    assert empty.data == []
+
+    pfx = _make_pfx(days=90)
+    upload = api_client.post(
+        "/api/v1/certificates/upload",
+        {
+            "label": "A1 Hub",
+            "cnpj": "00.000.000/0001-91",
+            "password": "secret",
+            "file": SimpleUploadedFile("a1.pfx", pfx, content_type="application/x-pkcs12"),
+        },
+        format="multipart",
+        **auth_header,
+    )
+    assert upload.status_code == 201
+    assert upload.data["label"] == "A1 Hub"
+    assert upload.data["cnpj"] == "00000000000191"
+    assert upload.data["is_primary"] is True
+    assert upload.data["status"] in ("active", "expiring")
+
+    listed = api_client.get("/api/v1/certificates/", **auth_header)
+    assert listed.status_code == 200
+    assert len(listed.data) == 1
+    assert listed.data[0]["id"] == upload.data["id"]
+
+    filtered = api_client.get(
+        "/api/v1/certificates/",
+        {"status": upload.data["status"], "cnpj": "00000000000191"},
+        **auth_header,
+    )
+    assert filtered.status_code == 200
+    assert len(filtered.data) == 1

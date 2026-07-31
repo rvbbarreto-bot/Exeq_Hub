@@ -8,7 +8,7 @@ from django.urls import reverse
 from apps.accounts.models import User
 from apps.fiscal.models import FiscalProfile
 from apps.fiscal.tax_engine import add_rule, create_catalog, publish_catalog
-from apps.issuance.artifacts import ensure_authorized_artifacts
+from apps.issuance.artifacts import ensure_authorized_artifacts, regenerate_danfse_pdf
 from apps.issuance.models import NfArtifact, NfIssue
 from apps.issuance.services import create_nf_issue
 from apps.master_data.models import TaxRegime
@@ -34,6 +34,7 @@ def emission_setup(tenant_a):
         tenant=tenant_a,
         service_code="1.01",
         description="Serviço",
+        codigo_tributacao_nacional_iss="010101",
     )
     profile = FiscalProfile.objects.create(
         tenant=tenant_a,
@@ -109,6 +110,30 @@ def test_ensure_artifacts_idempotent(tenant_a, emission_setup, settings, tmp_pat
     ensure_authorized_artifacts(issue)
     ensure_authorized_artifacts(issue)
     assert NfArtifact.objects.filter(nf_issue=issue).count() == 2
+
+
+@pytest.mark.django_db
+def test_regenerate_danfse_pdf_authorized(tenant_a, emission_setup, settings, tmp_path):
+    settings.FOCUS_HTTP_MODE = "stub"
+    settings.LOCAL_STORAGE_ROOT = str(tmp_path)
+    issue = create_nf_issue(
+        tenant=tenant_a,
+        idempotency_key="art-regen-1",
+        provider=emission_setup["provider"],
+        customer=emission_setup["customer"],
+        service=emission_setup["service"],
+        fiscal_profile=emission_setup["profile"],
+        ibge_code="3504107",
+        competence_date=date(2024, 6, 15),
+        amount_cents=1000,
+    )
+    old = NfArtifact.objects.get(nf_issue=issue, kind=NfArtifact.Kind.PDF)
+    old_id = old.id
+    art = regenerate_danfse_pdf(issue)
+    assert art is not None
+    assert art.id != old_id
+    assert NfArtifact.objects.filter(nf_issue=issue, kind=NfArtifact.Kind.PDF).count() == 1
+    assert art.stored_file.size_bytes > 500
 
 
 @pytest.mark.django_db

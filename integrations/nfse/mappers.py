@@ -109,7 +109,24 @@ def to_focus_nfsen(issue: NfIssue) -> dict[str, Any]:
 
     body.update(_tomador_flat(customer, fallback_ibge=issue.ibge_code))
     body = _apply_overrides(issue, body)
+    body = _merge_rtc_focus_fields(body, params)
     return _sanitize_nfsen_sn(body)
+
+
+def _merge_rtc_focus_fields(body: dict[str, Any], params: dict) -> dict[str, Any]:
+    """Pilar 1: anexa campos IBS/CBS apenas quando modo emit gravou focus_fields."""
+    rtc = params.get("rtc") or {}
+    if rtc.get("mode") != "emit":
+        return body
+    fields = rtc.get("focus_fields") or params.get("focus_rtc_fields") or {}
+    if not fields:
+        return body
+    merged = dict(body)
+    for key, value in fields.items():
+        if value in (None, ""):
+            continue
+        merged[key] = value
+    return merged
 
 
 def _sanitize_nfsen_sn(body: dict[str, Any]) -> dict[str, Any]:

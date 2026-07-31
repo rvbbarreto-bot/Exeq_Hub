@@ -15,6 +15,8 @@ from integrations.receita.exceptions import (
 
 
 class GuiaFiscalSerializer(serializers.ModelSerializer):
+    has_pdf = serializers.SerializerMethodField()
+
     class Meta:
         model = GuiaFiscal
         fields = (
@@ -34,6 +36,7 @@ class GuiaFiscalSerializer(serializers.ModelSerializer):
             "compliance_motivo",
             "pdf_storage_key",
             "pdf_file",
+            "has_pdf",
             "versao_atual",
             "idempotency_key",
             "metadata",
@@ -41,6 +44,9 @@ class GuiaFiscalSerializer(serializers.ModelSerializer):
             "updated_at",
         )
         read_only_fields = fields
+
+    def get_has_pdf(self, obj: GuiaFiscal) -> bool:
+        return bool(obj.pdf_file_id)
 
 
 class GuiaFiscalCreateSerializer(serializers.Serializer):

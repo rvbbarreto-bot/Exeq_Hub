@@ -1,0 +1,161 @@
+{% extends "master_data/base.html" %}
+{% load static %}
+{% block title %}{% if obj %}Editar{% else %}Novo{% endif %} prestador · EXEQ{% endblock %}
+{% block content %}
+<div class="exeq-card">
+  <h1>{% if obj %}Editar prestador{% else %}Novo prestador{% endif %}</h1>
+  <p class="lead">Campos com cadeado vêm da Receita. WhatsApp, contato, IM e regime tributário são manuais.</p>
+
+  <div id="lookup-banner" class="exeq-banner info" {% if not obj %}{% else %}hidden{% endif %}>
+    Informe um CNPJ válido e consulte a Receita para pré-preencher.
+  </div>
+
+  <form method="post" id="provider-form">
+    {% csrf_token %}
+    <input type="hidden" name="data_source" value="{{ obj.data_source|default:'manual' }}">
+    <input type="hidden" name="receita_raw_payload" value="">
+
+    <div class="exeq-grid">
+      <div class="exeq-section-title receita">Documento e consulta</div>
+      <div class="exeq-field">
+        <label>CNPJ</label>
+        <input class="mono" name="document" required maxlength="18"
+               value="{{ obj.document|default:'' }}" placeholder="00.000.000/0001-91">
+      </div>
+      <div class="exeq-field" style="display:flex;align-items:flex-end;gap:8px;">
+        <button type="button" class="exeq-btn exeq-btn-primary" id="btn-lookup">Consultar Receita</button>
+        {% if obj %}
+        <button type="button" class="exeq-btn exeq-btn-gold" id="btn-refresh-lookup">Atualizar dados da Receita</button>
+        {% endif %}
+      </div>
+
+      <div class="exeq-section-title receita">Dados cadastrais (Receita)
+        <span class="exeq-lock-badge">🔒 auto-preenchido</span>
+      </div>
+      <div class="exeq-field is-locked">
+        <label>Razão social</label>
+        <input name="legal_name" required value="{{ obj.legal_name|default:'' }}">
+      </div>
+      <div class="exeq-field is-locked">
+        <label>Nome fantasia</label>
+        <input name="trade_name" value="{{ obj.trade_name|default:'' }}">
+      </div>
+      <div class="exeq-field is-locked">
+        <label>Situação cadastral</label>
+        <input name="situacao_cadastral" value="{{ obj.situacao_cadastral|default:'' }}">
+      </div>
+      <div class="exeq-field is-locked">
+        <label>Data de abertura</label>
+        <input type="date" name="data_abertura" value="{{ obj.data_abertura|date:'Y-m-d'|default:'' }}">
+      </div>
+      <div class="exeq-field is-locked full">
+        <label>Natureza jurídica</label>
+        <input name="natureza_juridica" value="{{ obj.natureza_juridica|default:'' }}">
+      </div>
+      <div class="exeq-field is-locked full">
+        <label>CNAE principal</label>
+        <input name="cnae_principal" value="{{ obj.cnae_principal|default:'' }}">
+      </div>
+      <div class="exeq-field is-locked">
+        <label>Porte</label>
+        <input name="porte" value="{{ obj.porte|default:'' }}">
+      </div>
+      <div class="exeq-field is-locked">
+        <label>Telefone (Receita)</label>
+        <input name="telefone_receita" value="{{ obj.address.telefone|default:'' }}">
+      </div>
+      <div class="exeq-field is-locked">
+        <label>E-mail (Receita)</label>
+        <input name="email_receita" value="{{ obj.address.email|default:'' }}">
+      </div>
+
+      <div class="exeq-section-title receita">Endereço</div>
+      <div class="exeq-field is-locked full">
+        <label>Logradouro</label>
+        <input name="logradouro" value="{{ obj.address.logradouro|default:'' }}">
+      </div>
+      <div class="exeq-field is-locked">
+        <label>Número</label>
+        <input name="numero" value="{{ obj.address.numero|default:'' }}">
+      </div>
+      <div class="exeq-field is-locked">
+        <label>Complemento</label>
+        <input name="complemento" value="{{ obj.address.complemento|default:'' }}">
+      </div>
+      <div class="exeq-field is-locked">
+        <label>Bairro</label>
+        <input name="bairro" value="{{ obj.address.bairro|default:'' }}">
+      </div>
+      <div class="exeq-field is-locked">
+        <label>CEP</label>
+        <input class="mono" name="cep" value="{{ obj.address.cep|default:'' }}">
+      </div>
+      <div class="exeq-field is-locked">
+        <label>Município</label>
+        <input name="municipio" value="{{ obj.address.municipio|default:'' }}">
+      </div>
+      <div class="exeq-field is-locked">
+        <label>UF</label>
+        <input name="uf" maxlength="2" value="{{ obj.address.uf|default:'' }}">
+      </div>
+      <div class="exeq-field is-locked">
+        <label>IBGE</label>
+        <input class="mono" name="codigo_municipio_ibge" value="{{ obj.address.codigo_municipio_ibge|default:'' }}">
+      </div>
+
+      <div class="exeq-section-title manual">Contato operacional (manual)</div>
+      <div class="exeq-field is-manual">
+        <label>WhatsApp</label>
+        <input name="whatsapp" value="{{ obj.whatsapp|default:'' }}" placeholder="(11) 9…">
+        <span class="hint">Não vem da Receita — contato comercial.</span>
+      </div>
+      <div class="exeq-field is-manual">
+        <label>Nome do responsável</label>
+        <input name="contato_nome" value="{{ obj.contato_nome|default:'' }}">
+      </div>
+      <div class="exeq-field is-manual">
+        <label>Inscrição municipal</label>
+        <input name="municipal_registration" value="{{ obj.municipal_registration|default:'' }}">
+      </div>
+      <div class="exeq-field is-manual">
+        <label>Regime tributário</label>
+        <select name="tax_regime" required>
+          {% for value, label in tax_regimes %}
+          <option value="{{ value }}" {% if obj.tax_regime == value %}selected{% elif not obj and value == 'simples_nacional' %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <span class="hint">Indicador Simples da Receita é só auxiliar — não substitui o FiscalProfile.</span>
+      </div>
+    </div>
+
+    <div class="exeq-actions">
+      <button type="submit" class="exeq-btn exeq-btn-primary">Salvar prestador</button>
+      <a class="exeq-btn" href="{% url 'cadastro-provider-list' %}">Voltar</a>
+      {% if obj and obj.last_lookup_at %}
+      <span class="hint">Última consulta: {{ obj.last_lookup_at }}</span>
+      {% endif %}
+    </div>
+  </form>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{% static 'js/exeq-cadastro-lookup.js' %}"></script>
+{% if obj and obj.receita_raw_payload %}
+{{ obj.receita_raw_payload|json_script:"receita-raw-seed" }}
+{% endif %}
+<script>
+  ExeqCadastroLookup.bind({
+    lookupUrl: "{{ lookup_url }}",
+    accessToken: "{{ access_token|escapejs }}",
+    nameField: "legal_name",
+    tradeNameField: "trade_name",
+    objId: {% if obj %}"{{ obj.pk }}"{% else %}null{% endif %}
+  });
+  (function () {
+    var seed = document.getElementById("receita-raw-seed");
+    if (seed) {
+      document.querySelector('[name="receita_raw_payload"]').value = seed.textContent;
+    }
+  })();
+</script>
+{% endblock %}

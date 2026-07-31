@@ -1,0 +1,37 @@
+{% extends "master_data/base.html" %}
+{% block title %}Tomadores · EXEQ Hub{% endblock %}
+{% block content %}
+<div class="exeq-card">
+  <div class="exeq-actions" style="justify-content:space-between;margin-top:0;">
+    <div>
+      <h1>Tomadores</h1>
+      <p class="lead">CNPJ com consulta; CPF apenas validação + preenchimento manual.</p>
+    </div>
+    <a class="exeq-btn exeq-btn-primary" href="{% url 'cadastro-customer-new' %}">+ Novo</a>
+  </div>
+  <table class="exeq-table">
+    <thead>
+      <tr><th>Documento</th><th>Tipo</th><th>Nome</th><th>Origem</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for item in items %}
+      <tr>
+        <td class="exeq-mono">{{ item.document }}</td>
+        <td>{{ item.get_document_type_display }}</td>
+        <td>{{ item.name }}</td>
+        <td>
+          {% if item.data_source == "receita_federal" %}
+          <span class="exeq-chip">Receita</span>
+          {% else %}
+          <span class="exeq-chip manual">Manual</span>
+          {% endif %}
+        </td>
+        <td><a href="{% url 'cadastro-customer-edit' item.pk %}">Editar</a></td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="5">Nenhum tomador ainda.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

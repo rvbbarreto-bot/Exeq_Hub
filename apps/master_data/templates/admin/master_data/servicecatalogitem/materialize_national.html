@@ -1,0 +1,48 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Início</a>
+  &rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+  &rsaquo; <a href="{% url 'admin:master_data_servicecatalogitem_changelist' %}">Serviços do catálogo</a>
+  &rsaquo; Materializar Lista Nacional
+</div>
+{% endblock %}
+
+{% block content %}
+<h1>{{ title }}</h1>
+<p>
+  Copia a <strong>Lista de Serviço Nacional</strong> publicada para o
+  <em>catálogo de serviços do tenant</em>. O campo <strong>Serviço</strong> da emissão NFS-e
+  usa esse catálogo (não a tabela de referência global).
+</p>
+{% if national_version %}
+<p>
+  Versão ativa:
+  <strong>{{ national_version.version_label }}</strong>
+  ({{ national_version.row_count }} códigos).
+</p>
+{% else %}
+<p class="errornote">Nenhuma lista nacional publicada. Importe o Anexo B antes.</p>
+{% endif %}
+<form method="post" novalidate>
+  {% csrf_token %}
+  <fieldset class="module aligned">
+    {% for field in form %}
+    <div class="form-row">
+      {{ field.errors }}
+      <div>
+        <label for="{{ field.id_for_label }}">{{ field.label }}:</label>
+        {{ field }}
+        {% if field.help_text %}<div class="help">{{ field.help_text }}</div>{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </fieldset>
+  <div class="submit-row">
+    <input type="submit" value="Materializar" class="default" {% if not national_version %}disabled{% endif %}>
+    <a href="{% url 'admin:master_data_servicecatalogitem_changelist' %}" class="button cancel-link">Cancelar</a>
+  </div>
+</form>
+{% endblock %}

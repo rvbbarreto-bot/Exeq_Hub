@@ -20,9 +20,22 @@ python manage.py migrate
 pytest
 ```
 
-Opcional (async real): `celery -A config worker -l info`
+Opcional (async real):
+```bash
+celery -A config worker -l info
+celery -A config beat -l info
+```
+Beat agenda `billing.sync_open_charges` a cada **4h** (`BILLING_SYNC_INTERVAL_SECONDS=14400`): marca vencidas por `due_date` e sincroniza gateway.
 
 Postgres Docker: **5433**. Redis: **6379**.
+
+## Cadastros (Prestador / Tomador)
+
+No Hub unificado (`/app/`), menu **Cadastros → Prestadores / Tomadores** — mesmo login JWT e isolamento por tenant.
+
+- API: `POST /api/v1/master-data/providers/lookup-document` e `.../customers/lookup-document`
+- Escrita: papéis `tenant_admin` e `operator` (readonly/accountant só listam)
+- `/cadastros/` redireciona para `/app/#prestadores` (legado)
 
 ## API
 
@@ -41,15 +54,18 @@ Postgres Docker: **5433**. Redis: **6379**.
 
 ### Billing / PaymentGateway (multi-provider)
 
-- Providers conhecidos: `asaas` | `inter` | `c6` (porta `PaymentGateway`).
-- Seleção: `tenant.settings.payment_provider` → senão `PAYMENT_DEFAULT_PROVIDER` (default `asaas`).
-- Stub por padrão (`PAYMENT_HTTP_MODE=stub`). HTTP: **Asaas**, **Inter** e **C6** (`INTER_API_*` / `C6_API_*` + `TenantSecret` `api_token`).
+- Providers: **`inter` (default)** | `asaas` | `c6` (porta `PaymentGateway`).
+- Seleção: `tenant.settings.payment_provider` → senão `PAYMENT_DEFAULT_PROVIDER` (default `inter`).
+- Stub por padrão (`PAYMENT_HTTP_MODE=stub`). Estudo oficial: `Docs/Exeq_Hub_Inter_Billing_Integration_Study.md`.
+- `GET/PUT /api/v1/billing/provider` — provedor ativo do tenant + status configurado
+- `GET/POST /api/v1/billing/providers/inter/credentials` — credenciais Inter (multipart; write-only)
+- `POST /api/v1/billing/providers/inter/test-connection` — OAuth+mTLS (sem devolver token)
+- `GET/POST /api/v1/billing/providers/{asaas|c6}/credentials` — `api_token`
+- Admin → Tenants → **Configurar provedor** (UI server-rendered)
 - Spec: `GET /api/v1/openapi.json` ← `Docs/openapi-v4.yaml`.
-- Token: `TenantSecret(provider=<kind>, key_name=api_token)`; Asaas também aceita `ASAAS_API_TOKEN`.
-- Base Asaas sandbox: `ASAAS_API_BASE_URL=https://sandbox.asaas.com/api/v3`
-- **Inter** (Cobrança v3): `POST /cobranca/v3/cobrancas`, `POST .../{codigoSolicitacao}/cancelar`; base sandbox `cdpj-sandbox.partners.uatinter.co` (prod `cdpj.partners.bancointer.com.br`); header opcional `INTER_CONTA_CORRENTE`.
-- **C6** (BaaS): `POST /v1/bank_slips`, `PUT /v1/bank_slips/{id}/cancel`; base sandbox `baas-api-sandbox.c6bank.info`; `C6_BILLING_SCHEME=21` (sandbox) / `15` (prod).
-- Webhook: HMAC com `WEBHOOK_GATEWAY_SECRET`; payload canônico Hub ou Asaas-like.
+- **Inter** (primeiro / Cobrança BolePix v3): auth HTTP = **`InterAuthClient`** (OAuth2 `client_credentials` + **mTLS** `.crt`/`.key`). Env: `INTER_CLIENT_ID`, `INTER_CLIENT_SECRET`, `INTER_CERT_PATH`/`INTER_KEY_PATH` (ou PEM / `TenantSecret`). `INTER_API_TOKEN` só legado/stub. Endpoints: `POST /cobranca/v3/cobrancas`, `GET .../{codigoSolicitacao}`, `GET .../pdf`, `POST .../cancelar`, `PUT .../webhook`. Base sandbox `cdpj-sandbox.partners.uatinter.co`. Header opcional `INTER_CONTA_CORRENTE`.
+- **Asaas** / **C6**: secundários após Inter E2E (`ASAAS_API_*`, `C6_API_*` + `TenantSecret`).
+- Webhook: inbox + HMAC Hub (`X-Webhook-Signature`); normalizer **Asaas-like + Inter** (`situacao` / `codigoSolicitacao`); proxy assinador em prod (ver `Docs/Exeq_Hub_Inter_Security_Hardening.md`).
 - `Charge` só vai para `paid` via `PaymentEvent` ligado ao `WebhookInbox`.
 
 NFS-e: **Focus é o provider default** (`NFSE_DEFAULT_PROVIDER=focus`).  
@@ -69,6 +85,8 @@ Ao autorizar: persiste DANFSe PDF + XML em `NfArtifact` + `StoredFile` (`nf_pdf`
 5. `tenant.focus_layout=nfsen` (default) → `POST /v2/nfsen`. Municipal: `focus_layout=nfse` → `/v2/nfse`.
 6. Municípios nacionais: `NFSE_NATIONAL_IBGE_CODES` (default inclui Atibaia `3504107`).
 7. Serviços: preencha `codigo_tributacao_nacional_iss` no catálogo (distinto de `lc116_item`).
+   Lista nacional (Anexo B): Admin → **Serviços do catálogo** → **Importar Anexo B (XLSX)** (versionável).
+   CLI: `python manage.py import_national_service_list caminho.xlsx --label 2026-01-22`
 
 Webhook Focus (além do poll): `POST /api/v1/webhooks/focus-nfse` com header `X-Focus-Authorization` = `FOCUS_WEBHOOK_SECRET`.
 
@@ -96,7 +114,9 @@ python manage.py ensure_emissor_user
 Fluxo mínimo para QA testar emissão:
 1. Cadastre/ajuste **Tenant**, **Provider**, **Customer**, **Service**, **FiscalProfile** + catálogo/regra publicada (IBGE Atibaia `3504107`).
 2. Em **Nf issues** → **Add**: preencha tenant, idempotency_key, prestador, tomador, serviço, perfil fiscal, IBGE, competência, valor (centavos) → Salvar (dispara `create_nf_issue` / Focus stub ou HTTP).
-3. Ações em massa: **Consultar status (poll)**, **Cancelar no Focus**, **Reprocessar**.
+3. Ações em massa: **Consultar status (poll)**, **Cancelar no Focus (autorizadas)** (com confirmação), **Reprocessar**.
+4. No detalhe de nota **Autorizada**: botão vermelho **Cancelar esta nota no Focus** (seção Cancelamento QA).
+5. Valores monetários no Admin em **R$ 0,00** (emissão, cobranças, eventos de pagamento, guias DAS).
 
 Site header: `EXEQ Hub — Admin QA`. Channel/WhatsApp UI completa permanece na Sprint 7 plena.
 

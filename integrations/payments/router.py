@@ -23,7 +23,7 @@ def resolve_payment_provider_kind(
     Ordem:
     1. override explícito
     2. tenant.settings.payment_provider
-    3. PAYMENT_DEFAULT_PROVIDER (default asaas)
+    3. PAYMENT_DEFAULT_PROVIDER (default inter)
     """
     if provider_kind:
         kind = str(provider_kind).lower().strip()
@@ -34,10 +34,10 @@ def resolve_payment_provider_kind(
         settings_map = settings_map or {}
         kind = str(
             settings_map.get("payment_provider")
-            or getattr(settings, "PAYMENT_DEFAULT_PROVIDER", PROVIDER_ASAAS)
-            or PROVIDER_ASAAS
+            or getattr(settings, "PAYMENT_DEFAULT_PROVIDER", PROVIDER_INTER)
+            or PROVIDER_INTER
         ).lower().strip()
 
     if kind not in KNOWN_PAYMENT_PROVIDERS:
-        return PROVIDER_ASAAS
+        return PROVIDER_INTER
     return kind

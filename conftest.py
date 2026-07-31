@@ -67,5 +67,14 @@ def _celery_eager(settings):
     settings.CELERY_TASK_ALWAYS_EAGER = True
     settings.NF_SYNC_PROCESSING = True
     settings.FOCUS_HTTP_MODE = "stub"
+    settings.SEFIN_HTTP_MODE = "stub"
     settings.PAYMENT_HTTP_MODE = "stub"
     settings.EVOLUTION_HTTP_MODE = "stub"
+    settings.CADASTRO_HTTP_MODE = "stub"
+    settings.RECEITA_HTTP_MODE = "stub"
+    # Lab CI: stub SEFIN em homolog precisa de semente (produção restrita real ≠ Atibaia).
+    settings.SEFIN_ENVIRONMENT = "homolog"
+    settings.NFSE_CONVENIO_MODE = "stub"
+    settings.NFSE_CONVENIO_HOMOLOG_IBGE_CODES = "3504107"
+    settings.NFSE_CONVENIO_DENY_IBGE = ""
+    settings.ADMIN_ALLOWED_IPS = []

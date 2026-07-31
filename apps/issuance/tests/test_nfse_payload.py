@@ -4,6 +4,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from django.test import override_settings
 
 from apps.fiscal.models import FiscalProfile
 from apps.fiscal.tax_engine import add_rule, create_catalog, publish_catalog
@@ -67,6 +68,7 @@ def emission_setup(tenant_a):
 
 
 @pytest.mark.django_db
+@override_settings(NFSE_DEFAULT_PROVIDER="focus")
 def test_build_focus_nfse_body_maps_parties(tenant_a, emission_setup):
     issue = create_nf_issue(
         tenant=tenant_a,

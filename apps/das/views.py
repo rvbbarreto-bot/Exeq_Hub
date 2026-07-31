@@ -1,9 +1,15 @@
+from io import BytesIO
+
+from django.http import FileResponse
 from rest_framework import status, viewsets
+from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from apps.accounts.permissions import IsTenantWriter
 from apps.das.models import GuiaFiscal
 from apps.das.serializers import GuiaFiscalCreateSerializer, GuiaFiscalSerializer
+from shared.renderers import PDF_DOWNLOAD_RENDERERS
+from shared.storage import StorageError, get_storage
 
 
 class GuiaFiscalViewSet(viewsets.ModelViewSet):
@@ -39,3 +45,30 @@ class GuiaFiscalViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         guia = serializer.save()
         return Response(GuiaFiscalSerializer(guia).data, status=status.HTTP_201_CREATED)
+
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path="pdf",
+        renderer_classes=PDF_DOWNLOAD_RENDERERS,
+    )
+    def pdf(self, request, pk=None):
+        """Stream do PDF da guia (StoredFile persistido na emissão)."""
+        guia = self.get_object()
+        if not guia.pdf_file_id:
+            return Response(
+                {"detail": "PDF indisponível", "code": "das_pdf_missing"},
+                status=404,
+            )
+        stored = guia.pdf_file
+        try:
+            data = get_storage().get(key=stored.object_key)
+        except StorageError as exc:
+            return Response({"detail": str(exc)}, status=404)
+        filename = f"guia-{guia.tipo_guia}-{guia.competencia}-{guia.id}.pdf"
+        return FileResponse(
+            BytesIO(data),
+            as_attachment=True,
+            filename=filename,
+            content_type=stored.content_type or "application/pdf",
+        )

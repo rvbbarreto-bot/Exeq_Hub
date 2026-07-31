@@ -26,7 +26,9 @@ def env(key: str, default: str | None = None) -> str | None:
 
 SECRET_KEY = env("DJANGO_SECRET_KEY", "dev-only-change-me-sprint0-exeq-hub-32b")
 DEBUG = env("DJANGO_DEBUG", "true").lower() == "true"
-ALLOWED_HOSTS: list[str] = ["localhost", "127.0.0.1", "testserver"]
+# SEC-P1-01: piloto/prod via DJANGO_ALLOWED_HOSTS (csv). Lab mantém localhost.
+_allowed = env("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,testserver") or ""
+ALLOWED_HOSTS: list[str] = [h.strip() for h in _allowed.split(",") if h.strip()]
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -44,6 +46,7 @@ INSTALLED_APPS = [
     "apps.billing",
     "apps.das",
     "apps.channel",
+    "apps.scheduling",
 ]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -52,6 +55,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "shared.middleware.AdminIpAllowlistMiddleware",
     "shared.middleware.TenantRLSMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
@@ -103,6 +107,7 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
+STATICFILES_DIRS = [BASE_DIR / "static"]
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
@@ -112,6 +117,11 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": (
         "apps.accounts.permissions.IsTenantMember",
     ),
+    "DEFAULT_THROTTLE_RATES": {
+        "webhook_gateway": env("WEBHOOK_GATEWAY_THROTTLE", "60/min"),
+        "cadastral_lookup": env("CADASTRO_LOOKUP_THROTTLE", "30/min"),
+        "nf_issue_write": env("NF_ISSUE_WRITE_THROTTLE", "30/min"),
+    },
 }
 
 SIMPLE_JWT = {
@@ -123,10 +133,64 @@ CELERY_BROKER_URL = env("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
 CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", "redis://127.0.0.1:6379/1")
 CELERY_TASK_ALWAYS_EAGER = env("CELERY_TASK_ALWAYS_EAGER", "false").lower() == "true"
 CELERY_TASK_EAGER_PROPAGATES = True
+# Beat: sincroniza cobranças abertas + marca vencidas. Default 4h. Requer celery beat.
+CELERY_BEAT_SCHEDULE = {
+    "billing-sync-open-charges": {
+        "task": "billing.sync_open_charges",
+        "schedule": float(env("BILLING_SYNC_INTERVAL_SECONDS", "14400") or "14400"),
+        "kwargs": {"limit": int(env("BILLING_SYNC_BATCH_LIMIT", "100") or "100")},
+    },
+    # M5: alerta cert a vencer (<30d) → outbox certificate.expiring / .expired
+    "accounts-scan-expiring-certificates": {
+        "task": "accounts.scan_expiring_certificates",
+        "schedule": float(env("CERT_SCAN_INTERVAL_SECONDS", "86400") or "86400"),
+        "kwargs": {"alert_days": int(env("CERT_ALERT_DAYS", "30") or "30")},
+    },
+}
 NF_SYNC_PROCESSING = env("NF_SYNC_PROCESSING", "false").lower() == "true"
+# Reforma Tributária (NFS-e Nacional): off | shadow (calcula+snapshot, não envia) | emit
+RTC_NFSEN_MODE = env("RTC_NFSEN_MODE", "shadow").strip().lower()
+RTC_ENFORCE_NATIONAL_CATALOG = (
+    env("RTC_ENFORCE_NATIONAL_CATALOG", "true").lower() == "true"
+)
+# Alíquotas-teste 2026 (ADCT / LC 214) — fração decimal (0.9% = 0.009)
+RTC_TEST_CBS_RATE = env("RTC_TEST_CBS_RATE", "0.009")
+RTC_TEST_IBS_RATE = env("RTC_TEST_IBS_RATE", "0.001")
+# Se serviço está na Lista Nacional e não há regra com o mesmo código,
+# usa regra municipal do perfil/IBGE/regime (ISS da cidade).
+TAX_RULE_NATIONAL_FALLBACK = (
+    env("TAX_RULE_NATIONAL_FALLBACK", "true").lower() == "true"
+)
+# Teto para emissões smoke/fábrica de teste (centavos). R$ 15,00 = 1500 → max 1499.
+NFSE_TEST_MAX_AMOUNT_CENTS = int(env("NFSE_TEST_MAX_AMOUNT_CENTS", "1499") or "1499")
 WEBHOOK_GATEWAY_SECRET = env("WEBHOOK_GATEWAY_SECRET", "dev-webhook-secret")
+# Fail-closed em DEBUG=False (ou FORCE_SECURE_SECRETS=true). Ver shared/security_checks.py
+FORCE_SECURE_SECRETS = env("FORCE_SECURE_SECRETS", "false").lower() == "true"
+# Allowlist de IPs do originador do webhook (proxy Inter). Vazio = sem filtro (só lab).
+WEBHOOK_ALLOWED_IPS = [
+    ip.strip()
+    for ip in env("WEBHOOK_ALLOWED_IPS", "").split(",")
+    if ip.strip()
+]
+WEBHOOK_TRUST_X_FORWARDED_FOR = (
+    env("WEBHOOK_TRUST_X_FORWARDED_FOR", "false").lower() == "true"
+)
+# SEC-P1-05: allowlist Admin (vazio = lab). Produção: IPs do escritório/VPN.
+ADMIN_ALLOWED_IPS = [
+    ip.strip()
+    for ip in (env("ADMIN_ALLOWED_IPS", "") or "").split(",")
+    if ip.strip()
+]
+ADMIN_TRUST_X_FORWARDED_FOR = (
+    env("ADMIN_TRUST_X_FORWARDED_FOR", "false").lower() == "true"
+)
+# SEC-P1-08: sem django-cors-headers — API/Admin same-origin; não expor CORS *.
+# Em multi-tenant, NÃO usar INTER_* do .env quando o tenant não tem TenantSecret.
+ALLOW_ENV_INTER_CREDENTIALS_FALLBACK = (
+    env("ALLOW_ENV_INTER_CREDENTIALS_FALLBACK", "true").lower() == "true"
+)
 PAYMENT_HTTP_MODE = env("PAYMENT_HTTP_MODE", "stub")  # stub | http
-PAYMENT_DEFAULT_PROVIDER = env("PAYMENT_DEFAULT_PROVIDER", "asaas")  # asaas|inter|c6
+PAYMENT_DEFAULT_PROVIDER = env("PAYMENT_DEFAULT_PROVIDER", "inter")  # inter|asaas|c6
 ASAAS_API_TOKEN = env("ASAAS_API_TOKEN", "")
 ASAAS_API_BASE_URL = env(
     "ASAAS_API_BASE_URL",
@@ -138,7 +202,18 @@ INTER_API_BASE_URL = env(
     "https://cdpj-sandbox.partners.uatinter.co",
 )
 INTER_API_TOKEN = env("INTER_API_TOKEN", "")
+INTER_CLIENT_ID = env("INTER_CLIENT_ID", "")
+INTER_CLIENT_SECRET = env("INTER_CLIENT_SECRET", "")
+INTER_CERT_PATH = env("INTER_CERT_PATH", "")
+INTER_KEY_PATH = env("INTER_KEY_PATH", "")
+INTER_CERT_PEM = env("INTER_CERT_PEM", "")
+INTER_KEY_PEM = env("INTER_KEY_PEM", "")
 INTER_CONTA_CORRENTE = env("INTER_CONTA_CORRENTE", "")
+INTER_OAUTH_TOKEN_PATH = env("INTER_OAUTH_TOKEN_PATH", "/oauth/v2/token")
+INTER_OAUTH_SCOPE = env(
+    "INTER_OAUTH_SCOPE",
+    "boleto-cobranca.read boleto-cobranca.write",
+)
 INTER_CHARGE_PATH = env("INTER_CHARGE_PATH", "/cobranca/v3/cobrancas")
 INTER_CANCEL_PATH_TMPL = env(
     "INTER_CANCEL_PATH_TMPL",
@@ -146,6 +221,10 @@ INTER_CANCEL_PATH_TMPL = env(
 )
 INTER_CANCEL_MOTIVO = env("INTER_CANCEL_MOTIVO", "ACERTOS")
 INTER_NUM_DIAS_AGENDA = int(env("INTER_NUM_DIAS_AGENDA", "0") or "0")
+# URL HTTPS pública do Hub para o Inter chamar (D1). Ex.: https://hub.exemplo.com/api/v1/webhooks/gateway
+INTER_WEBHOOK_PUBLIC_URL = env("INTER_WEBHOOK_PUBLIC_URL", "")
+INTER_WEBHOOK_PATH = env("INTER_WEBHOOK_PATH", "/cobranca/v3/cobrancas/webhook")
+INTER_WEBHOOK_RETRY_MAX = int(env("INTER_WEBHOOK_RETRY_MAX", "50") or "50")
 # C6 BaaS bank_slips — https://developers.c6bank.com.br/
 C6_API_BASE_URL = env(
     "C6_API_BASE_URL",
@@ -163,11 +242,42 @@ C6_PAYER_ZIP = env("C6_PAYER_ZIP", "01000000")
 FOCUS_WEBHOOK_SECRET = env("FOCUS_WEBHOOK_SECRET", "dev-focus-webhook-secret")
 FOCUS_WEBHOOK_PUBLIC_URL = env("FOCUS_WEBHOOK_PUBLIC_URL", "")
 FOCUS_MUNICIPIO_CACHE_TTL = int(env("FOCUS_MUNICIPIO_CACHE_TTL", "86400") or "86400")
-NFSE_DEFAULT_PROVIDER = env("NFSE_DEFAULT_PROVIDER", "focus")
-NFSE_DEFAULT_LAYOUT = env("NFSE_DEFAULT_LAYOUT", "nfsen")  # nfse | nfsen
+# MVP emissor próprio: sefin (RF-51). Focus só com override lab / NFSE_DEFAULT_PROVIDER=focus.
+NFSE_DEFAULT_PROVIDER = env("NFSE_DEFAULT_PROVIDER", "sefin")  # sefin | focus | betha
+NFSE_DEFAULT_LAYOUT = env("NFSE_DEFAULT_LAYOUT", "nfsen")  # nfse | nfsen (legado Focus)
 NFSE_BETHA_IBGE_CODES = env("NFSE_BETHA_IBGE_CODES", "")
-NFSE_NATIONAL_IBGE_CODES = env("NFSE_NATIONAL_IBGE_CODES", "3504107")  # Atibaia+
+NFSE_NATIONAL_IBGE_CODES = env("NFSE_NATIONAL_IBGE_CODES", "3504107")  # semente produção (Atibaia+)
 NFSE_NATIONAL_MANDATORY_FROM = env("NFSE_NATIONAL_MANDATORY_FROM", "2026-09-01")
+# RF-01: stub = cache semente por ambiente; http = ADN parametros_municipais/.../convenio
+NFSE_CONVENIO_MODE = env("NFSE_CONVENIO_MODE", "stub")  # stub | http
+NFSE_CONVENIO_CACHE_SECONDS = int(env("NFSE_CONVENIO_CACHE_SECONDS", "21600") or "21600")
+NFSE_CONVENIO_DENY_IBGE = env("NFSE_CONVENIO_DENY_IBGE", "")  # lab/QA: forçar bloqueio
+# Homolog/produção restrita: default vazio (Atibaia sem convênio útil em restrita — estudo PO).
+NFSE_CONVENIO_HOMOLOG_IBGE_CODES = env("NFSE_CONVENIO_HOMOLOG_IBGE_CODES", "")
+ADN_PARAM_BASE_URL = env("ADN_PARAM_BASE_URL", "")
+SEFIN_HTTP_MODE = env("SEFIN_HTTP_MODE", "stub")  # stub | http (mTLS M2+)
+SEFIN_ENVIRONMENT = env("SEFIN_ENVIRONMENT", "homolog")  # homolog | production
+SEFIN_BASE_URL = env("SEFIN_BASE_URL", "")  # override opcional da base SefinNacional
+SEFIN_BASE_URL_HOMOLOG = env(
+    "SEFIN_BASE_URL_HOMOLOG",
+    "https://sefin.producaorestrita.nfse.gov.br/SefinNacional",
+)
+SEFIN_BASE_URL_PROD = env(
+    "SEFIN_BASE_URL_PROD",
+    "https://sefin.nfse.gov.br/SefinNacional",
+)
+# SEC-P1-07: retry só transporte/5xx; 4xx nunca repete.
+SEFIN_HTTP_TIMEOUT_SECONDS = float(env("SEFIN_HTTP_TIMEOUT_SECONDS", "45") or "45")
+SEFIN_HTTP_MAX_ATTEMPTS = int(env("SEFIN_HTTP_MAX_ATTEMPTS", "3") or "3")
+SEFIN_HTTP_RETRY_BACKOFF_SECONDS = float(
+    env("SEFIN_HTTP_RETRY_BACKOFF_SECONDS", "0.5") or "0.5"
+)
+# SEC-P2-04: teto Celery (0 = calcular a partir do budget HTTP).
+NFSE_PROCESS_SOFT_TIME_LIMIT = int(env("NFSE_PROCESS_SOFT_TIME_LIMIT", "0") or "0") or None
+NFSE_PROCESS_HARD_TIME_LIMIT = int(env("NFSE_PROCESS_HARD_TIME_LIMIT", "0") or "0") or None
+NFSE_POLL_SOFT_TIME_LIMIT = int(env("NFSE_POLL_SOFT_TIME_LIMIT", "0") or "0") or None
+NFSE_POLL_HARD_TIME_LIMIT = int(env("NFSE_POLL_HARD_TIME_LIMIT", "0") or "0") or None
+DANFSE_LAYOUT_VERSION = env("DANFSE_LAYOUT_VERSION", "nt008-v1.02")
 FOCUS_HTTP_MODE = env("FOCUS_HTTP_MODE", "stub")  # stub | http
 FOCUS_API_BASE_URL = env(
     "FOCUS_API_BASE_URL",
@@ -175,6 +285,18 @@ FOCUS_API_BASE_URL = env(
 )
 FOCUS_API_TOKEN = env("FOCUS_API_TOKEN", "")  # never commit real tokens
 RECEITA_HTTP_MODE = env("RECEITA_HTTP_MODE", "stub")  # stub | http (SERPRO)
+# Consulta cadastral CNPJ (separada de DAS/DARF). stub | http
+CADASTRO_HTTP_MODE = env("CADASTRO_HTTP_MODE", "http")
+CADASTRO_CNPJ_PROVIDER = env("CADASTRO_CNPJ_PROVIDER", "brasilapi")
+CADASTRO_CNPJ_BASE_URL = env(
+    "CADASTRO_CNPJ_BASE_URL",
+    "https://brasilapi.com.br/api/cnpj/v1",
+)
+CADASTRO_CNPJ_API_TOKEN = env("CADASTRO_CNPJ_API_TOKEN", "")
+CADASTRO_CNPJ_TIMEOUT = float(env("CADASTRO_CNPJ_TIMEOUT", "3") or "3")
+CADASTRO_CEP_BASE_URL = env("CADASTRO_CEP_BASE_URL", "https://viacep.com.br/ws")
+CADASTRO_LOOKUP_CACHE_HOURS = int(env("CADASTRO_LOOKUP_CACHE_HOURS", "24") or "24")
+
 SERPRO_AUTH_URL = env(
     "SERPRO_AUTH_URL",
     "https://autenticacao.sapi.serpro.gov.br/authenticate",
@@ -198,6 +320,7 @@ STORAGE_BACKEND = env("STORAGE_BACKEND", "local")
 LOCAL_STORAGE_ROOT = env("LOCAL_STORAGE_ROOT", str(BASE_DIR / ".storage"))
 FIELD_ENCRYPTION_KEY = env(
     "FIELD_ENCRYPTION_KEY",
+    # Apenas lab/DEBUG. Produção: obrigatório override (security_checks).
     "n_AQ8FIJHEVdMys3lkm17BygqS8UkBCEfRtzlNaZhhw=",
 )
 FOCUS_POLL_COUNTDOWN = int(env("FOCUS_POLL_COUNTDOWN", "15") or "15")

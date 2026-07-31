@@ -149,3 +149,30 @@ def test_das_api(api_client, auth_header, tenant_a, provider, cert_a1):
     assert response.status_code == 201
     assert response.data["status"] == "DISPONIVEL"
     assert str(response.data["valor_total"]) == "150.75"
+    assert response.data["has_pdf"] is True
+
+    listed = api_client.get("/api/v1/das/guias/", **auth_header)
+    assert listed.status_code == 200
+    rows = listed.data if isinstance(listed.data, list) else listed.data.get("results", [])
+    assert any(str(r["id"]) == str(response.data["id"]) for r in rows)
+
+    pdf = api_client.get(f"/api/v1/das/guias/{response.data['id']}/pdf/", **auth_header)
+    assert pdf.status_code == 200
+    assert pdf["Content-Type"].startswith("application/pdf")
+    body = b"".join(pdf.streaming_content)
+    assert body.startswith(b"%PDF")
+
+
+@pytest.mark.django_db
+def test_das_pdf_missing_returns_404(api_client, auth_header, tenant_a, provider, cert_a1):
+    guia = emitir_guia(
+        tenant=tenant_a,
+        idempotency_key="das-no-pdf",
+        provider=provider,
+        tipo_guia=GuiaFiscal.TipoGuia.DAS,
+        competencia="2024-09",
+    )
+    GuiaFiscal.objects.filter(id=guia.id).update(pdf_file=None)
+    response = api_client.get(f"/api/v1/das/guias/{guia.id}/pdf/", **auth_header)
+    assert response.status_code == 404
+    assert response.data["code"] == "das_pdf_missing"

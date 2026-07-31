@@ -12,7 +12,8 @@ ALLOWED: dict[str, set[str]] = {
         NfIssue.Status.FAILED,
     },
     NfIssue.Status.SUBMITTING: {
-        NfIssue.Status.POLLING,
+        NfIssue.Status.POLLING,  # recuperação transporte (timeout/5xx)
+        NfIssue.Status.AUTHORIZED,  # caminho feliz síncrono (RF-15 / ADR-NFSE-001)
         NfIssue.Status.REJECTED,
         NfIssue.Status.FAILED,
     },

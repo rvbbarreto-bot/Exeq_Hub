@@ -94,7 +94,7 @@ def test_admin_create_nf_issue_calls_engine(tenant_a, emission_admin_setup):
             "fiscal_profile": str(emission_admin_setup["profile"].id),
             "ibge_code": "3504107",
             "competence_date": "2024-06-15",
-            "amount_cents": "1000",
+            "valor_reais": "10,00",
         }
     )
     assert form.is_valid(), form.errors
@@ -103,3 +103,43 @@ def test_admin_create_nf_issue_calls_engine(tenant_a, emission_admin_setup):
     issue = NfIssue.objects.get(idempotency_key="admin-qa-1")
     assert issue.status == NfIssue.Status.AUTHORIZED
     assert issue.focus_ref
+    assert issue.amount_cents == 1000
+
+
+@pytest.mark.django_db
+def test_admin_cancel_detail_authorized(tenant_a, emission_admin_setup):
+    from django.urls import reverse
+    from django.test import Client
+
+    from apps.issuance.services import create_nf_issue
+
+    User = get_user_model()
+    user = User.objects.create_superuser(
+        email="qa-cancel@exeq.local",
+        password="Secret123!",
+        name="QA Cancel",
+    )
+    issue = create_nf_issue(
+        tenant=tenant_a,
+        idempotency_key="admin-cancel-1",
+        provider=emission_admin_setup["provider"],
+        customer=emission_admin_setup["customer"],
+        service=emission_admin_setup["service"],
+        fiscal_profile=emission_admin_setup["profile"],
+        ibge_code="3504107",
+        competence_date=date(2024, 6, 15),
+        amount_cents=1000,
+    )
+    assert issue.status == NfIssue.Status.AUTHORIZED
+
+    client = Client()
+    assert client.login(email="qa-cancel@exeq.local", password="Secret123!")
+    url = reverse("admin:issuance_nfissue_cancel", args=[issue.pk])
+    get_resp = client.get(url)
+    assert get_resp.status_code == 200
+    assert b"Confirmar cancelamento" in get_resp.content
+
+    post_resp = client.post(url, {"confirm": "1"})
+    assert post_resp.status_code == 302
+    issue.refresh_from_db()
+    assert issue.status == NfIssue.Status.CANCELLED

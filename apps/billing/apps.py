@@ -6,3 +6,8 @@ class BillingConfig(AppConfig):
     name = "apps.billing"
     label = "billing"
     verbose_name = "Cobrança"
+
+    def ready(self):
+        from shared.security_checks import assert_secure_runtime_settings
+
+        assert_secure_runtime_settings()

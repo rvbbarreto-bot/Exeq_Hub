@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<NFSe xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.01">
+  <infNFSe Id="NFS35041071234567800019055001000000012312345678901234">
+    <xLocEmi>Atibaia</xLocEmi>
+    <tpAmb>2</tpAmb>
+    <nNFSe>123</nNFSe>
+    <cStat>100</cStat>
+    <dhProc>2026-07-29T10:15:30-03:00</dhProc>
+    <nDPS>1</nDPS>
+    <serie>900</serie>
+    <dhDPS>2026-07-29T10:14:00-03:00</dhDPS>
+    <dCompet>2026-07</dCompet>
+    <finNFSe>0</finNFSe>
+    <chNFSe>35041071234567800019055001000000012312345678901234</chNFSe>
+    <emit>
+      <CNPJ>12345678000190</CNPJ>
+      <IM>12345</IM>
+      <xNome>PRESTADOR EXEQ LAB LTDA</xNome>
+      <xMun>Atibaia</xMun>
+      <enderNac>
+        <xLgr>RUA LAB EXEQ</xLgr>
+        <nro>100</nro>
+        <xBairro>CENTRO</xBairro>
+        <cMun>3504107</cMun>
+        <UF>SP</UF>
+        <CEP>12940000</CEP>
+      </enderNac>
+    </emit>
+    <toma>
+      <CNPJ>98765432000199</CNPJ>
+      <xNome>TOMADOR EXEMPLO SA</xNome>
+    </toma>
+    <serv>
+      <cTribNac>010701</cTribNac>
+      <xDescServ>Servicos de desenvolvimento de software sob encomenda</xDescServ>
+    </serv>
+    <valores>
+      <vServReceb>1500.00</vServReceb>
+      <vISSQN>30.00</vISSQN>
+      <vLiq>1470.00</vLiq>
+    </valores>
+    <vTotTribFed>45.00</vTotTribFed>
+    <vTotTribEst>0.00</vTotTribEst>
+    <vTotTribMun>30.00</vTotTribMun>
+  </infNFSe>
+</NFSe>

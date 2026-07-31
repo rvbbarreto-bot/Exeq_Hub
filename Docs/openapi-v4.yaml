@@ -1,10 +1,13 @@
 openapi: 3.0.3
 info:
   title: EXEQ Hub API
-  version: 4.1.0-draft
+  version: 4.1.4-draft
   description: |
     Auth, master data, fiscal, emissão NFS-e, billing (asaas|inter|c6),
-    DAS/SERPRO, procurações e-CAC, Focus e webhooks.
+    predefinições de cobrança e tipos de emissão (única/parcelada/recorrente),
+    configuração de provedor de cobrança por tenant (Hub + Admin), DAS/SERPRO,
+    procurações e-CAC, certificados A1 (lista + upload), Focus e webhooks
+    (HMAC + Inter normalize). Artefatos boleto/PIX/PDF e PDF de guia DAS.
 servers:
   - url: http://localhost:8000/api/v1
     description: Local
@@ -52,9 +55,34 @@ paths:
   /charges/:
     get:
       tags: [billing]
-      summary: Lista cobranças
+      summary: Lista cobranças (paginação opt-in page/page_size; filtro status)
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string, enum: [pending, registered, paid, overdue, cancelled, failed, all] }
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1 }
+        - in: query
+          name: page_size
+          schema: { type: integer, minimum: 1, maximum: 100 }
       responses:
-        "200": { description: OK }
+        "200":
+          description: Lista ou página
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: array
+                    items: { $ref: "#/components/schemas/Charge" }
+                  - type: object
+                    properties:
+                      count: { type: integer }
+                      next: { type: string, nullable: true }
+                      previous: { type: string, nullable: true }
+                      results:
+                        type: array
+                        items: { $ref: "#/components/schemas/Charge" }
     post:
       tags: [billing]
       summary: Cria cobrança (PaymentGateway asaas|inter|c6)
@@ -65,26 +93,247 @@ paths:
             schema:
               $ref: "#/components/schemas/ChargeCreate"
       responses:
-        "201": { description: registered }
+        "201":
+          description: Charge simples ou envelope parcelado/recorrente
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/Charge"
+                  - $ref: "#/components/schemas/ChargeScheduleEnvelope"
+  /charges/summary/:
+    get:
+      tags: [billing]
+      summary: Contagens por status (tabs Hub)
+      responses:
+        "200":
+          description: "{ total, by_status }"
+  /billing/cancel-motivos:
+    get:
+      tags: [billing]
+      summary: Enum Inter motivoCancelamento (labels PT)
+      responses:
+        "200":
+          description: "{ default, motivos[{value,label}] }"
+  /billing/providers/inter/webhook:
+    get:
+      tags: [billing]
+      summary: Consulta webhook Cobrança cadastrado no Inter
+      responses:
+        "200": { description: OK }
+    put:
+      tags: [billing]
+      summary: Registra/atualiza webhookUrl no Inter (prod = INTER_WEBHOOK_PUBLIC_URL)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                webhookUrl: { type: string, format: uri }
+      responses:
+        "200": { description: OK }
+        "400": { description: URL inválida / provedor ≠ inter }
+    delete:
+      tags: [billing]
+      summary: Remove webhook Inter
+      responses:
+        "200": { description: OK }
+  /billing/providers/inter/webhook/callbacks/retry:
+    post:
+      tags: [billing]
+      summary: Retry callbacks Inter (+ reprocess inbox local opcional)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                codigoSolicitacao:
+                  type: array
+                  items: { type: string }
+                  maxItems: 2
+      responses:
+        "200": { description: OK }
+  /billing/provider:
+    get:
+      tags: [billing]
+      summary: Provedor de cobrança ativo do tenant + status de configuração
+      responses:
+        "200":
+          description: provider + providers.{inter|asaas|c6}.configured
+    put:
+      tags: [billing]
+      summary: Define tenant.settings.payment_provider
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider]
+              properties:
+                provider: { type: string, enum: [inter, asaas, c6] }
+      responses:
+        "200": { description: OK }
+        "400": { description: provedor inválido }
+  /billing/presets:
+    get:
+      tags: [billing]
+      summary: Predefinições de cobrança do tenant (agenda / multa% / juros% a.m.)
+      responses:
+        "200":
+          description: BillingPreset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingPreset"
+    put:
+      tags: [billing]
+      summary: Atualiza predefinições de cobrança do tenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BillingPreset"
+      responses:
+        "200": { description: BillingPreset }
+        "400": { description: preset inválido }
+  /billing/providers/inter/credentials:
+    get:
+      tags: [billing]
+      summary: Metadados mascarados das credenciais Inter (sem segredos)
+      responses:
+        "200": { description: configured + client_id_masked + flags }
+    post:
+      tags: [billing]
+      summary: Grava credenciais Inter (multipart write-only)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [client_id, client_secret, cert_file, key_file]
+              properties:
+                client_id: { type: string }
+                client_secret: { type: string, format: password }
+                conta_corrente: { type: string }
+                cert_file: { type: string, format: binary }
+                key_file: { type: string, format: binary }
+      responses:
+        "200": { description: metadados mascarados }
+        "400": { description: PEM inválido ou campos ausentes }
+  /billing/providers/inter/test-connection:
+    post:
+      tags: [billing]
+      summary: Testa OAuth+mTLS Inter (não retorna access_token)
+      responses:
+        "200": { description: "{status: ok}" }
+        "400": { description: credenciais incompletas }
+        "502": { description: falha no gateway }
+  /billing/providers/{provider}/credentials:
+    parameters:
+      - in: path
+        name: provider
+        required: true
+        schema: { type: string, enum: [asaas, c6] }
+    get:
+      tags: [billing]
+      summary: Metadados mascarados api_token (Asaas/C6)
+      responses:
+        "200": { description: OK }
+    post:
+      tags: [billing]
+      summary: Grava api_token (write-only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [api_token]
+              properties:
+                api_token: { type: string, format: password }
+      responses:
+        "200": { description: metadados mascarados }
   /charges/{id}/cancel:
     post:
       tags: [billing]
-      summary: Cancela cobrança
+      summary: Cancela cobrança (Inter motivoCancelamento obrigatório)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                motivo_cancelamento:
+                  type: string
+                  enum:
+                    - ACERTOS
+                    - APEDIDODOCLIENTE
+                    - CLIENTE_DESISTIU
+                    - PAGODIRETOAOCLIENTE
+                    - SUBSTITUICAO
+                  description: Default ACERTOS (settings.INTER_CANCEL_MOTIVO)
+      responses:
+        "200": { description: cancelled }
+        "400": { description: status inválido / motivo inválido / gateway }
+  /charges/{id}/sync:
+    post:
+      tags: [billing]
+      summary: Consulta situação/pagamento no gateway e sincroniza Hub (somente POST)
       parameters:
         - in: path
           name: id
           required: true
           schema: { type: string, format: uuid }
       responses:
-        "200": { description: cancelled }
+        "200":
+          description: Charge atualizada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Charge" }
+        "400": { description: sem gateway_ref }
+        "405": { description: GET não permitido }
+        "502": { description: falha no gateway }
+  /charges/{id}/pdf/:
+    get:
+      tags: [billing]
+      summary: Download PDF do boleto (StoredFile; busca no gateway se ausente)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: application/pdf
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        "400": { description: sem gateway_ref / PDF inválido }
+        "502": { description: falha no gateway }
   /webhooks/gateway:
     post:
       tags: [billing]
       security: []
-      summary: Webhook gateway (HMAC)
+      summary: Webhook gateway (HMAC Hub + IP allowlist opcional + throttle)
+      description: |
+        Exige `X-Webhook-Signature` = HMAC-SHA256 hex do body (`WEBHOOK_GATEWAY_SECRET`).
+        Aceita `sha256=<hex>`. Inter Cobrança não assina nativamente — use proxy assinador.
+        Payload canônico Hub, Asaas-like ou Inter (`situacao`/`codigoSolicitacao`).
       responses:
         "200": { description: inbox }
         "401": { description: assinatura inválida }
+        "403": { description: IP fora da allowlist }
+        "413": { description: payload > 256KB }
   /das/guias/:
     get:
       tags: [das]
@@ -106,6 +355,22 @@ paths:
           description: |
             certificate_not_usable | electronic_proxy_not_usable |
             receita_* | duplicate_das_natural_key
+  /das/guias/{id}/pdf/:
+    get:
+      tags: [das]
+      summary: Download PDF da guia (StoredFile)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: application/pdf
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        "404": { description: das_pdf_missing }
   /electronic-proxies/:
     get:
       tags: [proxies]
@@ -123,6 +388,19 @@ paths:
               $ref: "#/components/schemas/ElectronicProxyCreate"
       responses:
         "201": { description: Created }
+  /certificates/:
+    get:
+      tags: [proxies]
+      summary: Lista certificados A1 do tenant
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string }
+        - name: cnpj
+          in: query
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
   /certificates/upload:
     post:
       tags: [proxies]
@@ -147,16 +425,89 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
+    Charge:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        idempotency_key: { type: string }
+        status:
+          type: string
+          enum: [pending, registered, paid, overdue, cancelled, failed]
+        customer: { type: string, format: uuid }
+        amount_cents: { type: integer }
+        due_date: { type: string, format: date }
+        description: { type: string }
+        seu_numero: { type: string, maxLength: 15 }
+        charge_kind: { type: string, enum: [simple, installment, recurring] }
+        schedule_group_id: { type: string, format: uuid, nullable: true }
+        installment_number: { type: integer, nullable: true }
+        installment_count: { type: integer, nullable: true }
+        gateway_ref: { type: string }
+        digitable_line: { type: string }
+        barcode: { type: string }
+        pix_copy_paste: { type: string }
+        payment_url: { type: string, format: uri }
+        boleto_pdf_url: { type: string, format: uri }
+        has_boleto_pdf: { type: boolean, description: PDF persistido em StoredFile (pdf_file) }
+        nf_issue: { type: string, format: uuid, nullable: true }
+        correlation_id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ChargeScheduleEnvelope:
+      type: object
+      properties:
+        schedule_group_id: { type: string, format: uuid, nullable: true }
+        charge_kind: { type: string, enum: [installment, recurring] }
+        charges:
+          type: array
+          items: { $ref: "#/components/schemas/Charge" }
     ChargeCreate:
       type: object
       required: [idempotency_key, customer_id, amount_cents, due_date]
       properties:
         idempotency_key: { type: string }
         customer_id: { type: string, format: uuid }
-        amount_cents: { type: integer, minimum: 1 }
+        amount_cents: { type: integer, minimum: 250, description: "Mínimo Inter R$ 2,50 (250 centavos)" }
         due_date: { type: string, format: date }
         description: { type: string }
+        seu_numero:
+          type: string
+          maxLength: 15
+          description: Código de controle (Inter seuNumero / nº documento do boleto)
+        message_lines:
+          type: array
+          maxItems: 5
+          items: { type: string, maxLength: 78 }
+        charge_kind:
+          type: string
+          enum: [simple, installment, recurring]
+          default: simple
+        installment_count:
+          type: integer
+          minimum: 1
+          maximum: 60
+          description: Parcelas (installment 2–48) ou ocorrências (recurring)
+        recurrence_end_date:
+          type: string
+          format: date
+          description: Fim da recorrência mensal (alternativa a installment_count)
         nf_issue_id: { type: string, format: uuid, nullable: true }
+    BillingPreset:
+      type: object
+      properties:
+        num_dias_agenda:
+          type: integer
+          minimum: 0
+          maximum: 60
+          description: Dias após vencimento (Inter numDiasAgenda)
+        apply_multa: { type: boolean }
+        multa_percent:
+          type: string
+          description: Multa percentual (Inter multa.PERCENTUAL)
+        apply_mora: { type: boolean }
+        mora_percent_am:
+          type: string
+          description: Juros % a.m. (Inter mora.TAXAMENSAL)
     GuiaCreate:
       type: object
       required: [idempotency_key, provider_id, tipo_guia, competencia]

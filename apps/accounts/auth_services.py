@@ -50,5 +50,8 @@ def issue_tokens(user: User, membership: TenantMembership) -> dict[str, str]:
         "access": str(refresh.access_token),
         "refresh": str(refresh),
         "tenant_slug": membership.tenant.slug,
+        "tenant_legal_name": membership.tenant.legal_name,
         "role_code": membership.role.code,
+        "user_name": user.name,
+        "user_email": user.email,
     }

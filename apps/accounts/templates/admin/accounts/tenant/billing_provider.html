@@ -1,0 +1,94 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Início</a>
+  &rsaquo; <a href="{% url 'admin:accounts_tenant_changelist' %}">Tenants</a>
+  &rsaquo; <a href="{% url 'admin:accounts_tenant_change' tenant.id %}">{{ tenant.slug }}</a>
+  &rsaquo; Provedor de cobrança
+</div>
+{% endblock %}
+
+{% block content %}
+<h1>Provedor de cobrança — {{ tenant.legal_name }}</h1>
+
+{% if messages %}
+<ul class="messagelist">
+  {% for message in messages %}
+  <li{% if message.tags %} class="{{ message.tags }}"{% endif %}>{{ message }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+<div style="max-width: 720px;">
+  <h2>Provedor ativo</h2>
+  <p>Atual: <strong>{{ status.provider }}</strong></p>
+  <ul>
+    {% for kind, meta in status.providers.items %}
+    <li>{{ kind }} — {% if meta.configured %}configurado{% else %}não configurado{% endif %}</li>
+    {% endfor %}
+  </ul>
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="set_provider" />
+    <label for="id_provider">Provedor</label>
+    <select name="provider" id="id_provider">
+      {% for kind in providers %}
+      <option value="{{ kind }}" {% if kind == status.provider %}selected{% endif %}>{{ kind }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="default">Salvar provedor</button>
+  </form>
+
+  <hr />
+
+  <h2>Credenciais Inter</h2>
+  <p>
+    Client ID: {{ inter.client_id_masked|default:"—" }} ·
+    Secret: {% if inter.has_client_secret %}definido{% else %}ausente{% endif %} ·
+    Cert: {% if inter.has_cert %}sim{% else %}não{% endif %} ·
+    Key: {% if inter.has_key %}sim{% else %}não{% endif %} ·
+    Conta: {{ inter.conta_corrente_masked|default:"—" }}
+  </p>
+  <form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="save_inter" />
+    <fieldset>
+      <div><label>Client ID <input type="text" name="client_id" required /></label></div>
+      <div><label>Client Secret <input type="password" name="client_secret" required autocomplete="new-password" /></label></div>
+      <div><label>Conta corrente <input type="text" name="conta_corrente" /></label></div>
+      <div><label>Certificado (.crt/.pem) <input type="file" name="cert_file" accept=".crt,.pem" required /></label></div>
+      <div><label>Chave (.key/.pem) <input type="file" name="key_file" accept=".key,.pem" required /></label></div>
+    </fieldset>
+    <button type="submit" class="default">Salvar credenciais Inter</button>
+  </form>
+  <form method="post" style="margin-top: 0.75rem;">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="test_inter" />
+    <button type="submit">Testar conexão Inter</button>
+  </form>
+
+  <hr />
+
+  <h2>Credenciais Asaas</h2>
+  <p>Token: {{ asaas.api_token_masked|default:"—" }} · {% if asaas.configured %}configurado{% else %}não configurado{% endif %}</p>
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="save_asaas" />
+    <label>API token <input type="password" name="api_token" required autocomplete="new-password" /></label>
+    <button type="submit" class="default">Salvar Asaas</button>
+  </form>
+
+  <hr />
+
+  <h2>Credenciais C6</h2>
+  <p>Token: {{ c6.api_token_masked|default:"—" }} · {% if c6.configured %}configurado{% else %}não configurado{% endif %}</p>
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="save_c6" />
+    <label>API token <input type="password" name="api_token" required autocomplete="new-password" /></label>
+    <button type="submit" class="default">Salvar C6</button>
+  </form>
+</div>
+{% endblock %}

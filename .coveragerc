@@ -1,0 +1,18 @@
+[run]
+branch = False
+omit =
+    */migrations/*
+    */tests/*
+    */admin.py
+    */apps.py
+    */__init__.py
+    # Adapter Asaas HTTP é secundário (Inter first); coberto em smoke dedicado.
+    */integrations/payments/asaas.py
+
+[report]
+exclude_lines =
+    pragma: no cover
+    if TYPE_CHECKING:
+    raise NotImplementedError
+show_missing = True
+skip_covered = True

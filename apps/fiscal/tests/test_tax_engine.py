@@ -116,6 +116,59 @@ def test_resolve_without_rule_raises(tenant_a, fiscal_profile):
 
 
 @pytest.mark.django_db
+def test_resolve_national_service_code_fallback(tmp_path, tenant_a, fiscal_profile, settings):
+    settings.TAX_RULE_NATIONAL_FALLBACK = True
+    from apps.master_data.models import ServiceCatalogItem
+    from apps.master_data.national_service_import import import_national_service_xlsx
+    from apps.master_data.tests.test_national_service_import import _write_sample_xlsx
+
+    xlsx = tmp_path / "anexo.xlsx"
+    _write_sample_xlsx(xlsx)
+    import_national_service_xlsx(path=xlsx, version_label="tax-fallback", publish=True)
+
+    catalog = create_catalog(tenant=tenant_a)
+    add_rule(
+        catalog=catalog,
+        fiscal_profile=fiscal_profile,
+        ibge_code="3504107",
+        municipio_nome="Atibaia",
+        uf="SP",
+        service_code="1.01",
+        tax_regime="simples_nacional",
+        iss_rate=Decimal("0.0200"),
+        valid_from=date(2024, 1, 1),
+    )
+    catalog.publish_checklist = {
+        "csv_validated": True,
+        "rules_reviewed": True,
+        "terms_accepted": True,
+    }
+    catalog.save(update_fields=["publish_checklist"])
+    publish_catalog(catalog)
+
+    service = ServiceCatalogItem(
+        tenant=tenant_a,
+        service_code="10101",
+        description="Nacional",
+        lc116_item="1.01",
+        codigo_tributacao_nacional_iss="10101",
+    )
+    from apps.fiscal.tax_engine import resolve_tax_rule_detailed
+
+    rule, meta = resolve_tax_rule_detailed(
+        tenant=tenant_a,
+        fiscal_profile=fiscal_profile,
+        ibge_code="3504107",
+        service_code="10101",
+        tax_regime="simples_nacional",
+        competence_date=date(2026, 7, 23),
+        service=service,
+    )
+    assert rule.service_code == "1.01"
+    assert meta["match_mode"] in {"alias", "national_fallback"}
+
+
+@pytest.mark.django_db
 def test_tax_resolve_api(api_client, auth_header, tenant_a, fiscal_profile):
     catalog = create_catalog(tenant=tenant_a)
     add_rule(

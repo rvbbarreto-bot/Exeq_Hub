@@ -7,8 +7,18 @@ Repositório: https://github.com/rvbbarreto-bot/Exeq_Hub
 | Contrato | `EXEQ Hub - Contrato de Desenvolvimento da Plataforma.docx` | Ativo |
 | v1 Domínio | `Exeq_Hub_v1_Business_Domain_Functional_Specification.md` | **1.1.0 promovido** |
 | v2 Arquitetura | `Exeq_Hub_v2_Platform_Architecture_Engineering_Guide.md` | **2.1.0 expandido** |
-| v3 DER | `Exeq_Hub_v3.1_Database_Design_ERD.md` (+ `.docx`) | **3.1.0** |
-| NFS-e integração | `Exeq_Hub_NFSe_Emission_Architecture_Reference.md` | **1.0.0** (Focus/Nacional/Betha + prompt fábrica) |
+| v3 DER | `Exeq_Hub_v3.1_Database_Design_ERD.md` (+ `.docx`) | **3.1.1** (amend SCHEDULING / Agendador) |
+| ADR Agendamento | `ADR_SCHED_001_Agendamento_Exeq_Hub.md` | **Aprovado** (PO 2026-07-28) |
+| Estudo split Agendador | `Exeq_Agendador_Split_Payment_Estudo_Arquitetura.md` | Estudo (sem implementação PSP) |
+| NFS-e integração | `Exeq_Hub_NFSe_Emission_Architecture_Reference.md` | **1.1.0** (addendum emissor próprio; Focus histórico) |
+| ADR emissor próprio Nacional | `ADR_NFSE_001_Emissor_Proprio_Nacional.md` | **Aprovado** (PO 2026-07-29 — SEFIN/ADN + DANFSe) |
+| Plano desenvolvimento emissor próprio | `Exeq_Hub_Plano_Desenvolvimento_Emissor_Proprio_NFSe.md` | **Autorizado PO** (início 2026-07-29 — visão gestão) |
+| DoD segurança NFS-e/SEFIN | `Exeq_Hub_DoD_Seguranca_NFSe_SEFIN.md` | G-SEC P0 aprovado; P1 (pentest escopo pronto) |
+| Briefing pentest SEC-P1-09 | `Exeq_Hub_NFSe_Pentest_Briefing_SEC_P1_09.md` | Escopo preparado — execução pendente |
+| LLR emissor próprio | `Exeq_Hub_LLR_Emissor_Proprio_NFSe_Nacional.md` | **0.3.0** (RF/EX + NT 008 v1.02) |
+| Reforma Tributária / RTC | `Exeq_Hub_Reforma_Tributaria_RTC_MultiDocumento_Estudo_Tecnico.md` | **0.1.0-draft** (estudo direção — IBS/CBS/IS, multi-DF-e, contábil) |
+| ADR RTC execução | `ADR_RTC_001_Priorizacao_Pilares.md` | **Aceito** (PO 2026-07-26 — pilares 1→5→2→4→3) |
+| Billing Inter | `Exeq_Hub_Inter_Billing_Integration_Study.md` | **1.0.0** (Sprint 5 — Inter first / BolePix v3) |
 | v4 API | `Exeq_Hub_v4_API_OpenAPI.md` + `openapi-v4.yaml` | **4.1.0-draft** (DAS + billing + proxies) |
 | v5 UX | — | Pendente |
 

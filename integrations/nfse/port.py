@@ -1,4 +1,4 @@
-"""Porta NFS-e — Focus (default) / Betha."""
+"""Porta NFS-e — SEFIN (MVP) / Focus (lab) / Betha."""
 
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -24,4 +24,5 @@ class NfseProvider(Protocol):
         ref: str,
         justificativa: str,
         codigo_cancelamento: int | None = None,
+        evento_xml: bytes | None = None,
     ) -> NfseEmitResult: ...
