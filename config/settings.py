@@ -26,7 +26,9 @@ def env(key: str, default: str | None = None) -> str | None:
 
 SECRET_KEY = env("DJANGO_SECRET_KEY", "dev-only-change-me-sprint0-exeq-hub-32b")
 DEBUG = env("DJANGO_DEBUG", "true").lower() == "true"
-ALLOWED_HOSTS: list[str] = ["localhost", "127.0.0.1", "testserver"]
+# SEC-P1-01: piloto/prod via DJANGO_ALLOWED_HOSTS (csv). Lab mantém localhost.
+_allowed = env("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,testserver") or ""
+ALLOWED_HOSTS: list[str] = [h.strip() for h in _allowed.split(",") if h.strip()]
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -53,6 +55,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "shared.middleware.AdminIpAllowlistMiddleware",
     "shared.middleware.TenantRLSMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
@@ -117,6 +120,7 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "webhook_gateway": env("WEBHOOK_GATEWAY_THROTTLE", "60/min"),
         "cadastral_lookup": env("CADASTRO_LOOKUP_THROTTLE", "30/min"),
+        "nf_issue_write": env("NF_ISSUE_WRITE_THROTTLE", "30/min"),
     },
 }
 
@@ -135,6 +139,12 @@ CELERY_BEAT_SCHEDULE = {
         "task": "billing.sync_open_charges",
         "schedule": float(env("BILLING_SYNC_INTERVAL_SECONDS", "14400") or "14400"),
         "kwargs": {"limit": int(env("BILLING_SYNC_BATCH_LIMIT", "100") or "100")},
+    },
+    # M5: alerta cert a vencer (<30d) → outbox certificate.expiring / .expired
+    "accounts-scan-expiring-certificates": {
+        "task": "accounts.scan_expiring_certificates",
+        "schedule": float(env("CERT_SCAN_INTERVAL_SECONDS", "86400") or "86400"),
+        "kwargs": {"alert_days": int(env("CERT_ALERT_DAYS", "30") or "30")},
     },
 }
 NF_SYNC_PROCESSING = env("NF_SYNC_PROCESSING", "false").lower() == "true"
@@ -165,6 +175,16 @@ WEBHOOK_ALLOWED_IPS = [
 WEBHOOK_TRUST_X_FORWARDED_FOR = (
     env("WEBHOOK_TRUST_X_FORWARDED_FOR", "false").lower() == "true"
 )
+# SEC-P1-05: allowlist Admin (vazio = lab). Produção: IPs do escritório/VPN.
+ADMIN_ALLOWED_IPS = [
+    ip.strip()
+    for ip in (env("ADMIN_ALLOWED_IPS", "") or "").split(",")
+    if ip.strip()
+]
+ADMIN_TRUST_X_FORWARDED_FOR = (
+    env("ADMIN_TRUST_X_FORWARDED_FOR", "false").lower() == "true"
+)
+# SEC-P1-08: sem django-cors-headers — API/Admin same-origin; não expor CORS *.
 # Em multi-tenant, NÃO usar INTER_* do .env quando o tenant não tem TenantSecret.
 ALLOW_ENV_INTER_CREDENTIALS_FALLBACK = (
     env("ALLOW_ENV_INTER_CREDENTIALS_FALLBACK", "true").lower() == "true"
@@ -222,11 +242,42 @@ C6_PAYER_ZIP = env("C6_PAYER_ZIP", "01000000")
 FOCUS_WEBHOOK_SECRET = env("FOCUS_WEBHOOK_SECRET", "dev-focus-webhook-secret")
 FOCUS_WEBHOOK_PUBLIC_URL = env("FOCUS_WEBHOOK_PUBLIC_URL", "")
 FOCUS_MUNICIPIO_CACHE_TTL = int(env("FOCUS_MUNICIPIO_CACHE_TTL", "86400") or "86400")
-NFSE_DEFAULT_PROVIDER = env("NFSE_DEFAULT_PROVIDER", "focus")
-NFSE_DEFAULT_LAYOUT = env("NFSE_DEFAULT_LAYOUT", "nfsen")  # nfse | nfsen
+# MVP emissor próprio: sefin (RF-51). Focus só com override lab / NFSE_DEFAULT_PROVIDER=focus.
+NFSE_DEFAULT_PROVIDER = env("NFSE_DEFAULT_PROVIDER", "sefin")  # sefin | focus | betha
+NFSE_DEFAULT_LAYOUT = env("NFSE_DEFAULT_LAYOUT", "nfsen")  # nfse | nfsen (legado Focus)
 NFSE_BETHA_IBGE_CODES = env("NFSE_BETHA_IBGE_CODES", "")
-NFSE_NATIONAL_IBGE_CODES = env("NFSE_NATIONAL_IBGE_CODES", "3504107")  # Atibaia+
+NFSE_NATIONAL_IBGE_CODES = env("NFSE_NATIONAL_IBGE_CODES", "3504107")  # semente produção (Atibaia+)
 NFSE_NATIONAL_MANDATORY_FROM = env("NFSE_NATIONAL_MANDATORY_FROM", "2026-09-01")
+# RF-01: stub = cache semente por ambiente; http = ADN parametros_municipais/.../convenio
+NFSE_CONVENIO_MODE = env("NFSE_CONVENIO_MODE", "stub")  # stub | http
+NFSE_CONVENIO_CACHE_SECONDS = int(env("NFSE_CONVENIO_CACHE_SECONDS", "21600") or "21600")
+NFSE_CONVENIO_DENY_IBGE = env("NFSE_CONVENIO_DENY_IBGE", "")  # lab/QA: forçar bloqueio
+# Homolog/produção restrita: default vazio (Atibaia sem convênio útil em restrita — estudo PO).
+NFSE_CONVENIO_HOMOLOG_IBGE_CODES = env("NFSE_CONVENIO_HOMOLOG_IBGE_CODES", "")
+ADN_PARAM_BASE_URL = env("ADN_PARAM_BASE_URL", "")
+SEFIN_HTTP_MODE = env("SEFIN_HTTP_MODE", "stub")  # stub | http (mTLS M2+)
+SEFIN_ENVIRONMENT = env("SEFIN_ENVIRONMENT", "homolog")  # homolog | production
+SEFIN_BASE_URL = env("SEFIN_BASE_URL", "")  # override opcional da base SefinNacional
+SEFIN_BASE_URL_HOMOLOG = env(
+    "SEFIN_BASE_URL_HOMOLOG",
+    "https://sefin.producaorestrita.nfse.gov.br/SefinNacional",
+)
+SEFIN_BASE_URL_PROD = env(
+    "SEFIN_BASE_URL_PROD",
+    "https://sefin.nfse.gov.br/SefinNacional",
+)
+# SEC-P1-07: retry só transporte/5xx; 4xx nunca repete.
+SEFIN_HTTP_TIMEOUT_SECONDS = float(env("SEFIN_HTTP_TIMEOUT_SECONDS", "45") or "45")
+SEFIN_HTTP_MAX_ATTEMPTS = int(env("SEFIN_HTTP_MAX_ATTEMPTS", "3") or "3")
+SEFIN_HTTP_RETRY_BACKOFF_SECONDS = float(
+    env("SEFIN_HTTP_RETRY_BACKOFF_SECONDS", "0.5") or "0.5"
+)
+# SEC-P2-04: teto Celery (0 = calcular a partir do budget HTTP).
+NFSE_PROCESS_SOFT_TIME_LIMIT = int(env("NFSE_PROCESS_SOFT_TIME_LIMIT", "0") or "0") or None
+NFSE_PROCESS_HARD_TIME_LIMIT = int(env("NFSE_PROCESS_HARD_TIME_LIMIT", "0") or "0") or None
+NFSE_POLL_SOFT_TIME_LIMIT = int(env("NFSE_POLL_SOFT_TIME_LIMIT", "0") or "0") or None
+NFSE_POLL_HARD_TIME_LIMIT = int(env("NFSE_POLL_HARD_TIME_LIMIT", "0") or "0") or None
+DANFSE_LAYOUT_VERSION = env("DANFSE_LAYOUT_VERSION", "nt008-v1.02")
 FOCUS_HTTP_MODE = env("FOCUS_HTTP_MODE", "stub")  # stub | http
 FOCUS_API_BASE_URL = env(
     "FOCUS_API_BASE_URL",

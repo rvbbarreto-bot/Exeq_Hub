@@ -2,17 +2,31 @@
 
 | Campo | Valor |
 |-------|--------|
-| Versão | **1.0.0** |
-| Data | 2026-07-19 |
-| Status | **Referência oficial para fábrica** (não substitui v1/v2/v3.1) |
-| Hierarquia | Contrato → v1 → v2 → v3.1 → **este doc (integração NFS-e)** → v4 → v5 |
+| Versão | **1.1.0** |
+| Data | 2026-07-29 |
+| Status | **Referência** — estratégia Focus histórica **superada em parte** por ADR-NFSE-001 |
+| Hierarquia | Contrato → v1 → v2 → v3.1 → **este doc** → **ADR-NFSE-001 + LLR emissor próprio** (quando houver conflito de estratégia de provider) → v4 → v5 |
 | Escopo | Decisão de arquitetura + roteamento de emissão + prompt da fábrica |
 | Código | **Não implementar neste documento** — apenas especificar |
 
 Em conflito de *dados/schema*: prevalece **v3.1**.  
 Em conflito de *regra funcional de domínio*: prevalece **v1**.  
 Em conflito de *engines/camadas*: prevalece **v2**.  
-Este documento prevalece apenas em **estratégia de integração NFS-e** (provider, layout, Atibaia/Nacional).
+Este documento prevalece apenas em **estratégia de integração NFS-e** (provider, layout, Atibaia/Nacional), **exceto** quando `Docs/ADR_NFSE_001_Emissor_Proprio_Nacional.md` estiver **Aceito/Aprovado** — nesse caso o caminho crítico de go-live é **SEFIN/ADN + DANFSe EXEQ**, e Focus permanece legado/lab.
+
+---
+
+## 0. Addendum 2026-07-29 — Emissor próprio (ADR-NFSE-001)
+
+| Tema | Decisão anterior (v1.0) | Decisão atual |
+|------|-------------------------|---------------|
+| Provider default go-live | Focus `nfsen` | **SEFIN/ADN** (`sefin`) — Focus **não** em operação |
+| SEFIN direto | Fase 2 / fora de escopo | **MVP do emissor próprio** |
+| DANFSe | Download via provedor / fora DoD | **Geração EXEQ** (NT 008 v1.02; API gov suspende **03/08/2026**) |
+| Código Focus | Default | **Preservar**; override lab apenas |
+| Documento de requisitos | — | `Docs/Exeq_Hub_LLR_Emissor_Proprio_NFSe_Nacional.md` |
+
+Detalhes de RF/EX/gates: LLR + ADR-NFSE-001 (não duplicar aqui).
 
 ---
 
@@ -292,7 +306,11 @@ Ao final, listar: arquivos tocados, decisões tomadas, testes adicionados, e qua
 |--------|------|------|
 | 1.0.0 | 2026-07-19 | Decisão arquitetural pós-estudo Focus/SEFIN/Betha/Atibaia; prompt fábrica incluso |
 | 1.0.1 | 2026-07-19 | SEFIN direto **diferido** (Focus facade suficiente); smoke/municípios/v4 OpenAPI na esteira |
+| 1.1.0 | 2026-07-29 | Addendum §0 emissor próprio; hierarquia ADR-NFSE-001 + LLR |
 
 ### SEFIN direto (decisão operacional)
 
-Não implementar nesta fase. Critério de reabertura: Focus deixar de atender município aderente ou requisito explícito de mTLS próprio.
+| Versão doc | Posição |
+|------------|---------|
+| 1.0.x | Não implementar nesta fase; reabrir se Focus falhar |
+| **1.1.0+** | **Reaberto e priorizado** por ADR-NFSE-001 — emissor próprio Nacional é o caminho crítico |

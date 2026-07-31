@@ -2,6 +2,7 @@ from django.db.models import Count
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.throttling import UserRateThrottle
 
 from apps.accounts.permissions import IsTenantWriter
 from apps.issuance.exceptions import (
@@ -19,10 +20,21 @@ from apps.issuance.services import cancel_nf_issue, reprocess_nf_issue
 from shared.pagination import HubPageNumberPagination
 
 
+class NfIssueWriteThrottle(UserRateThrottle):
+    """Limita emissão/cancel/reprocess (SEC-P1-02)."""
+
+    scope = "nf_issue_write"
+
+
 class NfIssueViewSet(viewsets.ModelViewSet):
     permission_classes = [IsTenantWriter]
     http_method_names = ["get", "post", "head", "options"]
     pagination_class = HubPageNumberPagination
+
+    def get_throttles(self):
+        if self.action in {"create", "cancel", "reprocess"}:
+            return [NfIssueWriteThrottle()]
+        return []
 
     def get_queryset(self):
         qs = NfIssue.objects.filter(tenant=self.request.tenant).order_by("-created_at")

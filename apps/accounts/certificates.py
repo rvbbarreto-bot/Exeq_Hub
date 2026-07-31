@@ -212,12 +212,17 @@ def scan_expiring_certificates(*, alert_days: int = 30) -> int:
     return alerted
 
 
-def load_primary_pfx_material(*, tenant, cnpj: str) -> tuple[bytes, str]:
+def load_primary_pfx_material(
+    *,
+    tenant,
+    cnpj: str,
+    purpose: str = "das",
+) -> tuple[bytes, str]:
     """
     Retorna (pfx_bytes, password) do certificado A1 primary.
     PFX é armazenado criptografado em StoredFile; senha em TenantSecret.
     """
-    cert = assert_certificate_usable(tenant=tenant, cnpj=cnpj, purpose="das")
+    cert = assert_certificate_usable(tenant=tenant, cnpj=cnpj, purpose=purpose)
     if cert.stored_file_id is None:
         raise CertificateNotUsableError("Certificado sem arquivo PFX armazenado")
     encrypted = get_storage().get(key=cert.stored_file.object_key)

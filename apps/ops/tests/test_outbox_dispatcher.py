@@ -42,6 +42,32 @@ def test_outbox_authorized_noop_without_phone(tenant_a):
 
 
 @pytest.mark.django_db
+def test_outbox_certificate_expiring_notifies(tenant_a):
+    tenant_a.settings = {"notify_phone": "+5511888888888"}
+    tenant_a.save(update_fields=["settings"])
+
+    msg = OutboxMessage.objects.create(
+        tenant=tenant_a,
+        event_type="certificate.expiring",
+        aggregate_type="digital_certificate",
+        aggregate_id=tenant_a.id,
+        payload={
+            "cnpj": "37229907000137",
+            "status": "expiring",
+            "not_after": "2026-08-15T00:00:00+00:00",
+            "days_left": 16,
+        },
+        available_at=timezone.now(),
+    )
+    assert claim_and_dispatch(str(msg.id)) == "processed"
+    note = ChannelNotification.objects.get(
+        tenant=tenant_a, event_type="certificate.expiring"
+    )
+    assert "37229907000137" in note.message_body
+    assert "a vencer" in note.message_body
+
+
+@pytest.mark.django_db
 def test_outbox_queued_skipped_by_dispatcher(tenant_a):
     msg = OutboxMessage.objects.create(
         tenant=tenant_a,

@@ -48,6 +48,8 @@ def customer(tenant_a):
 def test_assert_secure_rejects_weak_webhook_secret(settings):
     settings.DEBUG = False
     settings.FORCE_SECURE_SECRETS = False
+    settings.SECRET_KEY = "strong-secret-key-for-unit-tests-only!!"
+    settings.ALLOWED_HOSTS = ["hub.example.test"]
     settings.WEBHOOK_GATEWAY_SECRET = "dev-webhook-secret"
     settings.FIELD_ENCRYPTION_KEY = "ok-not-the-example-key-but-long-enough!!!!"
     with pytest.raises(ImproperlyConfigured, match="WEBHOOK_GATEWAY_SECRET"):
@@ -56,9 +58,21 @@ def test_assert_secure_rejects_weak_webhook_secret(settings):
 
 def test_assert_secure_ok_with_strong_secrets(settings):
     settings.DEBUG = False
+    settings.SECRET_KEY = "strong-secret-key-for-unit-tests-only!!"
+    settings.ALLOWED_HOSTS = ["hub.example.test"]
     settings.WEBHOOK_GATEWAY_SECRET = "x" * 32
     settings.FIELD_ENCRYPTION_KEY = "different-from-repo-example-key===="
     assert_secure_runtime_settings()
+
+
+def test_assert_secure_rejects_lab_allowed_hosts(settings):
+    settings.DEBUG = False
+    settings.SECRET_KEY = "strong-secret-key-for-unit-tests-only!!"
+    settings.ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
+    settings.WEBHOOK_GATEWAY_SECRET = "x" * 32
+    settings.FIELD_ENCRYPTION_KEY = "different-from-repo-example-key===="
+    with pytest.raises(ImproperlyConfigured, match="ALLOWED_HOSTS"):
+        assert_secure_runtime_settings()
 
 
 def test_verify_signature_accepts_sha256_prefix(settings):

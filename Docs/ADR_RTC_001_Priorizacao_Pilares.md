@@ -47,6 +47,7 @@ classificação CST/cClassTrib, catálogo oficial e snapshot forense.
 - Novas tabelas: `rtc_normative_versions`, `rtc_classification_codes` (amend v3.1).
 - `FiscalRuleSnapshot.snapshot` passa a incluir chave `forensic` (compatível; leitores antigos ignoram).
 - Feature flags em settings; produção permanece segura em `shadow` até go-live ADN/Focus.
+- **Nota 2026-07-29 (ADR-NFSE-001):** o go-live do emissor próprio usa transporte **SEFIN/ADN**; `RTC_NFSEN_MODE` e golden-files aplicam-se ao mapper DPS. Focus permanece lab.
 
 ## Fora de escopo (explícito)
 

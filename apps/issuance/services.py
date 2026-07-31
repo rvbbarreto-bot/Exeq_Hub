@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import transaction
+import logging
 
 from apps.fiscal.exceptions import (
     NationalCatalogError,
@@ -20,7 +21,51 @@ from apps.issuance.models import FiscalRuleSnapshot, NfIssue
 from apps.ops.services import enqueue_outbox
 from integrations.nfse.factory import get_nfse_provider, resolve_nfse_route
 from integrations.nfse.focus import CANCELLED, FocusHttpError
+from integrations.nfse.sefin_client import SefinHttpError
 from integrations.nfse.mappers import build_focus_body
+
+logger = logging.getLogger(__name__)
+
+
+def _extract_rejection_code(raw: dict | None) -> str:
+    """EX-FIS-01 — código SEFIN/ADN a partir do raw."""
+    data = raw or {}
+    erros = data.get("erros") or data.get("errors") or []
+    if isinstance(erros, list) and erros:
+        first = erros[0]
+        if isinstance(first, dict):
+            code = first.get("codigo") or first.get("Codigo") or first.get("code")
+            if code:
+                return str(code)[:64]
+        if isinstance(first, str) and first.strip():
+            return first.strip()[:64]
+    for key in ("codigo", "rejection_code", "cStat"):
+        if data.get(key):
+            return str(data[key])[:64]
+    return "SEFIN_REJECTED"
+
+
+def _is_transport_recoverable(exc: BaseException) -> bool:
+    """EX-NET-02 — timeout/5xx → polling; demais → failed."""
+    if isinstance(exc, SefinHttpError) and exc.status_code is not None:
+        if exc.status_code >= 500:
+            return True
+        if exc.status_code in {408, 429}:
+            return True
+    msg = str(exc).lower()
+    return any(
+        token in msg
+        for token in (
+            "timeout",
+            "timed out",
+            "temporar",
+            "connection",
+            "connect",
+            "502",
+            "503",
+            "504",
+        )
+    )
 
 
 def _enqueue_process(issue: NfIssue) -> None:
@@ -216,10 +261,46 @@ def process_queued_issue(issue: NfIssue) -> NfIssue:
         tenant=issue.tenant,
         tax_regime=issue.provider.tax_regime,
         competence_date=issue.competence_date,
+        provider_cnpj=getattr(issue.provider, "document", "") or "",
     )
-    nfse_body = build_focus_body(issue, layout=route.layout)
-    result = provider.emitir(
-        payload={
+
+    if route.kind == "sefin":
+        from integrations.nfse.convenio import (
+            MunicipioNaoAderenteError,
+            assert_municipio_aderente_nacional,
+        )
+
+        try:
+            from django.conf import settings as dj_settings
+
+            sefin_env = getattr(dj_settings, "SEFIN_ENVIRONMENT", None)
+            assert_municipio_aderente_nacional(
+                issue.ibge_code,
+                environment=sefin_env,
+            )
+        except MunicipioNaoAderenteError as exc:
+            issue.rejection_code = MunicipioNaoAderenteError.code
+            issue.focus_status_raw = {
+                "provider": "sefin",
+                "action": "preflight",
+                "detail": str(exc),
+                "sefin_environment": getattr(dj_settings, "SEFIN_ENVIRONMENT", None),
+                "sefin_http_mode": getattr(dj_settings, "SEFIN_HTTP_MODE", None),
+            }
+            issue.save(
+                update_fields=["rejection_code", "focus_status_raw", "updated_at"]
+            )
+            transition(
+                issue,
+                to_status=NfIssue.Status.REJECTED,
+                actor="worker",
+                metadata={"code": issue.rejection_code, "ex": "EX-PRE-01"},
+            )
+            return issue
+
+    if route.kind == "focus":
+        nfse_body = build_focus_body(issue, layout=route.layout)
+        emit_payload = {
             "issue_id": str(issue.id),
             "ref": str(issue.id),
             "amount_cents": issue.amount_cents,
@@ -229,7 +310,123 @@ def process_queued_issue(issue: NfIssue) -> NfIssue:
             "layout": route.layout,
             "nfse": nfse_body,
         }
-    )
+    elif route.kind == "sefin":
+        from django.conf import settings as dj_settings
+
+        from apps.accounts.exceptions import CertificateNotUsableError
+        from integrations.nfse.dps import to_sefin_dps_dict, build_dps_xml_from_dict
+        from integrations.nfse.xmldsig import sign_dps_xml
+
+        tp_amb = 1 if (getattr(dj_settings, "SEFIN_ENVIRONMENT", "homolog") or "").lower() in {
+            "prod",
+            "production",
+            "producao",
+            "produção",
+        } else 2
+        dps_dict = to_sefin_dps_dict(issue, tp_amb=tp_amb)
+        unsigned_xml = build_dps_xml_from_dict(dps_dict)
+        nfse_body = {
+            "provider": "sefin",
+            "layout": route.layout,
+            "tp_amb": tp_amb,
+            "dps": dps_dict,
+            "dps_id": (dps_dict.get("infDPS") or {}).get("Id"),
+        }
+        emit_payload = {
+            "issue_id": str(issue.id),
+            "ref": str(issue.id),
+            "amount_cents": issue.amount_cents,
+            "ibge_code": issue.ibge_code,
+            "competence_date": issue.competence_date.isoformat(),
+            "resolved_params": issue.resolved_params or {},
+            "layout": route.layout,
+            "nfse": nfse_body,
+        }
+        if (getattr(dj_settings, "SEFIN_HTTP_MODE", "stub") or "stub").lower() == "http":
+            from apps.accounts.certificates import load_primary_pfx_material
+
+            try:
+                pfx_bytes, pfx_password = load_primary_pfx_material(
+                    tenant=issue.tenant,
+                    cnpj=getattr(issue.provider, "document", "") or "",
+                    purpose="nfse",
+                )
+            except CertificateNotUsableError as exc:
+                issue.rejection_code = "CERT_NOT_USABLE"
+                issue.focus_status_raw = {
+                    "provider": "sefin",
+                    "action": "preflight",
+                    "detail": str(exc),
+                    "ex": "EX-PRE-02",
+                }
+                issue.save(
+                    update_fields=["rejection_code", "focus_status_raw", "updated_at"]
+                )
+                transition(
+                    issue,
+                    to_status=NfIssue.Status.FAILED,
+                    actor="worker",
+                    metadata={"code": issue.rejection_code, "ex": "EX-PRE-02"},
+                )
+                logger.warning(
+                    "EX-PRE-02 cert blocked tenant=%s issue=%s detail=%s",
+                    issue.tenant_id,
+                    issue.id,
+                    str(exc)[:200],
+                )
+                return issue
+            signed_xml = sign_dps_xml(
+                dps_xml=unsigned_xml,
+                pfx_bytes=pfx_bytes,
+                password=pfx_password,
+            )
+            emit_payload["dps_xml"] = signed_xml
+            nfse_body["dps_signed"] = True
+    else:
+        nfse_body = {
+            "provider": route.kind,
+            "layout": route.layout,
+            "issue_id": str(issue.id),
+        }
+        emit_payload = {
+            "issue_id": str(issue.id),
+            "ref": str(issue.id),
+            "nfse": nfse_body,
+            "layout": route.layout,
+        }
+
+    try:
+        result = provider.emitir(payload=emit_payload)
+    except (SefinHttpError, FocusHttpError) as exc:
+        logger.warning(
+            "nfse.emit transport_error provider=%s issue=%s detail=%s",
+            provider.kind,
+            issue.id,
+            str(exc)[:200],
+        )
+        issue.focus_status_raw = {
+            "provider": provider.kind,
+            "action": "emitir",
+            "error": str(exc)[:500],
+            "http_status": getattr(exc, "status_code", None),
+        }
+        issue.save(update_fields=["focus_status_raw", "updated_at"])
+        if _is_transport_recoverable(exc):
+            transition(issue, to_status=NfIssue.Status.POLLING, actor="worker")
+            from apps.issuance.polling import schedule_poll
+
+            schedule_poll(issue)
+            return issue
+        issue.rejection_code = "SEFIN_TRANSPORT"
+        issue.save(update_fields=["rejection_code", "updated_at"])
+        transition(
+            issue,
+            to_status=NfIssue.Status.FAILED,
+            actor="worker",
+            metadata={"ex": "EX-NET", "detail": str(exc)[:120]},
+        )
+        return issue
+
     issue.internal_payload = nfse_body
     issue.focus_ref = result.external_ref
     issue.focus_status_raw = result.raw
@@ -241,9 +438,19 @@ def process_queued_issue(issue: NfIssue) -> NfIssue:
             "updated_at",
         ]
     )
-    _refresh_forensic_after_emit(issue, layout=route.layout)
-    transition(issue, to_status=NfIssue.Status.POLLING, actor="worker")
-    if result.status == "authorized":
+    status = (result.status or "").lower()
+    logger.info(
+        "nfse.emit outcome=%s provider=%s issue=%s ref=%s",
+        status or "unknown",
+        provider.kind,
+        issue.id,
+        issue.focus_ref,
+    )
+    if route.kind == "focus":
+        _refresh_forensic_after_emit(issue, layout=route.layout)
+
+    if status == "authorized":
+        # Caminho feliz síncrono: submitting → authorized (sem polling artificial).
         transition(
             issue,
             to_status=NfIssue.Status.AUTHORIZED,
@@ -261,7 +468,22 @@ def process_queued_issue(issue: NfIssue) -> NfIssue:
         from apps.issuance.artifacts import ensure_authorized_artifacts
 
         ensure_authorized_artifacts(issue)
+    elif status == "rejected":
+        issue.rejection_code = _extract_rejection_code(result.raw)
+        issue.save(update_fields=["rejection_code", "updated_at"])
+        transition(
+            issue,
+            to_status=NfIssue.Status.REJECTED,
+            actor="provider",
+            metadata={
+                "provider": provider.kind,
+                "raw_status": status,
+                "rejection_code": issue.rejection_code,
+                "ex": "EX-FIS-01",
+            },
+        )
     else:
+        transition(issue, to_status=NfIssue.Status.POLLING, actor="worker")
         from apps.issuance.polling import schedule_poll
 
         schedule_poll(issue)
@@ -286,7 +508,9 @@ def cancel_nf_issue(
             f"Só é possível cancelar nota Autorizada. Status atual: {issue.get_status_display()} ({issue.status})"
         )
     if not issue.focus_ref:
-        raise FocusCancelFailedError("focus_ref ausente — não é possível cancelar no provedor")
+        raise FocusCancelFailedError(
+            "referência do Provedor Exeq ausente — não é possível cancelar no provedor"
+        )
 
     provider = get_nfse_provider(
         ibge_code=issue.ibge_code,
@@ -294,17 +518,57 @@ def cancel_nf_issue(
         tenant=issue.tenant,
         tax_regime=issue.provider.tax_regime,
         competence_date=issue.competence_date,
+        provider_cnpj=getattr(issue.provider, "document", "") or "",
     )
+    cancel_kwargs: dict = {
+        "ref": issue.focus_ref,
+        "justificativa": text,
+        "codigo_cancelamento": codigo_cancelamento,
+    }
+    if getattr(provider, "kind", "") == "sefin":
+        from django.conf import settings as dj_settings
+
+        from apps.accounts.certificates import load_primary_pfx_material
+        from integrations.nfse.evento import build_cancel_evento_from_issue
+        from integrations.nfse.xmldsig import sign_ped_reg_evento_xml
+
+        if (getattr(dj_settings, "SEFIN_HTTP_MODE", "stub") or "stub").lower() == "http":
+            tp_amb = 1 if (getattr(dj_settings, "SEFIN_ENVIRONMENT", "homolog") or "").lower() in {
+                "prod",
+                "production",
+                "producao",
+                "produção",
+            } else 2
+            unsigned = build_cancel_evento_from_issue(
+                issue,
+                justificativa=text,
+                codigo_cancelamento=codigo_cancelamento,
+                tp_amb=tp_amb,
+            )
+            pfx_bytes, pfx_password = load_primary_pfx_material(
+                tenant=issue.tenant,
+                cnpj=getattr(issue.provider, "document", "") or "",
+                purpose="nfse",
+            )
+            cancel_kwargs["evento_xml"] = sign_ped_reg_evento_xml(
+                evento_xml=unsigned,
+                pfx_bytes=pfx_bytes,
+                password=pfx_password,
+            )
     try:
-        result = provider.cancelar(
-            ref=issue.focus_ref,
-            justificativa=text,
-            codigo_cancelamento=codigo_cancelamento,
-        )
+        result = provider.cancelar(**cancel_kwargs)
     except FocusHttpError as exc:
         raise FocusCancelFailedError(str(exc)) from exc
+    except SefinHttpError as exc:
+        raise FocusCancelFailedError(str(exc)) from exc
 
-    issue.focus_status_raw = result.raw
+    # Preserva XML/DANFSe da autorização — cancel HTTP/stub não devolve NFSe.
+    prev_raw = dict(issue.focus_status_raw or {})
+    merged_raw = {**prev_raw, **(result.raw or {})}
+    for key in ("xml", "nfse_xml", "xml_nfse", "url_danfse", "caminho_xml_nota_fiscal"):
+        if not merged_raw.get(key) and prev_raw.get(key):
+            merged_raw[key] = prev_raw[key]
+    issue.focus_status_raw = merged_raw
     issue.save(update_fields=["focus_status_raw", "updated_at"])
 
     status = (result.status or "").lower()
@@ -321,7 +585,7 @@ def cancel_nf_issue(
             "processing",
         }:
             raise FocusCancelFailedError(
-                "Focus aceitou o pedido, mas o cancelamento ainda está em processamento. "
+                "Provedor Exeq aceitou o pedido, mas o cancelamento ainda está em processamento. "
                 "Use a ação «Consultar status no provedor» em alguns segundos."
             )
         raise FocusCancelFailedError(
@@ -336,6 +600,7 @@ def cancel_nf_issue(
             "focus_ref": issue.focus_ref,
             "justificativa": text[:80],
             "codigo_cancelamento": codigo_cancelamento,
+            "provider": provider.kind,
         },
     )
     enqueue_outbox(
@@ -346,6 +611,9 @@ def cancel_nf_issue(
         payload={"nf_issue_id": str(issue.id), "focus_ref": issue.focus_ref},
         correlation_id=issue.correlation_id,
     )
+    from apps.issuance.artifacts import ensure_cancelled_artifacts
+
+    ensure_cancelled_artifacts(issue)
     return issue
 
 

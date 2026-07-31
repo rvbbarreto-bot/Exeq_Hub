@@ -88,7 +88,9 @@ class FocusNfseProvider:
         ref: str,
         justificativa: str,
         codigo_cancelamento: int | None = None,
+        evento_xml: bytes | None = None,
     ) -> NfseEmitResult:
+        _ = evento_xml
         if self.mode != "http":
             return NfseEmitResult(
                 external_ref=ref,

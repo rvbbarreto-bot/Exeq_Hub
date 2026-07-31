@@ -3,6 +3,7 @@ from integrations.nfse.betha import BethaNfseProvider
 from integrations.nfse.focus import FocusNfseProvider
 from integrations.nfse.port import NfseProvider
 from integrations.nfse.router import EmissionRoute, resolve_emission_route
+from integrations.nfse.sefin import SefinNfseProvider
 
 
 def resolve_nfse_provider_kind(
@@ -49,6 +50,7 @@ def get_nfse_provider(
     tenant=None,
     tax_regime: str | None = None,
     competence_date=None,
+    provider_cnpj: str = "",
 ) -> NfseProvider:
     route = resolve_nfse_route(
         ibge_code=ibge_code,
@@ -59,6 +61,8 @@ def get_nfse_provider(
     )
     if route.kind == "betha":
         return BethaNfseProvider()
+    if route.kind == "sefin":
+        return SefinNfseProvider(tenant=tenant, cnpj=provider_cnpj)
 
     token = None
     if tenant is not None:

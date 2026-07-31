@@ -2,10 +2,10 @@
 {% load i18n %}
 
 {% block content %}
-<h1>Confirmar cancelamento no Focus</h1>
+<h1>Confirmar cancelamento no Provedor Exeq</h1>
 <p>
   Serão canceladas <strong>{{ authorized|length }}</strong> nota(s) com status
-  <strong>Autorizada</strong>. O Hub chama a Focus (DELETE) com a justificativa abaixo.
+  <strong>Autorizada</strong>. O Hub chama o Provedor Exeq com a justificativa abaixo.
 </p>
 <p><strong>Justificativa:</strong> {{ justificativa }}</p>
 
@@ -18,7 +18,7 @@
 
 <ul>
   {% for issue in authorized %}
-  <li>{{ issue.idempotency_key }} — focus_ref={{ issue.focus_ref|default:"—" }}</li>
+  <li>{{ issue.idempotency_key }} — ref={{ issue.focus_ref|default:"—" }}</li>
   {% endfor %}
 </ul>
 

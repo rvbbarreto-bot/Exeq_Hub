@@ -30,7 +30,9 @@ class BethaNfseProvider:
         ref: str,
         justificativa: str,
         codigo_cancelamento: int | None = None,
+        evento_xml: bytes | None = None,
     ) -> NfseEmitResult:
+        _ = evento_xml
         return NfseEmitResult(
             external_ref=ref,
             status="cancelled",

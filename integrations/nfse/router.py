@@ -8,9 +8,11 @@ from django.conf import settings
 LAYOUT_NFSE = "nfse"
 LAYOUT_NFSEN = "nfsen"
 LAYOUT_BETHA = "betha_soap"
+LAYOUT_SEFIN = "sefin"
 
 ATIBAIA_IBGE = "3504107"
 SIMPLES_REGIMES = frozenset({"simples_nacional", "simples"})
+SEFIN_KINDS = frozenset({"sefin", "exeq_nacional"})
 
 
 @dataclass(frozen=True)
@@ -31,6 +33,15 @@ def _betha_ibge_codes() -> frozenset[str]:
 def _national_ibge_codes() -> frozenset[str]:
     codes = _csv_codes("NFSE_NATIONAL_IBGE_CODES")
     return codes if codes else frozenset({ATIBAIA_IBGE})
+
+
+def _default_provider_kind() -> str:
+    kind = (getattr(settings, "NFSE_DEFAULT_PROVIDER", None) or "sefin").lower().strip()
+    if kind in SEFIN_KINDS:
+        return "sefin"
+    if kind == "betha":
+        return "betha"
+    return "focus"
 
 
 def _tenant_focus_layout(tenant_settings: dict | None, focus_layout: str | None) -> str:
@@ -67,6 +78,13 @@ def simples_must_use_nfsen(*, tax_regime: str | None, competence_date) -> bool:
     return competence >= cutoff
 
 
+def _national_route() -> EmissionRoute:
+    kind = _default_provider_kind()
+    if kind == "sefin":
+        return EmissionRoute(kind="sefin", layout=LAYOUT_SEFIN)
+    return EmissionRoute(kind="focus", layout=LAYOUT_NFSEN)
+
+
 def resolve_emission_route(
     *,
     ibge_code: str,
@@ -75,9 +93,9 @@ def resolve_emission_route(
     tax_regime: str | None = None,
     competence_date=None,
 ) -> EmissionRoute:
-    """EmissionRouter — matriz §3 + obrigatoriedade nacional Simples (CGSN)."""
+    """EmissionRouter — Nacional MVP = sefin (RF-51); Focus só com override lab."""
     if simples_must_use_nfsen(tax_regime=tax_regime, competence_date=competence_date):
-        return EmissionRoute(kind="focus", layout=LAYOUT_NFSEN)
+        return _national_route()
 
     settings_map = tenant_settings or {}
     provider_overrides = settings_map.get("nfse_provider_by_ibge") or {}
@@ -90,6 +108,8 @@ def resolve_emission_route(
         kind = str(provider_overrides[ibge_code]).lower()
         if kind == "betha":
             return EmissionRoute(kind="betha", layout=LAYOUT_BETHA)
+        if kind in SEFIN_KINDS:
+            return EmissionRoute(kind="sefin", layout=LAYOUT_SEFIN)
         layout = layout_overrides.get(ibge_code) or tenant_layout
         if layout not in {LAYOUT_NFSE, LAYOUT_NFSEN}:
             layout = LAYOUT_NFSEN
@@ -99,16 +119,9 @@ def resolve_emission_route(
         return EmissionRoute(kind="betha", layout=LAYOUT_BETHA)
 
     if ibge_code in national or tenant_layout == LAYOUT_NFSEN:
-        if ibge_code in layout_overrides:
-            layout = layout_overrides[ibge_code]
-        elif ibge_code in national:
-            layout = LAYOUT_NFSEN
-        else:
-            layout = tenant_layout
-        if layout not in {LAYOUT_NFSE, LAYOUT_NFSEN}:
-            layout = LAYOUT_NFSEN
-        return EmissionRoute(kind="focus", layout=layout)
+        return _national_route()
 
+    # Municipal legado Focus (fora do MVP Nacional; lab)
     return EmissionRoute(
         kind="focus",
         layout=layout_overrides.get(ibge_code) or LAYOUT_NFSE,

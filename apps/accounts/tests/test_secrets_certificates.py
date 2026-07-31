@@ -114,6 +114,27 @@ def test_assert_certificate_blocks_missing_and_expired(tenant_a, tmp_path, setti
 
 
 @pytest.mark.django_db
+def test_assert_certificate_blocks_revoked_nfse(tenant_a, tmp_path, settings):
+    """EX-PRE-02 — revogado bloqueia uso nfse."""
+    settings.LOCAL_STORAGE_ROOT = str(tmp_path)
+    cert = upload_a1_certificate(
+        tenant=tenant_a,
+        label="Revoked",
+        cnpj="00000000000191",
+        pfx_bytes=_make_pfx(days=90),
+        password="secret",
+        key_usage=["nfse", "das"],
+    )
+    DigitalCertificate.objects.filter(id=cert.id).update(
+        status=DigitalCertificate.Status.REVOKED
+    )
+    with pytest.raises(CertificateNotUsableError, match="revogado"):
+        assert_certificate_usable(
+            tenant=tenant_a, cnpj="00000000000191", purpose="nfse"
+        )
+
+
+@pytest.mark.django_db
 def test_rotation_demotes_previous_primary(tenant_a, tmp_path, settings):
     settings.LOCAL_STORAGE_ROOT = str(tmp_path)
     first = upload_a1_certificate(

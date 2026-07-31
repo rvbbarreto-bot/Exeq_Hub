@@ -8,7 +8,7 @@ from django.utils import timezone
 from django.utils.html import format_html
 from decimal import Decimal
 
-from apps.issuance.artifacts import ensure_authorized_artifacts
+from apps.issuance.artifacts import ensure_authorized_artifacts, regenerate_danfse_pdf
 from apps.issuance.exceptions import (
     CancelJustificationError,
     FiscalProfileRequiredError,
@@ -247,6 +247,7 @@ class NfIssueAdmin(admin.ModelAdmin):
         "action_cancel_authorized",
         "action_reprocess_rejected",
         "action_ensure_artifacts",
+        "action_regenerate_danfse_pdf",
     )
     date_hierarchy = "created_at"
     ordering = ("-created_at",)
@@ -274,13 +275,13 @@ class NfIssueAdmin(admin.ModelAdmin):
                 "description": (
                     "Disponível somente com status Autorizada. "
                     "Também dá para cancelar pela lista: marque a nota → "
-                    "ação «Cancelar no Focus (autorizadas)»."
+                    "ação «Cancelar no Provedor Exeq (autorizadas)»."
                 ),
                 "fields": ("cancel_panel",),
             },
         ),
         (
-            "Status / Focus (somente leitura)",
+            "Status / Provedor Exeq (somente leitura)",
             {
                 "fields": (
                     "status",
@@ -330,7 +331,7 @@ class NfIssueAdmin(admin.ModelAdmin):
         return format_html(
             '<a class="button" href="{}" style="background:#ba2121;color:#fff;'
             'padding:8px 14px;border-radius:4px;text-decoration:none">'
-            "Cancelar esta nota no Focus</a>"
+            "Cancelar esta nota no Provedor Exeq</a>"
             '<p style="margin-top:8px;color:#666">Justificativa usada: «{}»</p>',
             url,
             QA_CANCEL_JUSTIFICATIVA,
@@ -340,7 +341,7 @@ class NfIssueAdmin(admin.ModelAdmin):
         urls = super().get_urls()
         custom = [
             path(
-                "<uuid:object_id>/cancelar-focus/",
+                "<uuid:object_id>/cancelar-provedor-exeq/",
                 self.admin_site.admin_view(self.cancel_detail_view),
                 name="issuance_nfissue_cancel",
             ),
@@ -367,7 +368,7 @@ class NfIssueAdmin(admin.ModelAdmin):
                 )
                 messages.success(
                     request,
-                    f"{issue.idempotency_key}: cancelada no Focus (status=cancelled).",
+                    f"{issue.idempotency_key}: cancelada no Provedor Exeq (status=cancelled).",
                 )
             except (
                 InvalidTransitionError,
@@ -405,7 +406,7 @@ class NfIssueAdmin(admin.ModelAdmin):
                     {
                         "description": (
                             "Ao salvar, o Hub resolve o imposto, enfileira e envia ao "
-                            "provedor Focus (stub ou HTTP conforme .env)."
+                            "Provedor Exeq (stub ou HTTP conforme .env)."
                         ),
                         "fields": (
                             "tenant",
@@ -461,7 +462,8 @@ class NfIssueAdmin(admin.ModelAdmin):
             setattr(obj, field.attname, getattr(created, field.attname))
         messages.success(
             request,
-            f"Emissão criada: status={created.status}, focus_ref={created.focus_ref or '-'}",
+            f"Emissão criada: status={created.status}, "
+            f"ref Provedor Exeq={created.focus_ref or '-'}",
         )
 
     @admin.action(description="Consultar status no provedor")
@@ -475,7 +477,7 @@ class NfIssueAdmin(admin.ModelAdmin):
                 messages.error(request, f"{issue.idempotency_key}: {exc}")
         messages.success(request, f"Consulta executada em {ok} nota(s).")
 
-    @admin.action(description="Cancelar no Focus (autorizadas)")
+    @admin.action(description="Cancelar no Provedor Exeq (autorizadas)")
     def action_cancel_authorized(self, request, queryset):
         authorized = list(
             queryset.filter(status=NfIssue.Status.AUTHORIZED).select_related(
@@ -505,7 +507,7 @@ class NfIssueAdmin(admin.ModelAdmin):
                     "justificativa": QA_CANCEL_JUSTIFICATIVA,
                     "action_checkbox_name": ACTION_CHECKBOX_NAME,
                     "back_url": reverse("admin:issuance_nfissue_changelist"),
-                    "title": "Confirmar cancelamento no Focus",
+                    "title": "Confirmar cancelamento no Provedor Exeq",
                 },
             )
 
@@ -525,7 +527,7 @@ class NfIssueAdmin(admin.ModelAdmin):
             ) as exc:
                 messages.error(request, f"{issue.idempotency_key}: {exc}")
         if ok:
-            messages.success(request, f"{ok} nota(s) cancelada(s) no Focus.")
+            messages.success(request, f"{ok} nota(s) cancelada(s) no Provedor Exeq.")
         if skipped:
             messages.warning(
                 request,
@@ -560,7 +562,24 @@ class NfIssueAdmin(admin.ModelAdmin):
         else:
             messages.warning(
                 request,
-                "Nenhuma emissão autorizada selecionada ou sem arquivo Focus.",
+                "Nenhuma emissão autorizada selecionada ou sem arquivo do Provedor Exeq.",
+            )
+
+    @admin.action(description="Regenerar DANFSe PDF (layout atual)")
+    def action_regenerate_danfse_pdf(self, request, queryset):
+        ok = 0
+        for issue in queryset.filter(
+            status__in=(NfIssue.Status.AUTHORIZED, NfIssue.Status.CANCELLED)
+        ):
+            art = regenerate_danfse_pdf(issue)
+            if art is not None:
+                ok += 1
+        if ok:
+            messages.success(request, f"DANFSe regenerado em {ok} nota(s).")
+        else:
+            messages.warning(
+                request,
+                "Nenhuma nota autorizada/cancelada com XML suficiente para regenerar.",
             )
 
 
@@ -670,11 +689,15 @@ class NfArtifactAdmin(admin.ModelAdmin):
     def download_view(self, request, object_id):
         from io import BytesIO
 
-        artifact = (
-            NfArtifact.objects.select_related("stored_file", "nf_issue")
-            .filter(pk=object_id)
-            .first()
-        )
+        from apps.accounts.models import TenantMembership
+
+        qs = NfArtifact.objects.select_related("stored_file", "nf_issue")
+        if not request.user.is_superuser:
+            tenant_ids = TenantMembership.objects.filter(user=request.user).values_list(
+                "tenant_id", flat=True
+            )
+            qs = qs.filter(tenant_id__in=tenant_ids)
+        artifact = qs.filter(pk=object_id).first()
         if artifact is None or artifact.stored_file_id is None:
             raise Http404("Artefato não encontrado")
         stored = artifact.stored_file

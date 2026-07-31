@@ -1,0 +1,308 @@
+/* EXEQ Hub — tokens de cadastro (Receita / master data) */
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Zilla+Slab:wght@500;600;700&display=swap");
+
+:root {
+  --exeq-ink: #1b2430;
+  --exeq-seal: #2f6f5e;
+  --exeq-seal-soft: #e6f1ed;
+  --exeq-gold: #b9852e;
+  --exeq-gold-soft: #f7efdf;
+  --exeq-paper: #f1f3ee;
+  --exeq-surface: #ffffff;
+  --exeq-muted: #5c6672;
+  --exeq-border: #d5dbd2;
+  --exeq-lock-bg: #e8ebe6;
+  --exeq-alert: #a85a45;
+  --exeq-alert-soft: #f6ebe7;
+  --exeq-font-display: "Zilla Slab", Georgia, serif;
+  --exeq-font-body: "IBM Plex Sans", system-ui, sans-serif;
+  --exeq-font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --exeq-radius: 10px;
+  --exeq-shadow: 0 10px 30px rgba(27, 36, 48, 0.06);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body.exeq-cadastro {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(47, 111, 94, 0.08), transparent 40%),
+    radial-gradient(circle at top right, rgba(185, 133, 46, 0.08), transparent 35%),
+    var(--exeq-paper);
+  color: var(--exeq-ink);
+  font-family: var(--exeq-font-body);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.exeq-shell {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 28px 20px 48px;
+}
+
+.exeq-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.exeq-brand {
+  font-family: var(--exeq-font-display);
+  font-weight: 700;
+  font-size: 1.55rem;
+  letter-spacing: 0.01em;
+  color: var(--exeq-ink);
+  text-decoration: none;
+}
+
+.exeq-brand span {
+  display: block;
+  font-family: var(--exeq-font-body);
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--exeq-muted);
+  margin-top: 2px;
+}
+
+.exeq-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.exeq-nav a,
+.exeq-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  border: 1px solid var(--exeq-border);
+  background: var(--exeq-surface);
+  color: var(--exeq-ink);
+  text-decoration: none;
+  padding: 8px 14px;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.exeq-btn-primary {
+  background: var(--exeq-seal);
+  border-color: var(--exeq-seal);
+  color: #fff;
+}
+
+.exeq-btn-gold {
+  background: var(--exeq-gold-soft);
+  border-color: #e2c789;
+  color: #7a5a16;
+}
+
+.exeq-card {
+  background: var(--exeq-surface);
+  border: 1px solid var(--exeq-border);
+  border-radius: var(--exeq-radius);
+  box-shadow: var(--exeq-shadow);
+  padding: 22px;
+  margin-bottom: 18px;
+}
+
+.exeq-card h1,
+.exeq-card h2 {
+  font-family: var(--exeq-font-display);
+  margin: 0 0 8px;
+}
+
+.exeq-card p.lead {
+  margin: 0 0 18px;
+  color: var(--exeq-muted);
+}
+
+.exeq-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
+}
+
+.exeq-grid .full {
+  grid-column: 1 / -1;
+}
+
+.exeq-field label {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: var(--exeq-ink);
+}
+
+.exeq-field .hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.75rem;
+  color: var(--exeq-muted);
+}
+
+.exeq-field input,
+.exeq-field select,
+.exeq-field textarea {
+  width: 100%;
+  border: 1px solid var(--exeq-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font: inherit;
+  background: #fff;
+  color: var(--exeq-ink);
+}
+
+.exeq-field input.mono,
+.exeq-mono {
+  font-family: var(--exeq-font-mono);
+  letter-spacing: 0.02em;
+}
+
+.exeq-field.is-locked input,
+.exeq-field.is-locked textarea {
+  background: var(--exeq-lock-bg);
+  color: #2a3340;
+}
+
+.exeq-field.is-manual input,
+.exeq-field.is-manual textarea {
+  background: #fff;
+  border-color: #c9d0c7;
+}
+
+.exeq-lock-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--exeq-muted);
+}
+
+.exeq-section-title {
+  font-family: var(--exeq-font-display);
+  font-size: 1.05rem;
+  margin: 8px 0 4px;
+  grid-column: 1 / -1;
+}
+
+.exeq-section-title.manual {
+  color: var(--exeq-gold);
+}
+
+.exeq-section-title.receita {
+  color: var(--exeq-seal);
+}
+
+.exeq-banner {
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  font-size: 0.92rem;
+}
+
+.exeq-banner.ok {
+  background: var(--exeq-seal-soft);
+  color: #1f4f42;
+  border: 1px solid #b7d4c9;
+}
+
+.exeq-banner.warn {
+  background: var(--exeq-alert-soft);
+  color: #6e3a2d;
+  border: 1px solid #e2c2b7;
+}
+
+.exeq-banner.info {
+  background: #eef2f6;
+  color: #334155;
+  border: 1px solid #d0d7e0;
+}
+
+.exeq-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+  align-items: center;
+}
+
+.exeq-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.exeq-table th,
+.exeq-table td {
+  text-align: left;
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--exeq-border);
+  font-size: 0.92rem;
+}
+
+.exeq-table th {
+  color: var(--exeq-muted);
+  font-weight: 600;
+}
+
+.exeq-chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: var(--exeq-seal-soft);
+  color: var(--exeq-seal);
+}
+
+.exeq-chip.manual {
+  background: #eef1f4;
+  color: var(--exeq-muted);
+}
+
+.exeq-messages {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 16px;
+}
+
+.exeq-messages li {
+  padding: 10px 12px;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  background: var(--exeq-seal-soft);
+  color: #1f4f42;
+}
+
+.exeq-messages li.error {
+  background: var(--exeq-alert-soft);
+  color: #6e3a2d;
+}
+
+.exeq-login-card {
+  max-width: 420px;
+  margin: 10vh auto;
+}
+
+@media (max-width: 720px) {
+  .exeq-grid {
+    grid-template-columns: 1fr;
+  }
+  .exeq-topbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

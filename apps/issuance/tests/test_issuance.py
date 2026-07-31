@@ -3,6 +3,7 @@ from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 import pytest
+from django.test import override_settings
 
 from apps.fiscal.models import FiscalProfile
 from apps.fiscal.tax_engine import add_rule, create_catalog, publish_catalog
@@ -34,6 +35,7 @@ def emission_setup(tenant_a):
         tenant=tenant_a,
         service_code="1.01",
         description="Serviço",
+        codigo_tributacao_nacional_iss="010101",
     )
     profile = FiscalProfile.objects.create(
         tenant=tenant_a,
@@ -86,19 +88,46 @@ def test_idempotent_create_and_authorize(tenant_a, emission_setup):
     assert first.id == second.id
     first.refresh_from_db()
     assert first.status == NfIssue.Status.AUTHORIZED
-    assert first.focus_ref.startswith("NFSEN-")
+    assert first.focus_ref.startswith("SEFIN-")
     assert first.internal_payload is not None
-    assert first.internal_payload.get("cnpj_prestador")
-    assert NfIssueEvent.objects.filter(nf_issue=first).count() >= 5
+    assert first.internal_payload.get("provider") == "sefin"
+    # sync-first: submitting → authorized (sem polling artificial)
+    assert not NfIssueEvent.objects.filter(
+        nf_issue=first, to_status=NfIssue.Status.POLLING
+    ).exists()
+    assert NfIssueEvent.objects.filter(nf_issue=first).count() >= 4
     assert OutboxMessage.objects.filter(
         aggregate_id=first.id,
         event_type="nf_issue.authorized",
     ).exists()
     artifact = NfArtifact.objects.get(nf_issue=first, kind=NfArtifact.Kind.PDF)
     assert artifact.stored_file.purpose == "nf_pdf"
+    assert artifact.stored_file.size_bytes > 500
     assert StoredFile.objects.filter(tenant=tenant_a, purpose="nf_pdf").exists()
     xml = NfArtifact.objects.get(nf_issue=first, kind=NfArtifact.Kind.XML)
     assert xml.stored_file.purpose == "nf_xml"
+
+
+@pytest.mark.django_db
+@override_settings(NFSE_DEFAULT_PROVIDER="focus")
+def test_lab_focus_authorize_keeps_nfsen_payload(tenant_a, emission_setup):
+    """RF-50/EX-FOC-01: Focus permanece operacional com override de lab."""
+    first = create_nf_issue(
+        tenant=tenant_a,
+        idempotency_key="idem-focus-lab",
+        provider=emission_setup["provider"],
+        customer=emission_setup["customer"],
+        service=emission_setup["service"],
+        fiscal_profile=emission_setup["profile"],
+        ibge_code="3504107",
+        competence_date=date(2024, 6, 15),
+        amount_cents=10000,
+    )
+    first.refresh_from_db()
+    assert first.status == NfIssue.Status.AUTHORIZED
+    assert first.focus_ref.startswith("NFSEN-")
+    assert first.internal_payload.get("cnpj_prestador")
+
 
 
 @pytest.mark.django_db
@@ -216,6 +245,102 @@ def test_cancel_not_authorized_blocked(tenant_a, emission_setup):
             issue,
             justificativa="Servico cancelado por acordo entre as partes",
         )
+
+
+@pytest.mark.django_db
+def test_cancel_sefin_stub_preserves_xml_and_regenerates_pdf(
+    tenant_a, emission_setup, settings, tmp_path
+):
+    settings.LOCAL_STORAGE_ROOT = str(tmp_path)
+    issue = create_nf_issue(
+        tenant=tenant_a,
+        idempotency_key="idem-cancel-sefin-stub",
+        provider=emission_setup["provider"],
+        customer=emission_setup["customer"],
+        service=emission_setup["service"],
+        fiscal_profile=emission_setup["profile"],
+        ibge_code="3504107",
+        competence_date=date(2024, 6, 15),
+        amount_cents=10000,
+    )
+    assert (issue.focus_status_raw or {}).get("xml")
+    xml_before = issue.focus_status_raw["xml"]
+    cancel_nf_issue(
+        issue,
+        justificativa="Cancelamento lab EXEQ Hub apos emissao stub",
+    )
+    issue.refresh_from_db()
+    assert issue.status == NfIssue.Status.CANCELLED
+    assert issue.focus_status_raw.get("xml") == xml_before
+    assert issue.focus_status_raw.get("action") == "cancelar"
+    pdf = NfArtifact.objects.get(nf_issue=issue, kind=NfArtifact.Kind.PDF)
+    assert "danfse-cancelada" in pdf.stored_file.object_key
+    from io import BytesIO
+
+    from pypdf import PdfReader
+    from shared.storage import get_storage
+
+    data = get_storage().get(key=pdf.stored_file.object_key)
+    text = "".join((p.extract_text() or "") for p in PdfReader(BytesIO(data)).pages)
+    assert "CANCELADA" in text.upper()
+
+
+@pytest.mark.django_db
+def test_cancel_sefin_http_builds_signed_evento(tenant_a, emission_setup, settings, tmp_path):
+    settings.LOCAL_STORAGE_ROOT = str(tmp_path)
+    settings.SEFIN_HTTP_MODE = "stub"
+    issue = create_nf_issue(
+        tenant=tenant_a,
+        idempotency_key="idem-cancel-sefin-http",
+        provider=emission_setup["provider"],
+        customer=emission_setup["customer"],
+        service=emission_setup["service"],
+        fiscal_profile=emission_setup["profile"],
+        ibge_code="3504107",
+        competence_date=date(2024, 6, 15),
+        amount_cents=10000,
+    )
+    chave = "35041072237229907000137000000000007026077728989163"
+    NfIssue.objects.filter(id=issue.id).update(focus_ref=chave)
+    issue.refresh_from_db()
+
+    from integrations.nfse.sefin import SefinNfseProvider
+    from integrations.nfse.sefin_client import SefinHttpResponse
+    from integrations.nfse.tests.pfx_factory import make_test_pfx
+
+    fake = MagicMock()
+    fake.registrar_evento.return_value = SefinHttpResponse(
+        status_code=201, data={"ok": True}, xml_bytes=None
+    )
+    pfx = make_test_pfx(password="segredo")
+    provider = SefinNfseProvider(mode="http", client=fake)
+
+    with (
+        patch("apps.issuance.services.get_nfse_provider", return_value=provider),
+        patch(
+            "apps.accounts.certificates.load_primary_pfx_material",
+            return_value=(pfx, "segredo"),
+        ),
+        override_settings(SEFIN_HTTP_MODE="http", SEFIN_ENVIRONMENT="production"),
+    ):
+        cancel_nf_issue(
+            issue,
+            justificativa="Cancelamento lab EXEQ Hub via SEFIN HTTP",
+        )
+
+    fake.registrar_evento.assert_called_once()
+    call_kwargs = fake.registrar_evento.call_args.kwargs
+    assert call_kwargs["chave_acesso"] == chave
+    evento_xml = call_kwargs["evento_xml"]
+    assert b"Signature" in evento_xml
+    assert b"e101101" in evento_xml
+    assert f"PRE{chave}101101".encode() in evento_xml
+    issue.refresh_from_db()
+    assert issue.status == NfIssue.Status.CANCELLED
+    assert issue.focus_status_raw.get("xml")
+    assert NfArtifact.objects.filter(
+        nf_issue=issue, kind=NfArtifact.Kind.PDF
+    ).filter(stored_file__object_key__contains="danfse-cancelada").exists()
 
 
 @pytest.mark.django_db

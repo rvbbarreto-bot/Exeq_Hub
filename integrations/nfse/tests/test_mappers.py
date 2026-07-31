@@ -90,7 +90,7 @@ def test_to_focus_nfsen_flat_payload(tenant_a, emission_setup):
         amount_cents=15050,
     )
     issue.refresh_from_db()
-    body = issue.internal_payload or to_focus_nfsen(issue)
+    body = to_focus_nfsen(issue)
 
     assert body["cnpj_prestador"] == "00000000000191"
     assert body["cpf_tomador"] == "52998224725"
