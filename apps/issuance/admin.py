@@ -719,8 +719,6 @@ class NfArtifactAdmin(admin.ModelAdmin):
 
     @admin.display(description="Downloads")
     def downloads(self, obj: NfArtifact) -> str:
-        from django.utils.safestring import mark_safe
-
         by_kind = {a.kind: a for a in obj.nf_issue.artifacts.all()}
         parts = []
         for kind, label in (
@@ -745,7 +743,10 @@ class NfArtifactAdmin(admin.ModelAdmin):
                         label,
                     )
                 )
-        return mark_safe("".join(parts)) if parts else "—"
+        if not parts:
+            return "—"
+        # Junta SafeStrings via format_html (evita mark_safe / Bandit B308/B703).
+        return format_html("{}{}", *parts)
 
     @admin.display(description="Arquivo")
     def download_link(self, obj: NfArtifact) -> str:
