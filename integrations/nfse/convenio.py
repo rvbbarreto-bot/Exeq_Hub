@@ -1,8 +1,7 @@
-"""Gate RF-01 / EX-PRE-01 — aptidão municipal ao Ambiente Nacional (por ambiente).
+"""Convênio municipal ADN com mTLS opcional (RF-01 / cobertura municípios aderentes).
 
-Definição operacional (estudo PO): “apto a emitir” = convênio/parametrização
-válidos no ambiente alvo (produção ou homolog), não apenas “aderdesão” genérica
-no Portal. Atibaia: apta em produção; produção restrita sem convênio útil.
+ADN `parametros_municipais/.../convenio` exige certificado de cliente (HTTP 496
+sem mTLS). Em `NFSE_CONVENIO_MODE=http` o Hub usa o A1 do prestador (ou PFX ops).
 """
 
 from __future__ import annotations
@@ -50,7 +49,6 @@ def _seed_for_environment(environment: str) -> frozenset[str]:
     if environment == "production":
         raw = getattr(settings, "NFSE_NATIONAL_IBGE_CODES", None) or ATIBAIA_IBGE
         return _csv_codes(raw)
-    # Homolog / produção restrita: lista própria (default vazia — Atibaia não entra).
     raw = getattr(settings, "NFSE_CONVENIO_HOMOLOG_IBGE_CODES", None)
     if raw is None:
         return frozenset()
@@ -61,13 +59,34 @@ def _cache_key(ibge: str, environment: str) -> str:
     return f"nfse:convenio:{environment}:{ibge}"
 
 
+def _interpret_convenio_payload(status_code: int, data: dict) -> bool:
+    """Heurística de aptidão a partir do JSON ADN (campos variam por versão)."""
+    if status_code != 200 or not data:
+        return False
+    if data.get("erros") or data.get("errors"):
+        return False
+    for key in ("apto", "aderente", "conveniado", "habilitado", "ativo"):
+        if key in data:
+            return bool(data[key])
+    situacao = str(data.get("situacao") or data.get("status") or "").lower()
+    if situacao:
+        if situacao in {"inapto", "inativo", "nao_aderente", "não_aderente", "bloqueado"}:
+            return False
+        if situacao in {"apto", "ativo", "aderente", "conveniado", "habilitado", "ok"}:
+            return True
+    # 200 + JSON sem erros → tratar como apto (manual municípios conveniados).
+    return True
+
+
 def get_convenio_status(
     ibge_code: str,
     *,
     environment: str | None = None,
     force_refresh: bool = False,
+    pfx_bytes: bytes | None = None,
+    pfx_password: str = "",
 ) -> ConvenioStatus:
-    """Consulta aptidão com cache (RF-01). Stub lab; HTTP via ADN quando configurado."""
+    """Consulta aptidão com cache (RF-01). Stub lab; HTTP+mTLS via ADN quando configurado."""
     ibge = "".join(ch for ch in (ibge_code or "") if ch.isdigit())
     env = normalize_sefin_environment(environment)
 
@@ -80,7 +99,7 @@ def get_convenio_status(
         )
 
     key = _cache_key(ibge, env)
-    if not force_refresh:
+    if not force_refresh and pfx_bytes is None:
         cached = cache.get(key)
         if isinstance(cached, dict) and "aderente" in cached:
             return ConvenioStatus(
@@ -93,7 +112,12 @@ def get_convenio_status(
 
     mode = (getattr(settings, "NFSE_CONVENIO_MODE", None) or "stub").lower()
     if mode == "http":
-        status = _fetch_convenio_http(ibge, environment=env)
+        status = _fetch_convenio_http(
+            ibge,
+            environment=env,
+            pfx_bytes=pfx_bytes,
+            pfx_password=pfx_password,
+        )
     else:
         seed = _seed_for_environment(env)
         status = ConvenioStatus(
@@ -127,60 +151,97 @@ def _adn_param_base(environment: str) -> str:
     return "https://adn.producaorestrita.nfse.gov.br"
 
 
-def _fetch_convenio_http(ibge: str, *, environment: str) -> ConvenioStatus:
-    """GET ADN parametros_municipais/{codMun}/convenio (manual municípios conveniados)."""
+def _fetch_convenio_http(
+    ibge: str,
+    *,
+    environment: str,
+    pfx_bytes: bytes | None = None,
+    pfx_password: str = "",
+) -> ConvenioStatus:
+    """GET ADN parametros_municipais/{codMun}/convenio (mTLS quando A1 disponível)."""
     import httpx
 
+    from integrations.nfse.sefin_mtls import SefinMtlsError, build_sefin_mtls_context
+
     base = _adn_param_base(environment)
-    # Path oficial do manual; fallback legado parametrizacao/ se 404.
     paths = (
         f"/parametros_municipais/{ibge}/convenio",
         f"/parametrizacao/{ibge}/convenio",
     )
-    last_error = ""
-    for path in paths:
-        url = f"{base}{path}"
+    verify: bool | object = True
+    mtls = None
+    if pfx_bytes:
         try:
-            with httpx.Client(timeout=20.0) as client:
-                resp = client.get(url)
-            ctype = resp.headers.get("content-type", "")
-            data = resp.json() if "json" in ctype else {}
-            if not isinstance(data, dict):
-                data = {"body": data}
-            if resp.status_code == 404:
-                last_error = f"404 {path}"
-                continue
-            aderente = (
-                resp.status_code == 200
-                and bool(data)
-                and not data.get("erros")
-                and not data.get("errors")
-            )
+            mtls = build_sefin_mtls_context(pfx_bytes=pfx_bytes, password=pfx_password)
+            verify = mtls.ssl_context
+        except SefinMtlsError as exc:
             return ConvenioStatus(
                 ibge_code=ibge,
-                aderente=aderente,
+                aderente=False,
                 environment=environment,
-                source="http_cache",
-                raw={"http_status": resp.status_code, "url": url, **data},
+                source="http_error",
+                raw={"error": f"mtls_pfx: {exc}"[:200]},
             )
-        except Exception as exc:  # noqa: BLE001 — EX-PRE-01: falha ≠ adesão
-            last_error = str(exc)[:200]
-            continue
-    return ConvenioStatus(
-        ibge_code=ibge,
-        aderente=False,
-        environment=environment,
-        source="http_error",
-        raw={"error": last_error or "convenio_http_failed"},
-    )
+
+    last_error = ""
+    try:
+        for path in paths:
+            url = f"{base}{path}"
+            try:
+                with httpx.Client(timeout=20.0, verify=verify) as client:
+                    resp = client.get(url)
+                if resp.status_code == 496:
+                    last_error = "496 SSL Certificate Required (informe A1 / mTLS)"
+                    continue
+                ctype = resp.headers.get("content-type", "")
+                data = resp.json() if "json" in ctype else {}
+                if not isinstance(data, dict):
+                    data = {"body": data}
+                if resp.status_code == 404:
+                    last_error = f"404 {path}"
+                    continue
+                aderente = _interpret_convenio_payload(resp.status_code, data)
+                return ConvenioStatus(
+                    ibge_code=ibge,
+                    aderente=aderente,
+                    environment=environment,
+                    source="http_cache",
+                    raw={
+                        "http_status": resp.status_code,
+                        "url": url,
+                        "mtls": bool(pfx_bytes),
+                        **data,
+                    },
+                )
+            except Exception as exc:  # noqa: BLE001 — EX-PRE-01: falha ≠ adesão
+                last_error = str(exc)[:200]
+                continue
+        return ConvenioStatus(
+            ibge_code=ibge,
+            aderente=False,
+            environment=environment,
+            source="http_error",
+            raw={"error": last_error or "convenio_http_failed", "mtls": bool(pfx_bytes)},
+        )
+    finally:
+        if mtls is not None:
+            mtls.close()
 
 
 def assert_municipio_aderente_nacional(
     ibge_code: str,
     *,
     environment: str | None = None,
+    pfx_bytes: bytes | None = None,
+    pfx_password: str = "",
 ) -> ConvenioStatus:
-    status = get_convenio_status(ibge_code, environment=environment)
+    status = get_convenio_status(
+        ibge_code,
+        environment=environment,
+        pfx_bytes=pfx_bytes,
+        pfx_password=pfx_password,
+        force_refresh=bool(pfx_bytes),
+    )
     if not status.aderente:
         raise MunicipioNaoAderenteError(
             f"Município IBGE {status.ibge_code} não apto ao Ambiente Nacional "

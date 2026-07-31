@@ -122,9 +122,9 @@ Não bloqueia M5; agenda após estabilidade.
 - [x] SEC-P1-05 Admin IP allowlist (`ADMIN_ALLOWED_IPS` + middleware; 2FA ainda ops/P2)
 - [x] SEC-P1-06 CI + gitleaks no workflow security
 - [x] SEC-P1-08 CORS N/A (sem django-cors-headers; same-origin)
-- [ ] SEC-P1-09 Pentest — **escopo preparado** (`Docs/Exeq_Hub_NFSe_Pentest_Briefing_SEC_P1_09.md`); execução/relatório pendentes → **atenção go-live amplo** (Plano §11.1 GL-01)
+- [x] SEC-P1-09 Pentest — **interno formal executado** (`Docs/Exeq_Hub_NFSe_Pentest_Report_SEC_P1_09.md`); F-01 Admin IDOR listagem **corrigido**; residual P2 (2FA, Signature Wrapping) com plano; externo recomendado antes de volume alto
 
-**Atenções go-live (futuro):** Plano `Exeq_Hub_Plano_Desenvolvimento_Emissor_Proprio_NFSe.md` §11.1 (GL-01…GL-05) — pentest + regressão `test_security_nfse` / `test_resilience` / `test_sefin_mtls` / `test_dps_contract` + pré-voo `nfse_g_sec_p0_check`.
+**Atenções go-live (futuro):** Plano §11.1 — GL-01 relatório interno feito; GL-02…05 + pentest externo sob demanda PO.
 
 **Ferramenta:** `manage.py nfse_g_sec_p0_check` → `.storage/sefin_g_sec_p0_check.json`
 ---

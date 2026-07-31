@@ -14,7 +14,8 @@ Repositório: https://github.com/rvbbarreto-bot/Exeq_Hub
 | ADR emissor próprio Nacional | `ADR_NFSE_001_Emissor_Proprio_Nacional.md` | **Aprovado** (PO 2026-07-29 — SEFIN/ADN + DANFSe) |
 | Plano desenvolvimento emissor próprio | `Exeq_Hub_Plano_Desenvolvimento_Emissor_Proprio_NFSe.md` | **Autorizado PO** (início 2026-07-29 — visão gestão) |
 | DoD segurança NFS-e/SEFIN | `Exeq_Hub_DoD_Seguranca_NFSe_SEFIN.md` | G-SEC P0 aprovado; P1 (pentest escopo pronto) |
-| Briefing pentest SEC-P1-09 | `Exeq_Hub_NFSe_Pentest_Briefing_SEC_P1_09.md` | Escopo preparado — execução pendente |
+| Briefing pentest SEC-P1-09 | `Exeq_Hub_NFSe_Pentest_Briefing_SEC_P1_09.md` | Escopo |
+| Relatório pentest GL-01 | `Exeq_Hub_NFSe_Pentest_Report_SEC_P1_09.md` | Interno formal 2026-07-30 |
 | LLR emissor próprio | `Exeq_Hub_LLR_Emissor_Proprio_NFSe_Nacional.md` | **0.3.0** (RF/EX + NT 008 v1.02) |
 | Reforma Tributária / RTC | `Exeq_Hub_Reforma_Tributaria_RTC_MultiDocumento_Estudo_Tecnico.md` | **0.1.0-draft** (estudo direção — IBS/CBS/IS, multi-DF-e, contábil) |
 | ADR RTC execução | `ADR_RTC_001_Priorizacao_Pilares.md` | **Aceito** (PO 2026-07-26 — pilares 1→5→2→4→3) |
