@@ -27,6 +27,7 @@ Repositório: https://github.com/rvbbarreto-bot/Exeq_Hub
 | LLR domínio NF-e SEFAZ greenfield | `Exeq_Hub_LLR_NFe_Dominio_SEFAZ_Greenfield.md` | **0.1.0** — FSM, número, snapshot, tax, EX-*, API, gates G-EMIT-NFE |
 | Reanálise impacto NF-e × NFS-e homologada | `Exeq_Hub_NFe_Reanalise_Impacto_NFSe_Homologada.md` | **1.0.0** — inventário reuso, riscos recalibrados, parecer Aprovado c/ ressalvas |
 | Tickets U3 NF-e I1–I8 | `Exeq_Hub_NFe_U3_Tickets_I1_I8.md` | Backlog G-SPIKE → G-EMIT-NFE |
+| Multi-UF NF-e U4 | `Exeq_Hub_NFe_U4_Multi_UF.md` | Catálogo 10 UFs + matriz QA (G-MULTI-10) |
 | Reforma Tributária / RTC | `Exeq_Hub_Reforma_Tributaria_RTC_MultiDocumento_Estudo_Tecnico.md` | **0.1.0-draft** (estudo direção — IBS/CBS/IS, multi-DF-e, contábil) |
 | ADR RTC execução | `ADR_RTC_001_Priorizacao_Pilares.md` | **Aceito** (PO 2026-07-26 — pilares 1→5→2→4→3) |
 | Billing Inter | `Exeq_Hub_Inter_Billing_Integration_Study.md` | **1.0.0** (Sprint 5 — Inter first / BolePix v3) |

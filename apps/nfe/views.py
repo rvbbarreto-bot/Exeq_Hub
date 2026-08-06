@@ -40,6 +40,12 @@ from apps.nfe.services import (
 from shared.pagination import HubPageNumberPagination
 
 
+def _supported_nfe_ufs() -> list[str]:
+    from integrations.sefaz_nfe.endpoints import list_supported_ufs
+
+    return list_supported_ufs()
+
+
 def _err(exc, http=400):
     return Response({"detail": str(exc), "code": getattr(exc, "code", "nfe_error")}, status=http)
 
@@ -123,6 +129,7 @@ class NfeGateView(APIView):
                 "checks": checks,
                 "http_mode": http,
                 "pivot_uf": getattr(settings, "NFE_PIVOT_UF", "SP"),
+                "supported_ufs": _supported_nfe_ufs(),
                 "series": series,
                 "tp_amb": tp_amb,
                 "next_number_estimated": next_estimated,
