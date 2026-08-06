@@ -53,6 +53,9 @@
     if (/^\/nfe\/invoices\/[^/]+\/(items|validate|emit|cancel)$/.test(bare)) {
       return bare + query;
     }
+    if (/^\/nfe\/invoices\/[^/]+\/artifacts\/(xml|pdf)$/.test(bare)) {
+      return bare + query;
+    }
     if (!p.endsWith("/")) p += "/";
     return p + query;
   }

@@ -106,6 +106,8 @@ def test_emit_stub_flow(nfe_settings, tenant_a, provider_sp, customer_b2b):
 
     assert "cancel" in allowed_actions(inv)
     assert "emit" not in allowed_actions(inv)
+    assert "download_xml" in allowed_actions(inv)
+    assert "download_pdf" in allowed_actions(inv)
 
 
 @pytest.mark.django_db
@@ -190,6 +192,18 @@ def test_api_emit_flow(api_client, auth_header, nfe_settings, tenant_a, provider
     assert emit.status_code == 202, emit.data
     assert emit.data["status"] == "authorized"
     assert "cancel" in emit.data["allowed_actions"]
+    assert "download_xml" in emit.data["allowed_actions"]
+    assert "download_pdf" in emit.data["allowed_actions"]
+    assert emit.data["artifacts"]["xml_authorized"] is True
+    assert emit.data["artifacts"]["danfe_pdf"] is True
+
+    xml = api_client.get(f"/api/v1/nfe/invoices/{inv_id}/artifacts/xml", **auth_header)
+    assert xml.status_code == 200
+    assert b"NFe" in xml.content or b"infNFe" in xml.content
+
+    pdf = api_client.get(f"/api/v1/nfe/invoices/{inv_id}/artifacts/pdf", **auth_header)
+    assert pdf.status_code == 200
+    assert pdf.content[:4] == b"%PDF"
 
     cancel = api_client.post(
         f"/api/v1/nfe/invoices/{inv_id}/cancel",

@@ -38,3 +38,22 @@ def wrap_envi_nfe(*, signed_nfe_xml: bytes, id_lote: str, ind_sinc: str = "1") -
     etree.SubElement(envi, f"{{{ns}}}indSinc").text = ind_sinc
     envi.append(signed)
     return etree.tostring(envi, xml_declaration=True, encoding="UTF-8")
+
+
+def sign_evento_nfe_xml(*, env_evento_xml: bytes | str, pfx_bytes: bytes, password: str = "") -> bytes:
+    """Assina `infEvento` (Id) dentro de envEvento/evento — cancel 110111 (I6)."""
+    root = safe_fromstring(env_evento_xml)
+    inf = None
+    for el in root.iter():
+        tag = el.tag.split("}")[-1] if "}" in el.tag else el.tag
+        if tag == "infEvento":
+            inf = el
+            break
+    if inf is None:
+        raise SefinXmlDSigError("infEvento não encontrado")
+    return sign_referenced_element(
+        root=root,
+        target=inf,
+        pfx_bytes=pfx_bytes,
+        password=password,
+    )

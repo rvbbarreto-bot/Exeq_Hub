@@ -273,6 +273,12 @@
     if (actions.includes("cancel")) {
       cell.appendChild(iconBtn("Cancelar", "cancel", () => openCancel(row)));
     }
+    if (actions.includes("download_xml")) {
+      cell.appendChild(iconBtn("Baixar XML", "download_xml", () => downloadArtifact(row, "xml")));
+    }
+    if (actions.includes("download_pdf")) {
+      cell.appendChild(iconBtn("Baixar DANFE PDF", "download_pdf", () => downloadArtifact(row, "pdf")));
+    }
     cell.appendChild(iconBtn("Detalhe", "poll", () => openDetail(row)));
     return tr;
   }
@@ -282,14 +288,43 @@
     btn.type = "button";
     btn.className = "icon-btn";
     btn.title = title;
-    btn.innerHTML =
-      kind === "emit"
-        ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14M12 5l7 7-7 7"/></svg>'
-        : kind === "cancel"
-          ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M8 12h8"/></svg>'
-          : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>';
+    const icons = {
+      emit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14M12 5l7 7-7 7"/></svg>',
+      cancel:
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M8 12h8"/></svg>',
+      download_xml:
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 19h14"/><path d="M8 6h8" opacity=".35"/></svg>',
+      download_pdf:
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M12 12v5"/><path d="M9.5 14.5 12 17l2.5-2.5"/></svg>',
+      poll: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>',
+    };
+    btn.innerHTML = icons[kind] || icons.poll;
     btn.addEventListener("click", onClick);
     return btn;
+  }
+
+  async function downloadArtifact(row, kind) {
+    const api = A();
+    if (!row || !row.id) return;
+    const path =
+      kind === "pdf"
+        ? `/nfe/invoices/${row.id}/artifacts/pdf`
+        : `/nfe/invoices/${row.id}/artifacts/xml`;
+    try {
+      const blob = await api.api(path, { method: "GET", blob: true });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const key = (row.access_key || row.id || "nfe").toString().slice(0, 44);
+      a.download = kind === "pdf" ? `danfe-${key}.pdf` : `nfe-${key}.xml`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      api.toast(kind === "pdf" ? "DANFE baixado" : "XML baixado", "success");
+    } catch (err) {
+      api.toast(api.handleApiError(err.body).message, "danger");
+    }
   }
 
   function renderItemRows() {
@@ -510,6 +545,7 @@
   function openDetail(row) {
     const body = document.getElementById("nfe-detail-body");
     const actions = (row.allowed_actions || []).join(", ") || "—";
+    const arts = row.artifacts || {};
     body.innerHTML = `
       <div class="hint">Status: <b>${escapeHtml(row.status)}</b> · v${escapeHtml(row.version)}</div>
       <div class="hint">Série/nº: ${escapeHtml(row.series)}/${escapeHtml(row.number ?? "—")}</div>
@@ -517,8 +553,30 @@
       <div class="hint">Protocolo: ${escapeHtml(row.protocol || "—")}</div>
       <div class="hint">Total: ${escapeHtml(A().formatBrlFromCents(row.total_cents))}</div>
       <div class="hint">Rejeição: ${escapeHtml(row.rejection_code || "")} ${escapeHtml(row.rejection_message || "")}</div>
+      <div class="hint">Artefatos: XML=${arts.xml_authorized ? "sim" : "não"} · DANFE=${arts.danfe_pdf ? "sim" : "não"}</div>
       <div class="hint">allowed_actions: ${escapeHtml(actions)}</div>
-      <div class="hint">correlation: ${escapeHtml(row.correlation_id || "")}</div>`;
+      <div class="hint">correlation: ${escapeHtml(row.correlation_id || "")}</div>
+      <div class="row-actions" id="nfe-detail-downloads" style="margin-top:12px;gap:8px;display:flex;flex-wrap:wrap"></div>`;
+    const host = document.getElementById("nfe-detail-downloads");
+    if (host) {
+      const acts = row.allowed_actions || [];
+      if (acts.includes("download_xml")) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "btn btn-ghost";
+        b.textContent = "Baixar XML";
+        b.addEventListener("click", () => downloadArtifact(row, "xml"));
+        host.appendChild(b);
+      }
+      if (acts.includes("download_pdf")) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "btn btn-primary";
+        b.textContent = "Baixar DANFE PDF";
+        b.addEventListener("click", () => downloadArtifact(row, "pdf"));
+        host.appendChild(b);
+      }
+    }
     A().openModal("modal-nfe-detail");
   }
 

@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -7,6 +8,11 @@ from rest_framework.views import APIView
 
 from apps.accounts.permissions import IsTenantWriter
 from apps.master_data.models import Customer, Provider
+from apps.nfe.artifacts import (
+    get_artifact,
+    has_danfe_pdf,
+    read_artifact_bytes,
+)
 from apps.nfe.exceptions import (
     NfeDisabledError,
     NfeGateError,
@@ -14,7 +20,7 @@ from apps.nfe.exceptions import (
     NfeValidationError,
     NfeVersionConflictError,
 )
-from apps.nfe.models import NfeInvoice, NfeProduct
+from apps.nfe.models import NfeArtifact, NfeInvoice, NfeProduct
 from apps.nfe.serializers import (
     NfeCancelSerializer,
     NfeDraftCreateSerializer,
@@ -273,3 +279,55 @@ class NfeInvoiceViewSet(viewsets.ViewSet):
         except (NfeInvalidTransitionError, NfeValidationError) as exc:
             return _err(exc, 400)
         return Response(NfeInvoiceSerializer(inv).data)
+
+    @action(detail=True, methods=["get"], url_path="artifacts/xml")
+    def artifacts_xml(self, request, pk=None):
+        inv = get_object_or_404(NfeInvoice, pk=pk, tenant=request.tenant)
+        if inv.status not in {
+            NfeInvoice.Status.AUTHORIZED,
+            NfeInvoice.Status.CANCELLED,
+        }:
+            return Response(
+                {"detail": "XML disponível só para autorizada/cancelada", "code": "nfe_artifact"},
+                status=404,
+            )
+        art = get_artifact(inv, NfeArtifact.Kind.XML_AUTHORIZED)
+        if art is None:
+            return Response(
+                {"detail": "XML ainda não disponível", "code": "nfe_artifact_missing"},
+                status=404,
+            )
+        data = read_artifact_bytes(art)
+        filename = f"nfe-{inv.access_key or inv.id}.xml"
+        resp = HttpResponse(data, content_type="application/xml; charset=utf-8")
+        resp["Content-Disposition"] = f'attachment; filename="{filename}"'
+        resp["X-Checksum-SHA256"] = art.checksum_sha256
+        return resp
+
+    @action(detail=True, methods=["get"], url_path="artifacts/pdf")
+    def artifacts_pdf(self, request, pk=None):
+        inv = get_object_or_404(NfeInvoice, pk=pk, tenant=request.tenant)
+        if inv.status not in {
+            NfeInvoice.Status.AUTHORIZED,
+            NfeInvoice.Status.CANCELLED,
+        }:
+            return Response(
+                {"detail": "DANFE disponível só para autorizada/cancelada", "code": "nfe_artifact"},
+                status=404,
+            )
+        if not has_danfe_pdf(inv):
+            return Response(
+                {
+                    "detail": "DANFE ainda não disponível (I2)",
+                    "code": "nfe_danfe_missing",
+                    "pdf_pending": True,
+                },
+                status=404,
+            )
+        art = get_artifact(inv, NfeArtifact.Kind.DANFE_PDF)
+        data = read_artifact_bytes(art)
+        filename = f"danfe-{inv.access_key or inv.id}.pdf"
+        resp = HttpResponse(data, content_type="application/pdf")
+        resp["Content-Disposition"] = f'attachment; filename="{filename}"'
+        resp["X-Checksum-SHA256"] = art.checksum_sha256
+        return resp

@@ -56,6 +56,8 @@ def _record_event(
 
 
 def allowed_actions(invoice: NfeInvoice) -> list[str]:
+    from apps.nfe.artifacts import has_danfe_pdf, has_xml_authorized
+
     s = invoice.status
     actions: list[str] = ["refresh"]
     if s == NfeInvoice.Status.DRAFT:
@@ -63,10 +65,14 @@ def allowed_actions(invoice: NfeInvoice) -> list[str]:
     if s in {NfeInvoice.Status.REJECTED, NfeInvoice.Status.FAILED} and not invoice.number_consumed:
         actions += ["edit", "validate", "emit"]
     if s == NfeInvoice.Status.AUTHORIZED:
-        actions += ["cancel", "download_xml", "download_pdf"]
-    if s == NfeInvoice.Status.CANCELLED:
-        actions += ["download_xml", "download_pdf"]
+        actions.append("cancel")
+    if s in {NfeInvoice.Status.AUTHORIZED, NfeInvoice.Status.CANCELLED}:
+        if has_xml_authorized(invoice):
+            actions.append("download_xml")
+        if has_danfe_pdf(invoice):
+            actions.append("download_pdf")
     return actions
+
 
 
 @transaction.atomic
@@ -245,6 +251,9 @@ def _snapshot_for_emit(invoice: NfeInvoice, validation: dict[str, Any]) -> dict[
             "tp_amb": invoice.tp_amb,
             "issue_date": invoice.issue_date.isoformat(),
             "ind_ie_dest": invoice.ind_ie_dest,
+            "consumer_final": invoice.consumer_final,
+            "buyer_presence": invoice.buyer_presence,
+            "freight_mod": invoice.freight_mod,
         },
         "items": items,
         "totals": validation["totals"],
@@ -332,6 +341,17 @@ def emit_invoice(
         inv.number_consumed = True
         inv.rejection_code = result.rejection_code
         inv.rejection_message = result.rejection_message
+        # I5: recibo (nRec) para retAutorização — sem re-reservar série
+        raw_early = result.raw if isinstance(result.raw, dict) else {}
+        n_rec = str(raw_early.get("nRec") or "").strip()
+        if n_rec or inv.fiscal_snapshot:
+            snap = dict(inv.fiscal_snapshot or {})
+            sefaz_meta = dict(snap.get("sefaz") or {}) if isinstance(snap.get("sefaz"), dict) else {}
+            if n_rec:
+                sefaz_meta["n_rec"] = n_rec
+            sefaz_meta.setdefault("poll_attempts", 0)
+            snap["sefaz"] = sefaz_meta
+            inv.fiscal_snapshot = snap
     elif result.status == "rejected":
         inv.status = NfeInvoice.Status.REJECTED
         inv.access_key = result.access_key or inv.access_key
@@ -348,13 +368,27 @@ def emit_invoice(
             inv.number_consumed = True
     inv.version += 1
     inv.save()
+    raw_meta = result.raw if isinstance(result.raw, dict) else {}
     _record_event(
         inv,
         from_status=prev,
         to_status=inv.status,
         actor=actor,
-        metadata={"provider": sefaz.kind, "raw": result.raw},
+        metadata={"provider": sefaz.kind, "raw": raw_meta},
     )
+    if inv.status == NfeInvoice.Status.AUTHORIZED:
+        from apps.nfe.artifacts import ensure_authorized_artifacts
+
+        signed = getattr(result, "signed_xml", None)
+        ensure_authorized_artifacts(
+            inv,
+            xml_bytes=signed if isinstance(signed, (bytes, bytearray)) else None,
+            provider_raw=raw_meta,
+        )
+    elif inv.status == NfeInvoice.Status.POLLING:
+        from apps.nfe.polling import schedule_nfe_poll
+
+        schedule_nfe_poll(inv)
     return inv
 
 
@@ -378,19 +412,40 @@ def cancel_invoice(
     inv.save(update_fields=["status", "updated_at"])
     _record_event(inv, from_status=prev, to_status=inv.status, actor=actor)
 
+    cnpj = "".join(ch for ch in str(getattr(inv.provider, "document", "") or "") if ch.isdigit())
+    uf = getattr(settings, "NFE_PIVOT_UF", "SP")
+    if isinstance(inv.fiscal_snapshot, dict):
+        addr = (inv.fiscal_snapshot.get("emitente") or {}).get("address") or {}
+        if addr.get("uf"):
+            uf = str(addr["uf"]).upper()
+        emit_cnpj = (inv.fiscal_snapshot.get("emitente") or {}).get("cnpj")
+        if emit_cnpj:
+            cnpj = "".join(ch for ch in str(emit_cnpj) if ch.isdigit())
+
     sefaz = get_nfe_provider()
     result = sefaz.cancelar(
         access_key=inv.access_key,
         justificativa=just,
-        context={"tenant": inv.tenant, "invoice_id": str(inv.id)},
+        context={
+            "tenant": inv.tenant,
+            "invoice_id": str(inv.id),
+            "protocol": inv.protocol,
+            "cnpj": cnpj,
+            "tp_amb": inv.tp_amb,
+            "uf": uf,
+        },
     )
     prev = inv.status
+    raw_meta = result.raw if isinstance(result.raw, dict) else {}
     if result.status == "cancelled":
         inv.status = NfeInvoice.Status.CANCELLED
         inv.protocol = result.protocol or inv.protocol
+        inv.rejection_code = ""
+        inv.rejection_message = ""
     else:
         inv.status = NfeInvoice.Status.AUTHORIZED
-        inv.rejection_message = result.rejection_message
+        inv.rejection_code = result.rejection_code or inv.rejection_code
+        inv.rejection_message = result.rejection_message or "cancelamento não aceito"
     inv.version += 1
     inv.save()
     _record_event(
@@ -398,8 +453,19 @@ def cancel_invoice(
         from_status=prev,
         to_status=inv.status,
         actor=actor,
-        metadata={"provider": sefaz.kind},
+        metadata={"provider": sefaz.kind, "raw": raw_meta, "tpEvento": "110111"},
     )
+    if inv.status == NfeInvoice.Status.CANCELLED:
+        from apps.nfe.artifacts import ensure_cancel_xml, ensure_danfe_pdf
+
+        signed = getattr(result, "signed_xml", None)
+        ensure_cancel_xml(
+            inv,
+            xml_bytes=signed if isinstance(signed, (bytes, bytearray)) else None,
+            provider_raw=raw_meta,
+        )
+        # DANFE com tarja cancelada (best-effort; não reverte cancelled)
+        ensure_danfe_pdf(inv, cancelled=True)
     return inv
 
 

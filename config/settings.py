@@ -294,6 +294,10 @@ NFE_HTTP_TIMEOUT = int(env("NFE_HTTP_TIMEOUT", "60") or "60")
 NFE_DEFAULT_TP_AMB = env("NFE_DEFAULT_TP_AMB", "2")  # 2 homolog | 1 produção
 NFE_LAYOUT_VERSION = env("NFE_LAYOUT_VERSION", "pl009-stub")
 NFE_PIVOT_UF = env("NFE_PIVOT_UF", "SP")
+# I5: reconciliação polling → authorized|rejected|failed
+NFE_POLL_COUNTDOWN = int(env("NFE_POLL_COUNTDOWN", "15") or "15")
+NFE_POLL_MAX_ATTEMPTS = int(env("NFE_POLL_MAX_ATTEMPTS", "12") or "12")
+NFE_SYNC_POLL = (env("NFE_SYNC_POLL", "false") or "false").lower() in ("1", "true", "yes")
 
 FOCUS_HTTP_MODE = env("FOCUS_HTTP_MODE", "stub")  # stub | http
 FOCUS_API_BASE_URL = env(

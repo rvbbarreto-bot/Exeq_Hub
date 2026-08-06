@@ -57,6 +57,7 @@ class NfeInvoiceItemSerializer(serializers.ModelSerializer):
 class NfeInvoiceSerializer(serializers.ModelSerializer):
     items = NfeInvoiceItemSerializer(many=True, read_only=True)
     allowed_actions = serializers.SerializerMethodField()
+    artifacts = serializers.SerializerMethodField()
 
     class Meta:
         model = NfeInvoice
@@ -93,12 +94,21 @@ class NfeInvoiceSerializer(serializers.ModelSerializer):
             "last_validation",
             "items",
             "allowed_actions",
+            "artifacts",
             "created_at",
             "updated_at",
         )
 
     def get_allowed_actions(self, obj: NfeInvoice) -> list[str]:
         return allowed_actions(obj)
+
+    def get_artifacts(self, obj: NfeInvoice) -> dict:
+        from apps.nfe.artifacts import has_danfe_pdf, has_xml_authorized
+
+        return {
+            "xml_authorized": has_xml_authorized(obj),
+            "danfe_pdf": has_danfe_pdf(obj),
+        }
 
 
 class NfeDraftCreateSerializer(serializers.Serializer):

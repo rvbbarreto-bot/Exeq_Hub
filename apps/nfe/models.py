@@ -232,3 +232,41 @@ class NfeInvoiceEvent(UUIDPrimaryKeyModel):
         verbose_name_plural = "Eventos NF-e"
         ordering = ("occurred_at",)
         indexes = [models.Index(fields=["invoice", "occurred_at"])]
+
+
+class NfeArtifact(TenantOwnedModel):
+    """Artefatos fiscais da NF-e (I1: XML; I2: DANFE). Separado de NfArtifact (NFS-e)."""
+
+    class Kind(models.TextChoices):
+        XML_AUTHORIZED = "xml_authorized", "XML autorizado"
+        XML_CANCEL = "xml_cancel", "XML cancelamento"
+        DANFE_PDF = "danfe_pdf", "DANFE PDF"
+
+    invoice = models.ForeignKey(
+        NfeInvoice,
+        on_delete=models.CASCADE,
+        related_name="artifacts",
+        verbose_name="NF-e",
+    )
+    kind = models.CharField(max_length=32, choices=Kind.choices, verbose_name="Tipo")
+    stored_file = models.ForeignKey(
+        "ops.StoredFile",
+        on_delete=models.PROTECT,
+        related_name="nfe_artifacts",
+        verbose_name="Arquivo",
+    )
+    checksum_sha256 = models.CharField(max_length=64, verbose_name="Checksum SHA-256")
+
+    class Meta:
+        verbose_name = "Artefato NF-e"
+        verbose_name_plural = "Artefatos NF-e"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["invoice", "kind"],
+                name="uq_nfe_artifact_invoice_kind",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.kind} · {self.invoice_id}"
+
