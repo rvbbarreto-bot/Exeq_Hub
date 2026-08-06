@@ -1,0 +1,266 @@
+"""Montagem mínima NFe 4.00 a partir do fiscal_snapshot (happy path B2B SP)."""
+
+from __future__ import annotations
+
+from decimal import Decimal, ROUND_HALF_UP
+from typing import Any
+from xml.etree import ElementTree as ET
+
+from integrations.sefaz_nfe.access_key import UF_IBGE_CODE, build_access_key
+
+NFE_NS = "http://www.portalfiscal.inf.br/nfe"
+ET.register_namespace("", NFE_NS)
+
+
+def _el(parent: ET.Element, tag: str, text: str | None = None) -> ET.Element:
+    node = ET.SubElement(parent, f"{{{NFE_NS}}}{tag}")
+    if text is not None:
+        node.text = text
+    return node
+
+
+def _money_cents(cents: int) -> str:
+    return f"{Decimal(cents) / Decimal(100):.2f}"
+
+
+def _qty(val: str | Decimal | float) -> str:
+    d = Decimal(str(val)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+    return f"{d:.4f}"
+
+
+def _digits(doc: str, size: int) -> str:
+    d = "".join(ch for ch in str(doc or "") if ch.isdigit())
+    return d.zfill(size)[:size]
+
+
+def _crt(tax_regime: str) -> str:
+    if tax_regime == "simples_nacional":
+        return "1"
+    return "3"
+
+
+def _cmun(addr: dict) -> str:
+    raw = addr.get("codigo_ibge") or addr.get("codigo_municipio_ibge") or addr.get("ibge") or ""
+    digits = "".join(ch for ch in str(raw) if ch.isdigit())[:7]
+    return digits if len(digits) == 7 else "3504107"
+
+
+def _addr_part(addr: dict, *keys: str, default: str = "") -> str:
+    for k in keys:
+        v = addr.get(k)
+        if v is not None and str(v).strip():
+            return str(v).strip()
+    return default
+
+
+def build_nfe_xml(*, snapshot: dict[str, Any], access_key: str | None = None) -> bytes:
+    """Gera NFe (infNFe) mínima para SN CSOSN ou CST 00 — onda 1."""
+    emit = snapshot.get("emitente") or {}
+    dest = snapshot.get("destinatario") or {}
+    header = snapshot.get("header") or {}
+    items = snapshot.get("items") or []
+    totals = snapshot.get("totals") or {}
+    payment = snapshot.get("payment") or {}
+
+    uf = (_addr_part(emit.get("address") or {}, "uf", "UF") or "SP").upper()
+    issue_date = header.get("issue_date") or "2026-01-01"
+    series = int(header.get("series") or 1)
+    number = int(header.get("number") or 1)
+    tp_amb = str(header.get("tp_amb") or "2")
+    cnpj = _digits(emit.get("cnpj") or "", 14)
+
+    if not access_key:
+        access_key = build_access_key(
+            uf=uf,
+            issue_date_iso=issue_date,
+            cnpj=cnpj,
+            series=series,
+            number=number,
+        )
+
+    nfe = ET.Element(f"{{{NFE_NS}}}NFe")
+    inf = _el(nfe, "infNFe")
+    inf.set("Id", f"NFe{access_key}")
+    inf.set("versao", "4.00")
+
+    ide = _el(inf, "ide")
+    _el(ide, "cUF", UF_IBGE_CODE.get(uf, "35"))
+    _el(ide, "cNF", access_key[35:43])
+    _el(ide, "natOp", (header.get("nature") or "VENDA")[:60])
+    _el(ide, "mod", "55")
+    _el(ide, "serie", str(series))
+    _el(ide, "nNF", str(number))
+    _el(ide, "dhEmi", f"{issue_date}T12:00:00-03:00")
+    _el(ide, "tpNF", "1")
+    _el(ide, "idDest", "1")
+    _el(ide, "cMunFG", _cmun(emit.get("address") or {}))
+    _el(ide, "tpImp", "1")
+    _el(ide, "tpEmis", "1")
+    _el(ide, "cDV", access_key[-1])
+    _el(ide, "tpAmb", tp_amb)
+    _el(ide, "finNFe", str(header.get("finality") or "1"))
+    _el(ide, "indFinal", "0")
+    _el(ide, "indPres", "9")
+    _el(ide, "procEmi", "0")
+    _el(ide, "verProc", "EXEQ-Hub-NFe-0.1")
+
+    emit_el = _el(inf, "emit")
+    _el(emit_el, "CNPJ", cnpj)
+    _el(emit_el, "xNome", (emit.get("name") or "EMITENTE")[:60])
+    eaddr = emit.get("address") or {}
+    ender = _el(emit_el, "enderEmit")
+    _el(ender, "xLgr", _addr_part(eaddr, "logradouro", "street", default="RUA")[:60])
+    _el(ender, "nro", _addr_part(eaddr, "numero", "number", default="S/N")[:60])
+    _el(ender, "xBairro", _addr_part(eaddr, "bairro", "district", default="CENTRO")[:60])
+    _el(ender, "cMun", _cmun(eaddr))
+    _el(ender, "xMun", _addr_part(eaddr, "municipio", "city", default="MUNICIPIO")[:60])
+    _el(ender, "UF", uf)
+    cep = "".join(ch for ch in _addr_part(eaddr, "cep", "CEP") if ch.isdigit()).zfill(8)[:8]
+    _el(ender, "CEP", cep if cep != "00000000" else "01001000")
+    _el(ender, "cPais", "1058")
+    _el(ender, "xPais", "BRASIL")
+    ie = "".join(ch for ch in str(emit.get("ie") or "") if ch.isdigit() or ch.isalpha())
+    if ie:
+        _el(emit_el, "IE", ie)
+    else:
+        _el(emit_el, "IE", "ISENTO")
+    _el(emit_el, "CRT", _crt(str(emit.get("crt") or "")))
+
+    dest_el = _el(inf, "dest")
+    ddoc = _digits(dest.get("document") or "", 14 if (dest.get("document_type") or "") == "cnpj" else 11)
+    if len(ddoc) == 14:
+        _el(dest_el, "CNPJ", ddoc)
+    else:
+        _el(dest_el, "CPF", ddoc.zfill(11)[:11])
+    _el(dest_el, "xNome", (dest.get("name") or "DESTINATARIO")[:60])
+    daddr = dest.get("address") or {}
+    dender = _el(dest_el, "enderDest")
+    _el(dender, "xLgr", _addr_part(daddr, "logradouro", "street", default="RUA")[:60])
+    _el(dender, "nro", _addr_part(daddr, "numero", "number", default="S/N")[:60])
+    _el(dender, "xBairro", _addr_part(daddr, "bairro", "district", default="CENTRO")[:60])
+    _el(dender, "cMun", _cmun(daddr))
+    _el(dender, "xMun", _addr_part(daddr, "municipio", "city", default="MUNICIPIO")[:60])
+    duf = (_addr_part(daddr, "uf", "UF") or uf).upper()
+    _el(dender, "UF", duf)
+    dcep = "".join(ch for ch in _addr_part(daddr, "cep", "CEP") if ch.isdigit()).zfill(8)[:8]
+    _el(dender, "CEP", dcep if dcep != "00000000" else "01001000")
+    _el(dender, "cPais", "1058")
+    _el(dender, "xPais", "BRASIL")
+    _el(dest_el, "indIEDest", str(snapshot.get("header", {}).get("ind_ie_dest") or dest.get("ind_ie_dest") or "9"))
+
+    total_products = int(totals.get("products_cents") or 0)
+    for it in items:
+        det = _el(inf, "det")
+        det.set("nItem", str(it.get("line") or 1))
+        prod = _el(det, "prod")
+        _el(prod, "cProd", str(it.get("code") or "PROD")[:60])
+        _el(prod, "cEAN", "SEM GTIN")
+        _el(prod, "xProd", str(it.get("description") or "PRODUTO")[:120])
+        _el(prod, "NCM", str(it.get("ncm") or "00000000")[:8])
+        _el(prod, "CFOP", str(it.get("cfop") or "5102")[:4])
+        _el(prod, "uCom", str(it.get("unit") or "UN")[:6])
+        _el(prod, "qCom", _qty(it.get("quantity") or "1"))
+        unit_cents = int(it.get("unit_price_cents") or 0)
+        _el(prod, "vUnCom", _money_cents(unit_cents))
+        line_total = int(it.get("total_cents") or 0)
+        _el(prod, "vProd", _money_cents(line_total))
+        _el(prod, "cEANTrib", "SEM GTIN")
+        _el(prod, "uTrib", str(it.get("unit") or "UN")[:6])
+        _el(prod, "qTrib", _qty(it.get("quantity") or "1"))
+        _el(prod, "vUnTrib", _money_cents(unit_cents))
+        _el(prod, "indTot", "1")
+
+        imposto = _el(det, "imposto")
+        taxes = it.get("taxes") or {}
+        icms_block = taxes.get("icms") or {}
+        icms = _el(imposto, "ICMS")
+        origin = str(it.get("origin") or taxes.get("origin") or "0")[:1]
+        if icms_block.get("regime") == "sn" or icms_block.get("csosn"):
+            grp = _el(icms, "ICMSSN102")
+            _el(grp, "orig", origin)
+            _el(grp, "CSOSN", str(icms_block.get("csosn") or it.get("csosn") or "102").zfill(3))
+        else:
+            grp = _el(icms, "ICMS00")
+            _el(grp, "orig", origin)
+            _el(grp, "CST", str(icms_block.get("cst") or it.get("icms_cst") or "00").zfill(2))
+            _el(grp, "modBC", "3")
+            _el(grp, "vBC", _money_cents(int(icms_block.get("base_cents") or line_total)))
+            rate_bp = int(icms_block.get("rate_bp") or 0)
+            _el(grp, "pICMS", f"{Decimal(rate_bp) / Decimal(100):.4f}")
+            _el(grp, "vICMS", _money_cents(int(icms_block.get("value_cents") or 0)))
+
+        for kind, tag in (("pis", "PIS"), ("cofins", "COFINS")):
+            blk = taxes.get(kind) or {}
+            parent = _el(imposto, tag)
+            # NT: CST 07 = operação isenta / sem incidência em muitos casos → PISOutr/PISNT simplificado
+            cst = str(blk.get("cst") or "07")[:2]
+            if cst in ("04", "05", "06", "07", "08", "09"):
+                g = _el(parent, f"{tag}NT")
+                _el(g, "CST", cst)
+            else:
+                g = _el(parent, f"{tag}Aliq")
+                _el(g, "CST", cst)
+                _el(g, "vBC", _money_cents(int(blk.get("base_cents") or 0)))
+                _el(g, "p" + tag, f"{Decimal(int(blk.get('rate_bp') or 0)) / Decimal(100):.4f}")
+                _el(g, "v" + tag, _money_cents(int(blk.get("value_cents") or 0)))
+
+    total_el = _el(inf, "total")
+    icmstot = _el(total_el, "ICMSTot")
+    _el(icmstot, "vBC", _money_cents(int(totals.get("icms_base_cents") or 0)))
+    _el(icmstot, "vICMS", _money_cents(int(totals.get("icms_cents") or 0)))
+    _el(icmstot, "vICMSDeson", "0.00")
+    _el(icmstot, "vFCP", "0.00")
+    _el(icmstot, "vBCST", "0.00")
+    _el(icmstot, "vST", "0.00")
+    _el(icmstot, "vFCPST", "0.00")
+    _el(icmstot, "vFCPSTRet", "0.00")
+    _el(icmstot, "vProd", _money_cents(total_products))
+    _el(icmstot, "vFrete", _money_cents(int(totals.get("freight_cents") or 0)))
+    _el(icmstot, "vSeg", "0.00")
+    _el(icmstot, "vDesc", _money_cents(int(totals.get("discount_cents") or 0)))
+    _el(icmstot, "vII", "0.00")
+    _el(icmstot, "vIPI", "0.00")
+    _el(icmstot, "vIPIDevol", "0.00")
+    _el(icmstot, "vPIS", _money_cents(int(totals.get("pis_cents") or 0)))
+    _el(icmstot, "vCOFINS", _money_cents(int(totals.get("cofins_cents") or 0)))
+    _el(icmstot, "vOutro", "0.00")
+    tot = int(totals.get("total_cents") or total_products)
+    _el(icmstot, "vNF", _money_cents(tot))
+    _el(icmstot, "vTotTrib", "0.00")
+
+    transp = _el(inf, "transp")
+    _el(transp, "modFrete", "9")
+
+    pag = _el(inf, "pag")
+    detpag = _el(pag, "detPag")
+    _el(detpag, "tPag", str(payment.get("method") or "99")[:2])
+    _el(detpag, "vPag", _money_cents(int(payment.get("amount_cents") or tot)))
+
+    inf_adic = _el(inf, "infAdic")
+    _el(inf_adic, "infCpl", "NF-e gerada pelo EXEQ Hub (emissor proprio).")
+
+    xml = ET.tostring(nfe, encoding="utf-8", xml_declaration=True)
+    return xml
+
+
+def access_key_from_signed_or_snap(xml: bytes | None, snapshot: dict[str, Any]) -> str:
+    if xml:
+        try:
+            root = ET.fromstring(xml)
+            for el in root.iter():
+                if el.tag.endswith("infNFe"):
+                    rid = el.get("Id") or ""
+                    if rid.startswith("NFe") and len(rid) == 47:
+                        return rid[3:]
+        except ET.ParseError:
+            pass
+    header = snapshot.get("header") or {}
+    emit = snapshot.get("emitente") or {}
+    uf = (_addr_part(emit.get("address") or {}, "uf", "UF") or "SP").upper()
+    return build_access_key(
+        uf=uf,
+        issue_date_iso=header.get("issue_date") or "2026-01-01",
+        cnpj=emit.get("cnpj") or "",
+        series=int(header.get("series") or 1),
+        number=int(header.get("number") or 1),
+    )

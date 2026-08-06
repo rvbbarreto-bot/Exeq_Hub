@@ -48,6 +48,11 @@
     if (bare.startsWith("/billing/providers/") && bare.endsWith("/credentials")) {
       return bare + query;
     }
+    // NF-e actions (urls sem trailing slash)
+    if (/^\/nfe\/gate$/.test(bare)) return bare + "/" + query;
+    if (/^\/nfe\/invoices\/[^/]+\/(items|validate|emit|cancel)$/.test(bare)) {
+      return bare + query;
+    }
     if (!p.endsWith("/")) p += "/";
     return p + query;
   }

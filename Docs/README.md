@@ -12,11 +12,20 @@ Repositório: https://github.com/rvbbarreto-bot/Exeq_Hub
 | Estudo split Agendador | `Exeq_Agendador_Split_Payment_Estudo_Arquitetura.md` | Estudo (sem implementação PSP) |
 | NFS-e integração | `Exeq_Hub_NFSe_Emission_Architecture_Reference.md` | **1.1.0** (addendum emissor próprio; Focus histórico) |
 | ADR emissor próprio Nacional | `ADR_NFSE_001_Emissor_Proprio_Nacional.md` | **Aprovado** (PO 2026-07-29 — SEFIN/ADN + DANFSe) |
+| ADR emissor próprio NF-e SEFAZ | `ADR_NFE_001_Emissor_Proprio_SEFAZ.md` | **Aprovado + GO desenvolvimento** (PO 2026-08-05 — SP; stub até IE/SEFAZ) |
 | Plano desenvolvimento emissor próprio | `Exeq_Hub_Plano_Desenvolvimento_Emissor_Proprio_NFSe.md` | **Autorizado PO** (início 2026-07-29 — visão gestão) |
 | DoD segurança NFS-e/SEFIN | `Exeq_Hub_DoD_Seguranca_NFSe_SEFIN.md` | G-SEC P0 aprovado; P1 (pentest escopo pronto) |
 | Briefing pentest SEC-P1-09 | `Exeq_Hub_NFSe_Pentest_Briefing_SEC_P1_09.md` | Escopo |
 | Relatório pentest GL-01 | `Exeq_Hub_NFSe_Pentest_Report_SEC_P1_09.md` | Interno formal 2026-07-30 |
+| Onboarding multi-CNPJ | `Exeq_Hub_NFSe_Onboarding_Multi_CNPJ.md` | `nfse_onboard_tenant` |
+| Ops convênio HTTP ADN | `Exeq_Hub_NFSe_Ops_Convenio_HTTP.md` | `nfse_smoke_convenio_http` |
+| ARD canal WhatsApp + mensageria | `Exeq_Hub_ARD_WhatsApp_NFSe_Mensageria.md` | **0.2.0** — gate Fase 3; item 17 decidido (gateway dual Evolution + Meta) |
+| UX análise nav + responsive | `Exeq_Hub_UX_Analise_Navegacao_Responsive.md` | **0.1.0** — UI foundations; protótipo `frontend/prototypes/ux-foundations-nav-responsive.html` |
+| QA roteiro emissão via WhatsApp | `Exeq_Hub_QA_Roteiro_WhatsApp_NFSe.md` | **0.5.0** — Fases 1–3 + smoke nativo Ricardo + WA-IA stub |
 | LLR emissor próprio | `Exeq_Hub_LLR_Emissor_Proprio_NFSe_Nacional.md` | **0.3.0** (RF/EX + NT 008 v1.02) |
+| LLR UI NF-e B2B (sem estoque) | `Exeq_Hub_LLR_NFe_UI_B2B_Sem_Estoque.md` | **0.2.0** — reanálise greenfield + reuso NFS-e; allowed_actions; G-IMPACT |
+| LLR domínio NF-e SEFAZ greenfield | `Exeq_Hub_LLR_NFe_Dominio_SEFAZ_Greenfield.md` | **0.1.0** — FSM, número, snapshot, tax, EX-*, API, gates G-EMIT-NFE |
+| Reanálise impacto NF-e × NFS-e homologada | `Exeq_Hub_NFe_Reanalise_Impacto_NFSe_Homologada.md` | **1.0.0** — inventário reuso, riscos recalibrados, parecer Aprovado c/ ressalvas |
 | Reforma Tributária / RTC | `Exeq_Hub_Reforma_Tributaria_RTC_MultiDocumento_Estudo_Tecnico.md` | **0.1.0-draft** (estudo direção — IBS/CBS/IS, multi-DF-e, contábil) |
 | ADR RTC execução | `ADR_RTC_001_Priorizacao_Pilares.md` | **Aceito** (PO 2026-07-26 — pilares 1→5→2→4→3) |
 | Billing Inter | `Exeq_Hub_Inter_Billing_Integration_Study.md` | **1.0.0** (Sprint 5 — Inter first / BolePix v3) |

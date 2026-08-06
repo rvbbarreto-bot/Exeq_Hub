@@ -1,0 +1,632 @@
+/** EXEQ Hub — tela Emissão NF-e (modelo 55 B2B) — LLR UI v0.2. */
+(function (global) {
+  "use strict";
+
+  const A = () => global.HubApi;
+
+  const caches = {
+    providers: [],
+    customers: [],
+    products: [],
+    byId: { providers: {}, customers: {}, products: {} },
+  };
+
+  let gate = null;
+  let statusFilter = "all";
+  let listPage = 1;
+  const PAGE_SIZE = 20;
+  let pageRows = [];
+  let pageCount = 0;
+  let hasNext = false;
+  let hasPrev = false;
+  /** @type {any|null} */
+  let draftState = null;
+  let itemRows = 1;
+
+  function statusBadge(status) {
+    const s = String(status || "").toLowerCase();
+    if (["draft"].includes(s)) return { cls: "neutral", label: "Rascunho" };
+    if (["queued", "submitting", "polling", "cancel_requested"].includes(s)) {
+      return { cls: "info", label: "Processando" };
+    }
+    if (s === "authorized") return { cls: "success", label: "Autorizada" };
+    if (s === "rejected") return { cls: "danger", label: "Rejeitada" };
+    if (s === "cancelled") return { cls: "neutral", label: "Cancelada" };
+    if (s === "failed") return { cls: "danger", label: "Falhou" };
+    return { cls: "neutral", label: status || "—" };
+  }
+
+  function indexById(list) {
+    const map = {};
+    for (const item of list) map[item.id] = item;
+    return map;
+  }
+
+  function escapeHtml(s) {
+    return String(s ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function customerName(id) {
+    const c = caches.byId.customers[id];
+    return c ? c.name || c.document : String(id || "").slice(0, 8);
+  }
+
+  function maskDoc(doc) {
+    const d = String(doc || "").replace(/\D/g, "");
+    if (d.length === 11) return d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.***.***-$4");
+    if (d.length === 14) return d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.***/****-$5");
+    return doc || "—";
+  }
+
+  function formatKey(key) {
+    const k = String(key || "");
+    if (k.length < 8) return k || "—";
+    return k.slice(0, 6) + "…" + k.slice(-6);
+  }
+
+  async function loadLookups() {
+    const api = A();
+    const [providers, customers, products] = await Promise.all([
+      api.api("/providers"),
+      api.api("/customers"),
+      api.api("/nfe/products/"),
+    ]);
+    caches.providers = api.unwrapList(providers);
+    caches.customers = api.unwrapList(customers);
+    caches.products = api.unwrapList(products);
+    caches.byId.providers = indexById(caches.providers);
+    caches.byId.customers = indexById(caches.customers);
+    caches.byId.products = indexById(caches.products);
+    fillSelects();
+  }
+
+  function fillSelects() {
+    fillSelect("nfe-provider", caches.providers, (p) => p.trade_name || p.legal_name || p.document);
+    fillSelect("nfe-customer", caches.customers, (c) => c.name || c.document);
+  }
+
+  function fillSelect(id, list, labelFn) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const current = el.value;
+    el.innerHTML = '<option value="">Selecione…</option>';
+    for (const item of list) {
+      const opt = document.createElement("option");
+      opt.value = item.id;
+      opt.textContent = labelFn(item);
+      el.appendChild(opt);
+    }
+    if (current) el.value = current;
+  }
+
+  function fillProductSelect(selectEl) {
+    if (!selectEl) return;
+    const current = selectEl.value;
+    selectEl.innerHTML = '<option value="">Produto…</option>';
+    for (const p of caches.products) {
+      const opt = document.createElement("option");
+      opt.value = p.id;
+      opt.textContent = `${p.code} — ${p.description}`;
+      selectEl.appendChild(opt);
+    }
+    if (current) selectEl.value = current;
+  }
+
+  async function loadGate() {
+    const api = A();
+    const box = document.getElementById("nfe-gate-box");
+    const btnNew = document.getElementById("btn-emitir-nfe");
+    try {
+      gate = await api.api("/nfe/gate/");
+    } catch (err) {
+      gate = { enabled: false, can_create: false, checks: [], error: api.handleApiError(err.body).message };
+    }
+    if (!box) return;
+    if (!gate.enabled) {
+      box.innerHTML =
+        '<div class="hint">NF-e desabilitada (<code>NFE_ENABLED=false</code>). Ative no ambiente de lab para emitir.</div>';
+      if (btnNew) btnNew.disabled = true;
+      return;
+    }
+    const checks = gate.checks || [];
+    const lines = checks
+      .map((c) => {
+        const mark = c.ok ? "✓" : "✗";
+        const cls = c.ok ? "success" : "danger";
+        return `<span class="badge ${cls}" style="margin:2px">${escapeHtml(mark + " " + c.label)}</span>`;
+      })
+      .join(" ");
+    const meta = [
+      `modo=${escapeHtml(gate.http_mode || "—")}`,
+      `UF pivot=${escapeHtml(gate.pivot_uf || "SP")}`,
+      gate.next_number_estimated != null
+        ? `série ${escapeHtml(gate.series)} · próximo estimado ${escapeHtml(gate.next_number_estimated)}`
+        : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    box.innerHTML = `<div style="margin-bottom:8px">${lines}</div><div class="hint">${meta}</div>`;
+    if (btnNew) btnNew.disabled = !gate.can_create;
+  }
+
+  async function loadList() {
+    const api = A();
+    const tbody = document.getElementById("tbody-nfe");
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="7">Carregando…</td></tr>';
+    try {
+      if (!gate) await loadGate();
+      else await loadGate();
+      if (!caches.customers.length) await loadLookups();
+      if (!gate.enabled) {
+        tbody.innerHTML = '<tr><td colspan="7">Feature NF-e desligada.</td></tr>';
+        return;
+      }
+      const params = new URLSearchParams({
+        page: String(listPage),
+        page_size: String(PAGE_SIZE),
+      });
+      if (statusFilter && statusFilter !== "all") {
+        if (statusFilter === "processing") {
+          // API filtra um status; carrega all e filtra client-side para group
+        } else {
+          params.set("status", statusFilter);
+        }
+      }
+      const data = await api.api(`/nfe/invoices/?${params.toString()}`);
+      const page = api.unwrapPage(data);
+      let rows = page.results || [];
+      if (statusFilter === "processing") {
+        const proc = new Set(["queued", "submitting", "polling", "cancel_requested"]);
+        rows = rows.filter((r) => proc.has(String(r.status || "").toLowerCase()));
+      }
+      pageRows = rows;
+      pageCount = page.count || rows.length;
+      hasNext = Boolean(page.next);
+      hasPrev = Boolean(page.previous);
+      renderTabs();
+      if (!pageRows.length) {
+        tbody.innerHTML = '<tr><td colspan="7">Nenhuma NF-e. Cadastre produto e emita um rascunho.</td></tr>';
+      } else {
+        tbody.innerHTML = "";
+        for (const row of pageRows) tbody.appendChild(renderRow(row));
+      }
+      updatePager();
+    } catch (err) {
+      const { message } = api.handleApiError(err.body);
+      tbody.innerHTML = `<tr><td colspan="7">${escapeHtml(message)}</td></tr>`;
+    }
+  }
+
+  function renderTabs() {
+    const root = document.getElementById("tabs-nfe");
+    if (!root) return;
+    const defs = [
+      ["all", "Todas"],
+      ["draft", "Rascunho"],
+      ["processing", "Processando"],
+      ["authorized", "Autorizadas"],
+      ["rejected", "Rejeitadas"],
+      ["cancelled", "Canceladas"],
+      ["failed", "Falhas"],
+    ];
+    root.innerHTML = "";
+    for (const [key, label] of defs) {
+      const div = document.createElement("div");
+      div.className = "tab" + (statusFilter === key ? " active" : "");
+      div.textContent = label;
+      div.addEventListener("click", () => {
+        if (statusFilter === key) return;
+        statusFilter = key;
+        listPage = 1;
+        loadList();
+      });
+      root.appendChild(div);
+    }
+  }
+
+  function updatePager() {
+    const pager = document.getElementById("pager-nfe-label");
+    const prev = document.getElementById("btn-nfe-prev");
+    const next = document.getElementById("btn-nfe-next");
+    if (pager) {
+      pager.textContent =
+        pageCount === 0
+          ? "Nenhuma nota"
+          : `Página ${listPage} · ${pageRows.length} item(ns) nesta página`;
+    }
+    if (prev) prev.disabled = !hasPrev;
+    if (next) next.disabled = !hasNext;
+  }
+
+  function renderRow(row) {
+    const api = A();
+    const tr = document.createElement("tr");
+    const badge = statusBadge(row.status);
+    const num =
+      row.number != null
+        ? `${row.series}/${row.number}`
+        : `${row.series}/—`;
+    const actions = row.allowed_actions || [];
+    tr.innerHTML = `
+      <td>
+        <div class="cell-title">${escapeHtml(num)}</div>
+        <div class="cell-sub">${escapeHtml(String(row.idempotency_key || "").slice(0, 12))}</div>
+      </td>
+      <td>${escapeHtml(row.issue_date || "—")}</td>
+      <td>
+        <div class="cell-title">${escapeHtml(customerName(row.customer))}</div>
+        <div class="cell-sub">${escapeHtml(maskDoc(caches.byId.customers[row.customer]?.document))}</div>
+      </td>
+      <td class="num">${escapeHtml(api.formatBrlFromCents(row.total_cents))}</td>
+      <td><span class="badge ${badge.cls}">${badge.label}</span></td>
+      <td class="cell-sub">${escapeHtml(formatKey(row.access_key))}</td>
+      <td class="row-actions"></td>`;
+    const cell = tr.querySelector(".row-actions");
+    if (actions.includes("emit") || actions.includes("validate")) {
+      cell.appendChild(iconBtn("Transmitir", "emit", () => openDraft(row)));
+    }
+    if (actions.includes("cancel")) {
+      cell.appendChild(iconBtn("Cancelar", "cancel", () => openCancel(row)));
+    }
+    cell.appendChild(iconBtn("Detalhe", "poll", () => openDetail(row)));
+    return tr;
+  }
+
+  function iconBtn(title, kind, onClick) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "icon-btn";
+    btn.title = title;
+    btn.innerHTML =
+      kind === "emit"
+        ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14M12 5l7 7-7 7"/></svg>'
+        : kind === "cancel"
+          ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M8 12h8"/></svg>'
+          : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>';
+    btn.addEventListener("click", onClick);
+    return btn;
+  }
+
+  function renderItemRows() {
+    const host = document.getElementById("nfe-items-host");
+    if (!host) return;
+    host.innerHTML = "";
+    for (let i = 0; i < itemRows; i++) {
+      const wrap = document.createElement("div");
+      wrap.className = "form-grid nfe-item-row";
+      wrap.dataset.idx = String(i);
+      wrap.innerHTML = `
+        <div class="field">
+          <label>Produto</label>
+          <select class="nfe-item-product" data-idx="${i}"></select>
+        </div>
+        <div class="field">
+          <label>Qtd</label>
+          <input class="nfe-item-qty" data-idx="${i}" type="text" value="1" inputmode="decimal">
+        </div>
+        <div class="field">
+          <label>CFOP (opc.)</label>
+          <input class="nfe-item-cfop" data-idx="${i}" type="text" maxlength="4" placeholder="5102">
+        </div>`;
+      host.appendChild(wrap);
+      fillProductSelect(wrap.querySelector(".nfe-item-product"));
+    }
+  }
+
+  function collectItems() {
+    const items = [];
+    document.querySelectorAll(".nfe-item-product").forEach((sel) => {
+      const idx = sel.dataset.idx;
+      const product_id = sel.value;
+      if (!product_id) return;
+      const qtyEl = document.querySelector(`.nfe-item-qty[data-idx="${idx}"]`);
+      const cfopEl = document.querySelector(`.nfe-item-cfop[data-idx="${idx}"]`);
+      const row = {
+        product_id,
+        quantity: (qtyEl && qtyEl.value) || "1",
+      };
+      if (cfopEl && cfopEl.value.trim()) row.cfop = cfopEl.value.trim();
+      items.push(row);
+    });
+    return items;
+  }
+
+  async function openCreateModal() {
+    const api = A();
+    if (gate && !gate.can_create) {
+      api.toast("Pré-condições NF-e incompletas. Veja o gate acima.", "danger");
+      return;
+    }
+    draftState = null;
+    itemRows = 1;
+    const form = document.getElementById("form-nfe");
+    if (form) form.reset();
+    document.getElementById("nfe-status-line").textContent = "";
+    document.getElementById("nfe-validate-out").textContent = "";
+    await loadLookups();
+    renderItemRows();
+    if (caches.providers[0]) {
+      const el = document.getElementById("nfe-provider");
+      if (el) el.value = caches.providers[0].id;
+    }
+    api.openModal("modal-nfe");
+  }
+
+  async function openDraft(row) {
+    const api = A();
+    draftState = row;
+    itemRows = Math.max(1, (row.items || []).length || 1);
+    await loadLookups();
+    renderItemRows();
+    const form = document.getElementById("form-nfe");
+    if (form) {
+      if (form.provider_id) form.provider_id.value = row.provider;
+      if (form.customer_id) form.customer_id.value = row.customer;
+      if (form.nature_operation) form.nature_operation.value = row.nature_operation || "VENDA";
+    }
+    const items = row.items || [];
+    items.forEach((it, i) => {
+      const sel = document.querySelector(`.nfe-item-product[data-idx="${i}"]`);
+      const qty = document.querySelector(`.nfe-item-qty[data-idx="${i}"]`);
+      const cfop = document.querySelector(`.nfe-item-cfop[data-idx="${i}"]`);
+      if (sel && it.product) sel.value = it.product;
+      if (qty) qty.value = it.quantity || "1";
+      if (cfop && it.cfop) cfop.value = it.cfop;
+    });
+    document.getElementById("nfe-status-line").textContent =
+      `Rascunho ${row.id.slice(0, 8)} · status ${row.status} · v${row.version}`;
+    api.openModal("modal-nfe");
+  }
+
+  async function ensureDraft() {
+    const api = A();
+    const form = document.getElementById("form-nfe");
+    if (draftState && draftState.id) return draftState;
+    const body = {
+      idempotency_key: crypto.randomUUID(),
+      provider_id: form.provider_id.value,
+      customer_id: form.customer_id.value,
+      nature_operation: form.nature_operation.value || "VENDA",
+      series: 1,
+      ind_ie_dest: form.ind_ie_dest.value || "9",
+    };
+    if (!body.provider_id || !body.customer_id) {
+      throw new Error("Selecione emitente e destinatário");
+    }
+    const inv = await api.api("/nfe/invoices/", { method: "POST", body });
+    draftState = inv;
+    return inv;
+  }
+
+  async function saveItems() {
+    const api = A();
+    const inv = await ensureDraft();
+    const items = collectItems();
+    if (!items.length) throw new Error("Inclua ao menos um item com produto");
+    const updated = await api.api(`/nfe/invoices/${inv.id}/items`, {
+      method: "PUT",
+      body: { version: inv.version, items },
+    });
+    draftState = updated;
+    return updated;
+  }
+
+  async function onValidate() {
+    const api = A();
+    const out = document.getElementById("nfe-validate-out");
+    try {
+      const inv = await saveItems();
+      const res = await api.api(`/nfe/invoices/${inv.id}/validate`, { method: "POST", body: {} });
+      draftState = res.invoice || inv;
+      const v = res.validation || {};
+      if (v.ok) {
+        out.textContent = `OK · total ${api.formatBrlFromCents(v.totals?.total_cents)} · engine ${v.totals?.tax_engine_version || ""}`;
+        api.toast("Validação OK", "success");
+      } else {
+        out.textContent = "Erros: " + JSON.stringify(v.field_errors || []);
+        api.toast("Validação com erros", "danger");
+      }
+    } catch (err) {
+      const msg = err.message || api.handleApiError(err.body).message;
+      out.textContent = msg;
+      api.toast(msg, "danger");
+    }
+  }
+
+  async function onEmitConfirm(ev) {
+    ev.preventDefault();
+    const api = A();
+    const statusEl = document.getElementById("nfe-status-line");
+    try {
+      if (!draftState) await saveItems();
+      else await saveItems();
+      const inv = draftState;
+      statusEl.textContent = "Transmitindo…";
+      const res = await api.api(`/nfe/invoices/${inv.id}/emit`, {
+        method: "POST",
+        body: { version: inv.version },
+      });
+      draftState = res;
+      statusEl.textContent = `Status: ${res.status} · chave ${formatKey(res.access_key)} · protocolo ${res.protocol || "—"}`;
+      if (res.status === "authorized") {
+        api.toast("NF-e autorizada (stub ou SEFAZ)", "success");
+        api.closeModal("modal-nfe-confirm");
+        api.closeModal("modal-nfe");
+        loadList();
+      } else {
+        api.toast(`Emitiu com status ${res.status}`, res.status === "rejected" ? "danger" : "warning");
+        loadList();
+      }
+    } catch (err) {
+      const { message } = api.handleApiError(err.body);
+      statusEl.textContent = message;
+      api.toast(message, "danger");
+    }
+  }
+
+  function openEmitConfirm() {
+    const api = A();
+    const amb = gate?.tp_amb === "1" ? "PRODUÇÃO" : "HOMOLOGAÇÃO";
+    const mode = gate?.http_mode || "stub";
+    document.getElementById("nfe-confirm-text").textContent =
+      `Transmitir esta NF-e no ambiente ${amb} (modo ${mode})? O número será reservado no Hub.`;
+    api.openModal("modal-nfe-confirm");
+  }
+
+  function openCancel(row) {
+    const form = document.getElementById("form-nfe-cancel");
+    if (form) {
+      form.dataset.id = row.id;
+      form.justificativa.value = "";
+    }
+    document.getElementById("nfe-cancel-summary").textContent =
+      `NF-e ${row.series}/${row.number || "—"} · ${formatKey(row.access_key)}`;
+    A().openModal("modal-nfe-cancel");
+  }
+
+  async function submitCancel(ev) {
+    ev.preventDefault();
+    const api = A();
+    const form = document.getElementById("form-nfe-cancel");
+    const id = form.dataset.id;
+    try {
+      await api.api(`/nfe/invoices/${id}/cancel`, {
+        method: "POST",
+        body: { justificativa: form.justificativa.value },
+      });
+      api.toast("Cancelamento processado", "success");
+      api.closeModal("modal-nfe-cancel");
+      loadList();
+    } catch (err) {
+      api.toast(api.handleApiError(err.body).message, "danger");
+    }
+  }
+
+  function openDetail(row) {
+    const body = document.getElementById("nfe-detail-body");
+    const actions = (row.allowed_actions || []).join(", ") || "—";
+    body.innerHTML = `
+      <div class="hint">Status: <b>${escapeHtml(row.status)}</b> · v${escapeHtml(row.version)}</div>
+      <div class="hint">Série/nº: ${escapeHtml(row.series)}/${escapeHtml(row.number ?? "—")}</div>
+      <div class="hint">Chave: <code>${escapeHtml(row.access_key || "—")}</code></div>
+      <div class="hint">Protocolo: ${escapeHtml(row.protocol || "—")}</div>
+      <div class="hint">Total: ${escapeHtml(A().formatBrlFromCents(row.total_cents))}</div>
+      <div class="hint">Rejeição: ${escapeHtml(row.rejection_code || "")} ${escapeHtml(row.rejection_message || "")}</div>
+      <div class="hint">allowed_actions: ${escapeHtml(actions)}</div>
+      <div class="hint">correlation: ${escapeHtml(row.correlation_id || "")}</div>`;
+    A().openModal("modal-nfe-detail");
+  }
+
+  async function onCreateProduct(ev) {
+    ev.preventDefault();
+    const api = A();
+    const form = document.getElementById("form-nfe-product");
+    try {
+      await api.api("/nfe/products/", {
+        method: "POST",
+        body: {
+          code: form.code.value.trim(),
+          description: form.description.value.trim(),
+          ncm: form.ncm.value.trim(),
+          unit: form.unit.value || "UN",
+          unit_price_cents: A().reaisToCents(form.price_reais.value),
+          csosn: form.csosn.value || "102",
+          origin: "0",
+          cfop_internal: form.cfop.value || "5102",
+        },
+      });
+      api.toast("Produto fiscal criado", "success");
+      api.closeModal("modal-nfe-product");
+      form.reset();
+      await loadLookups();
+      renderProductsTable();
+    } catch (err) {
+      api.toast(api.handleApiError(err.body).message, "danger");
+    }
+  }
+
+  function renderProductsTable() {
+    const tbody = document.getElementById("tbody-nfe-products");
+    if (!tbody) return;
+    if (!caches.products.length) {
+      tbody.innerHTML = '<tr><td colspan="5">Nenhum produto fiscal.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = "";
+    for (const p of caches.products) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${escapeHtml(p.code)}</td>
+        <td>${escapeHtml(p.description)}</td>
+        <td>${escapeHtml(p.ncm)}</td>
+        <td class="num">${escapeHtml(A().formatBrlFromCents(p.unit_price_cents))}</td>
+        <td>${escapeHtml(p.csosn || p.icms_cst || "—")}</td>`;
+      tbody.appendChild(tr);
+    }
+  }
+
+  function bind() {
+    const btn = document.getElementById("btn-emitir-nfe");
+    if (btn) btn.addEventListener("click", openCreateModal);
+    const btnProd = document.getElementById("btn-nfe-product");
+    if (btnProd) {
+      btnProd.addEventListener("click", () => {
+        A().openModal("modal-nfe-product");
+      });
+    }
+    const addItem = document.getElementById("btn-nfe-add-item");
+    if (addItem) {
+      addItem.addEventListener("click", () => {
+        itemRows += 1;
+        renderItemRows();
+      });
+    }
+    const btnVal = document.getElementById("btn-nfe-validate");
+    if (btnVal) btnVal.addEventListener("click", onValidate);
+    const btnEmit = document.getElementById("btn-nfe-emit");
+    if (btnEmit) btnEmit.addEventListener("click", openEmitConfirm);
+    const formConfirm = document.getElementById("form-nfe-confirm");
+    if (formConfirm) formConfirm.addEventListener("submit", onEmitConfirm);
+    const cancelForm = document.getElementById("form-nfe-cancel");
+    if (cancelForm) cancelForm.addEventListener("submit", submitCancel);
+    const prodForm = document.getElementById("form-nfe-product");
+    if (prodForm) prodForm.addEventListener("submit", onCreateProduct);
+    const price = document.getElementById("nfe-product-price");
+    if (price) A().bindMoneyMask(price);
+    const prev = document.getElementById("btn-nfe-prev");
+    const next = document.getElementById("btn-nfe-next");
+    if (prev) {
+      prev.addEventListener("click", () => {
+        if (!hasPrev || listPage <= 1) return;
+        listPage -= 1;
+        loadList();
+      });
+    }
+    if (next) {
+      next.addEventListener("click", () => {
+        if (!hasNext) return;
+        listPage += 1;
+        loadList();
+      });
+    }
+  }
+
+  async function loadScreen() {
+    await loadGate();
+    await loadLookups();
+    renderProductsTable();
+    await loadList();
+  }
+
+  global.HubNfe = {
+    bind,
+    loadList,
+    loadScreen,
+    loadGate,
+  };
+})(window);

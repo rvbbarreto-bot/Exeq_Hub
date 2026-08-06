@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     "apps.fiscal",
     "apps.ops",
     "apps.issuance",
+    "apps.nfe",
     "apps.billing",
     "apps.das",
     "apps.channel",
@@ -119,6 +120,7 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_THROTTLE_RATES": {
         "webhook_gateway": env("WEBHOOK_GATEWAY_THROTTLE", "60/min"),
+        "webhook_evolution": env("WEBHOOK_EVOLUTION_THROTTLE", "120/min"),
         "cadastral_lookup": env("CADASTRO_LOOKUP_THROTTLE", "30/min"),
         "nf_issue_write": env("NF_ISSUE_WRITE_THROTTLE", "30/min"),
     },
@@ -145,6 +147,11 @@ CELERY_BEAT_SCHEDULE = {
         "task": "accounts.scan_expiring_certificates",
         "schedule": float(env("CERT_SCAN_INTERVAL_SECONDS", "86400") or "86400"),
         "kwargs": {"alert_days": int(env("CERT_ALERT_DAYS", "30") or "30")},
+    },
+    # Canal WhatsApp (WA-FLX-07): expira sessões de conversa paradas
+    "channel-expire-stale-sessions": {
+        "task": "channel.expire_stale_sessions",
+        "schedule": float(env("CHANNEL_EXPIRE_INTERVAL_SECONDS", "600") or "600"),
     },
 }
 NF_SYNC_PROCESSING = env("NF_SYNC_PROCESSING", "false").lower() == "true"
@@ -278,6 +285,16 @@ NFSE_PROCESS_HARD_TIME_LIMIT = int(env("NFSE_PROCESS_HARD_TIME_LIMIT", "0") or "
 NFSE_POLL_SOFT_TIME_LIMIT = int(env("NFSE_POLL_SOFT_TIME_LIMIT", "0") or "0") or None
 NFSE_POLL_HARD_TIME_LIMIT = int(env("NFSE_POLL_HARD_TIME_LIMIT", "0") or "0") or None
 DANFSE_LAYOUT_VERSION = env("DANFSE_LAYOUT_VERSION", "nt008-v1.02")
+
+# NF-e produto (ADR-NFE-001) — default off; lab: NFE_ENABLED=true + NFE_HTTP_MODE=stub
+NFE_ENABLED = (env("NFE_ENABLED", "false") or "false").lower() in ("1", "true", "yes")
+NFE_HTTP_MODE = env("NFE_HTTP_MODE", "stub")  # stub | http (SEFAZ-SP)
+NFE_HTTP_DRY_RUN = (env("NFE_HTTP_DRY_RUN", "false") or "false").lower() in ("1", "true", "yes")
+NFE_HTTP_TIMEOUT = int(env("NFE_HTTP_TIMEOUT", "60") or "60")
+NFE_DEFAULT_TP_AMB = env("NFE_DEFAULT_TP_AMB", "2")  # 2 homolog | 1 produção
+NFE_LAYOUT_VERSION = env("NFE_LAYOUT_VERSION", "pl009-stub")
+NFE_PIVOT_UF = env("NFE_PIVOT_UF", "SP")
+
 FOCUS_HTTP_MODE = env("FOCUS_HTTP_MODE", "stub")  # stub | http
 FOCUS_API_BASE_URL = env(
     "FOCUS_API_BASE_URL",
@@ -328,4 +345,23 @@ EVOLUTION_HTTP_MODE = env("EVOLUTION_HTTP_MODE", "stub")  # stub | http
 EVOLUTION_API_BASE_URL = env("EVOLUTION_API_BASE_URL", "")
 EVOLUTION_API_KEY = env("EVOLUTION_API_KEY", "")
 EVOLUTION_INSTANCE = env("EVOLUTION_INSTANCE", "")
+# Fase 3 (WA-SEC): token do webhook Evolution (header X-Exeq-Webhook-Token ou apikey).
+# Vazio = rejeita todos os POSTs (fail-closed).
+EVOLUTION_WEBHOOK_TOKEN = env("EVOLUTION_WEBHOOK_TOKEN", "")
+# Lab: aceita payload simplificado {tenant_slug, phone_e164, message_id, text}.
+# Produção: false — só payload nativo com tenant via settings.evolution_instance.
+EVOLUTION_WEBHOOK_ALLOW_LEGACY = (
+    env("EVOLUTION_WEBHOOK_ALLOW_LEGACY", "true").lower() == "true"
+)
+# Provedor WhatsApp global: evolution (não oficial) | meta (Cloud API oficial).
+# Override por tenant: tenant.settings["whatsapp_provider"].
+WHATSAPP_PROVIDER = env("WHATSAPP_PROVIDER", "evolution")
+# Canal WhatsApp: TTL da sessão de conversa (WA-FLX-07)
+CHANNEL_SESSION_TTL_MINUTES = int(env("CHANNEL_SESSION_TTL_MINUTES", "30") or "30")
+# WA-IA: stub (heurística lab) | off (só fluxo guiado) | http (LLM futuro)
+CHANNEL_AI_MODE = env("CHANNEL_AI_MODE", "stub")
+META_WHATSAPP_HTTP_MODE = env("META_WHATSAPP_HTTP_MODE", "stub")  # stub | http
+META_WHATSAPP_TOKEN = env("META_WHATSAPP_TOKEN", "")
+META_WHATSAPP_PHONE_NUMBER_ID = env("META_WHATSAPP_PHONE_NUMBER_ID", "")
+META_GRAPH_API_VERSION = env("META_GRAPH_API_VERSION", "v23.0")
 RLS_SUBJECT_ROLE = env("RLS_SUBJECT_ROLE", "exeq_app")
