@@ -19,9 +19,9 @@
 
 ## Fora desta onda
 
-- Outbox `nfe.authorized` (RF-70) — próxima
+- Outbox `nfe.authorized` (RF-70) — ver `Exeq_Hub_NFe_U7_Outbox.md`
 - G-EMIT SP real / CCe HTTP
-- Filtros lista + timeline events
+- Filtros lista + timeline events — `Exeq_Hub_NFe_U8_Lista_Timeline.md`
 
 ## Testes
 

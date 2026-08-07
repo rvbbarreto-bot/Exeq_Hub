@@ -141,6 +141,8 @@ Regras:
 | **U4** | Multi-UF (10) + matriz QA | G-MULTI-10 |
 | **U5** | Interestadual/CFOP + RTC hooks + CCe scaffold + G-EMIT SP runbook | `Docs/Exeq_Hub_NFe_U5_Interestadual_CCe_G_EMIT.md` (G-EMIT-NFE ainda **ops**/homolog) |
 | **U6** | Gate T0 + `GET/PUT /nfe/config/` + discard/clone | `Docs/Exeq_Hub_NFe_U6_Config_Gate.md` |
+| **U7** | Outbox RF-70 `nfe.authorized` / `.rejected` / `.cancelled` | `Docs/Exeq_Hub_NFe_U7_Outbox.md` |
+| **U8** | Filtros lista T1 + timeline `…/events` | `Docs/Exeq_Hub_NFe_U8_Lista_Timeline.md` |
 
 UI e domínio **em paralelo** a partir de U0/U1 (impacto §7).
 

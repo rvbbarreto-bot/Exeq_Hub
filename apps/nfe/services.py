@@ -495,6 +495,13 @@ def emit_invoice(
             xml_bytes=signed if isinstance(signed, (bytes, bytearray)) else None,
             provider_raw=raw_meta,
         )
+        from apps.nfe.outbox import publish_after_terminal_status
+
+        publish_after_terminal_status(inv)
+    elif inv.status == NfeInvoice.Status.REJECTED:
+        from apps.nfe.outbox import publish_after_terminal_status
+
+        publish_after_terminal_status(inv)
     elif inv.status == NfeInvoice.Status.POLLING:
         from apps.nfe.polling import schedule_nfe_poll
 
@@ -576,6 +583,9 @@ def cancel_invoice(
         )
         # DANFE com tarja cancelada (best-effort; não reverte cancelled)
         ensure_danfe_pdf(inv, cancelled=True)
+        from apps.nfe.outbox import publish_after_terminal_status
+
+        publish_after_terminal_status(inv)
     return inv
 
 

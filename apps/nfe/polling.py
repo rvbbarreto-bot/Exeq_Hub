@@ -192,6 +192,13 @@ def poll_nfe_invoice(invoice: NfeInvoice, *, actor: str = "worker") -> NfeInvoic
             xml_bytes=signed if isinstance(signed, (bytes, bytearray)) else None,
             provider_raw=raw_meta,
         )
+        from apps.nfe.outbox import publish_after_terminal_status
+
+        publish_after_terminal_status(inv)
+    elif inv.status == NfeInvoice.Status.REJECTED:
+        from apps.nfe.outbox import publish_after_terminal_status
+
+        publish_after_terminal_status(inv)
     return inv
 
 

@@ -20,7 +20,8 @@ from apps.nfe.exceptions import (
     NfeVersionConflictError,
 )
 from apps.nfe.gate import build_config_payload, build_gate_payload, upsert_number_series
-from apps.nfe.models import NfeArtifact, NfeInvoice, NfeProduct
+from apps.nfe.listing import filter_invoice_queryset, sanitize_event_metadata
+from apps.nfe.models import NfeArtifact, NfeInvoice, NfeInvoiceEvent, NfeProduct
 from apps.nfe.serializers import (
     NfeCancelSerializer,
     NfeCloneSerializer,
@@ -150,10 +151,21 @@ class NfeInvoiceViewSet(viewsets.ViewSet):
     permission_classes = [IsTenantWriter]
 
     def list(self, request):
-        qs = NfeInvoice.objects.filter(tenant=request.tenant).order_by("-created_at")
-        status_f = (request.query_params.get("status") or "").strip().lower()
-        if status_f and status_f != "all":
-            qs = qs.filter(status=status_f)
+        qs = (
+            NfeInvoice.objects.filter(tenant=request.tenant)
+            .select_related("customer", "provider")
+            .order_by("-created_at")
+        )
+        qs = filter_invoice_queryset(
+            qs,
+            status=request.query_params.get("status"),
+            q=request.query_params.get("q"),
+            date_from=request.query_params.get("date_from")
+            or request.query_params.get("from"),
+            date_to=request.query_params.get("date_to") or request.query_params.get("to"),
+            days=request.query_params.get("days"),
+            apply_default_period=request.query_params.get("all") not in {"1", "true", "yes"},
+        )
         page = HubPageNumberPagination()
         result = page.paginate_queryset(qs, request)
         ser = NfeInvoiceSerializer(result, many=True)
@@ -254,6 +266,30 @@ class NfeInvoiceViewSet(viewsets.ViewSet):
         except NfeInvalidTransitionError as exc:
             return _err(exc, 400)
         return Response(NfeInvoiceSerializer(inv).data, status=status.HTTP_202_ACCEPTED)
+
+    @action(detail=True, methods=["get"], url_path="events")
+    def events(self, request, pk=None):
+        inv = get_object_or_404(NfeInvoice, pk=pk, tenant=request.tenant)
+        rows = list(
+            NfeInvoiceEvent.objects.filter(tenant=request.tenant, invoice=inv).order_by(
+                "occurred_at"
+            )
+        )
+        data = []
+        for ev in rows:
+            data.append(
+                {
+                    "id": str(ev.id),
+                    "from_status": ev.from_status,
+                    "to_status": ev.to_status,
+                    "actor": ev.actor,
+                    "metadata": sanitize_event_metadata(ev.metadata),
+                    "occurred_at": ev.occurred_at.isoformat()
+                    if hasattr(ev.occurred_at, "isoformat")
+                    else str(ev.occurred_at),
+                }
+            )
+        return Response({"invoice_id": str(inv.id), "events": data})
 
     @action(detail=True, methods=["post"], url_path="cancel")
     def cancel(self, request, pk=None):

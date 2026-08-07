@@ -1000,6 +1000,25 @@
           <div class="tab active">Todas</div>
         </div>
 
+        <div class="card" style="margin-bottom:12px;">
+          <div class="card-body pad" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
+            <div class="field" style="min-width:220px;flex:1">
+              <label for="nfe-search-q">Busca (nº, chave, dest., doc)</label>
+              <input id="nfe-search-q" type="search" placeholder="Ex.: 123, chave ou nome" autocomplete="off">
+            </div>
+            <div class="field">
+              <label for="nfe-filter-days">Período (emissão)</label>
+              <select id="nfe-filter-days">
+                <option value="7">7 dias</option>
+                <option value="30" selected>30 dias</option>
+                <option value="90">90 dias</option>
+                <option value="all">Todo histórico</option>
+              </select>
+            </div>
+            <button type="button" class="btn btn-ghost" id="btn-nfe-search">Filtrar</button>
+          </div>
+        </div>
+
         <div class="card">
           <div class="card-body">
             <table>

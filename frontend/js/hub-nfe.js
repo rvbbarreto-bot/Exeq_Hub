@@ -19,6 +19,8 @@
   let pageCount = 0;
   let hasNext = false;
   let hasPrev = false;
+  let searchQuery = "";
+  let listDays = "30";
   /** @type {any|null} */
   let draftState = null;
   let itemRows = 1;
@@ -220,31 +222,29 @@
         tbody.innerHTML = '<tr><td colspan="7">Feature NF-e desligada.</td></tr>';
         return;
       }
+      const qEl = document.getElementById("nfe-search-q");
+      const daysEl = document.getElementById("nfe-filter-days");
+      if (qEl) searchQuery = (qEl.value || "").trim();
+      if (daysEl) listDays = String(daysEl.value || "30");
       const params = new URLSearchParams({
         page: String(listPage),
         page_size: String(PAGE_SIZE),
       });
       if (statusFilter && statusFilter !== "all") {
-        if (statusFilter === "processing") {
-          // API filtra um status; carrega all e filtra client-side para group
-        } else {
-          params.set("status", statusFilter);
-        }
+        params.set("status", statusFilter);
       }
+      if (searchQuery) params.set("q", searchQuery);
+      if (listDays === "all") params.set("days", "0");
+      else if (listDays) params.set("days", listDays);
       const data = await api.api(`/nfe/invoices/?${params.toString()}`);
       const page = api.unwrapPage(data);
-      let rows = page.results || [];
-      if (statusFilter === "processing") {
-        const proc = new Set(["queued", "submitting", "polling", "cancel_requested"]);
-        rows = rows.filter((r) => proc.has(String(r.status || "").toLowerCase()));
-      }
-      pageRows = rows;
-      pageCount = page.count || rows.length;
+      pageRows = page.results || [];
+      pageCount = page.count || pageRows.length;
       hasNext = Boolean(page.next);
       hasPrev = Boolean(page.previous);
       renderTabs();
       if (!pageRows.length) {
-        tbody.innerHTML = '<tr><td colspan="7">Nenhuma NF-e. Cadastre produto e emita um rascunho.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7">Nenhuma NF-e no filtro atual.</td></tr>';
       } else {
         tbody.innerHTML = "";
         for (const row of pageRows) tbody.appendChild(renderRow(row));
@@ -635,30 +635,68 @@
     }
   }
 
-  function openDetail(row) {
+  async function openDetail(row) {
+    const api = A();
     const body = document.getElementById("nfe-detail-body");
-    const actions = (row.allowed_actions || []).join(", ") || "—";
-    const arts = row.artifacts || {};
+    if (!body || !row || !row.id) return;
+    body.innerHTML = '<div class="hint">Carregando detalhe…</div>';
+    api.openModal("modal-nfe-detail");
+    let detail = row;
+    let events = [];
+    try {
+      detail = await api.api(`/nfe/invoices/${row.id}/`);
+      const evPayload = await api.api(`/nfe/invoices/${row.id}/events`);
+      events = (evPayload && evPayload.events) || [];
+    } catch (err) {
+      body.innerHTML = `<div class="hint">${escapeHtml(api.handleApiError(err.body).message)}</div>`;
+      return;
+    }
+    const actions = (detail.allowed_actions || []).join(", ") || "—";
+    const arts = detail.artifacts || {};
+    const timeline = events
+      .map((ev) => {
+        const meta = ev.metadata || {};
+        const extra = [];
+        if (meta.cStat) extra.push(`cStat=${meta.cStat}`);
+        if (meta.xMotivo) extra.push(String(meta.xMotivo).slice(0, 80));
+        if (meta.reason) extra.push(meta.reason);
+        const when = (ev.occurred_at || "").replace("T", " ").slice(0, 19);
+        return `<li><code>${escapeHtml(when)}</code> ${escapeHtml(ev.from_status || "—")} → <b>${escapeHtml(
+          ev.to_status || ""
+        )}</b> <span class="cell-sub">(${escapeHtml(ev.actor || "—")})${
+          extra.length ? " · " + escapeHtml(extra.join(" · ")) : ""
+        }</span></li>`;
+      })
+      .join("");
     body.innerHTML = `
-      <div class="hint">Status: <b>${escapeHtml(row.status)}</b> · v${escapeHtml(row.version)}</div>
-      <div class="hint">Série/nº: ${escapeHtml(row.series)}/${escapeHtml(row.number ?? "—")}</div>
-      <div class="hint">Chave: <code>${escapeHtml(row.access_key || "—")}</code></div>
-      <div class="hint">Protocolo: ${escapeHtml(row.protocol || "—")}</div>
-      <div class="hint">Total: ${escapeHtml(A().formatBrlFromCents(row.total_cents))}</div>
-      <div class="hint">Rejeição: ${escapeHtml(row.rejection_code || "")} ${escapeHtml(row.rejection_message || "")}</div>
-      <div class="hint">Artefatos: XML=${arts.xml_authorized ? "sim" : "não"} · DANFE=${arts.danfe_pdf ? "sim" : "não"}</div>
+      <div class="hint">Status: <b>${escapeHtml(detail.status)}</b> · v${escapeHtml(detail.version)}</div>
+      <div class="hint">Série/nº: ${escapeHtml(detail.series)}/${escapeHtml(detail.number ?? "—")}</div>
+      <div class="hint">Emissão: ${escapeHtml(detail.issue_date || "—")}</div>
+      <div class="hint">Chave: <code>${escapeHtml(detail.access_key || "—")}</code></div>
+      <div class="hint">Protocolo: ${escapeHtml(detail.protocol || "—")}</div>
+      <div class="hint">Total: ${escapeHtml(api.formatBrlFromCents(detail.total_cents))}</div>
+      <div class="hint">Rejeição: ${escapeHtml(detail.rejection_code || "")} ${escapeHtml(
+      detail.rejection_message || ""
+    )}</div>
+      <div class="hint">Artefatos: XML=${arts.xml_authorized ? "sim" : "não"} · DANFE=${
+      arts.danfe_pdf ? "sim" : "não"
+    }</div>
       <div class="hint">allowed_actions: ${escapeHtml(actions)}</div>
-      <div class="hint">correlation: ${escapeHtml(row.correlation_id || "")}</div>
-      <div class="row-actions" id="nfe-detail-downloads" style="margin-top:12px;gap:8px;display:flex;flex-wrap:wrap"></div>`;
+      <div class="hint">correlation: ${escapeHtml(detail.correlation_id || "")}</div>
+      <div class="row-actions" id="nfe-detail-downloads" style="margin-top:12px;gap:8px;display:flex;flex-wrap:wrap"></div>
+      <h4 style="margin:16px 0 8px;font-size:0.95rem">Timeline</h4>
+      <ul id="nfe-detail-timeline" class="hint" style="padding-left:18px;margin:0">${
+        timeline || "<li>Sem eventos</li>"
+      }</ul>`;
     const host = document.getElementById("nfe-detail-downloads");
     if (host) {
-      const acts = row.allowed_actions || [];
+      const acts = detail.allowed_actions || [];
       if (acts.includes("download_xml")) {
         const b = document.createElement("button");
         b.type = "button";
         b.className = "btn btn-ghost";
         b.textContent = "Baixar XML";
-        b.addEventListener("click", () => downloadArtifact(row, "xml"));
+        b.addEventListener("click", () => downloadArtifact(detail, "xml"));
         host.appendChild(b);
       }
       if (acts.includes("download_pdf")) {
@@ -666,11 +704,10 @@
         b.type = "button";
         b.className = "btn btn-primary";
         b.textContent = "Baixar DANFE PDF";
-        b.addEventListener("click", () => downloadArtifact(row, "pdf"));
+        b.addEventListener("click", () => downloadArtifact(detail, "pdf"));
         host.appendChild(b);
       }
     }
-    A().openModal("modal-nfe-detail");
   }
 
   async function onCreateProduct(ev) {
@@ -762,6 +799,30 @@
       next.addEventListener("click", () => {
         if (!hasNext) return;
         listPage += 1;
+        loadList();
+      });
+    }
+    const searchBtn = document.getElementById("btn-nfe-search");
+    if (searchBtn) {
+      searchBtn.addEventListener("click", () => {
+        listPage = 1;
+        loadList();
+      });
+    }
+    const searchInput = document.getElementById("nfe-search-q");
+    if (searchInput) {
+      searchInput.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter") {
+          ev.preventDefault();
+          listPage = 1;
+          loadList();
+        }
+      });
+    }
+    const daysEl = document.getElementById("nfe-filter-days");
+    if (daysEl) {
+      daysEl.addEventListener("change", () => {
+        listPage = 1;
         loadList();
       });
     }

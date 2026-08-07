@@ -14,6 +14,7 @@ invoice_emit = NfeInvoiceViewSet.as_view({"post": "emit"})
 invoice_cancel = NfeInvoiceViewSet.as_view({"post": "cancel"})
 invoice_discard = NfeInvoiceViewSet.as_view({"post": "discard"})
 invoice_clone = NfeInvoiceViewSet.as_view({"post": "clone"})
+invoice_events = NfeInvoiceViewSet.as_view({"get": "events"})
 invoice_xml = NfeInvoiceViewSet.as_view({"get": "artifacts_xml"})
 invoice_pdf = NfeInvoiceViewSet.as_view({"get": "artifacts_pdf"})
 
@@ -28,6 +29,7 @@ urlpatterns = [
     path("nfe/invoices/<uuid:pk>/cancel", invoice_cancel, name="nfe-invoice-cancel"),
     path("nfe/invoices/<uuid:pk>/discard", invoice_discard, name="nfe-invoice-discard"),
     path("nfe/invoices/<uuid:pk>/clone", invoice_clone, name="nfe-invoice-clone"),
+    path("nfe/invoices/<uuid:pk>/events", invoice_events, name="nfe-invoice-events"),
     path("nfe/invoices/<uuid:pk>/artifacts/xml", invoice_xml, name="nfe-invoice-xml"),
     path("nfe/invoices/<uuid:pk>/artifacts/pdf", invoice_pdf, name="nfe-invoice-pdf"),
     *router.urls,
