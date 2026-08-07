@@ -1,4 +1,4 @@
-"""Celery tasks NF-e (I5 poll · RF-64 DANFE retry)."""
+"""Celery tasks NF-e (I5 poll · RF-64 DANFE · RF-46 reconciliação)."""
 
 from __future__ import annotations
 
@@ -59,4 +59,14 @@ def retry_pending_danfe_task(limit: int = 50) -> dict:
 
     result = retry_pending_danfe_batch(limit=limit)
     logger.info("nfe.retry_pending_danfe %s", result)
+    return result
+
+
+@shared_task(name="nfe.reconcile_stale")
+def reconcile_stale_nfe_task(limit: int = 50) -> dict:
+    """RF-46 — reengata polling órfão e submitting travado (beat)."""
+    from apps.nfe.reconciliation import reconcile_stale_nfe_batch
+
+    result = reconcile_stale_nfe_batch(limit=limit)
+    logger.info("nfe.reconcile_stale %s", result)
     return result

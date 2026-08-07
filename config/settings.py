@@ -174,6 +174,12 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": float(env("NFE_PDF_RETRY_INTERVAL_SECONDS", "900") or "900"),
         "kwargs": {"limit": int(env("NFE_PDF_RETRY_BATCH_LIMIT", "50") or "50")},
     },
+    # RF-46: reengata poll/submitting órfãos (worker caiu)
+    "nfe-reconcile-stale": {
+        "task": "nfe.reconcile_stale",
+        "schedule": float(env("NFE_RECONCILE_INTERVAL_SECONDS", "120") or "120"),
+        "kwargs": {"limit": int(env("NFE_RECONCILE_BATCH_LIMIT", "50") or "50")},
+    },
 }
 NF_SYNC_PROCESSING = env("NF_SYNC_PROCESSING", "false").lower() == "true"
 # Reforma Tributária (NFS-e Nacional): off | shadow (calcula+snapshot, não envia) | emit
@@ -319,6 +325,8 @@ NFE_PIVOT_UF = env("NFE_PIVOT_UF", "SP")
 NFE_POLL_COUNTDOWN = int(env("NFE_POLL_COUNTDOWN", "15") or "15")
 NFE_POLL_MAX_ATTEMPTS = int(env("NFE_POLL_MAX_ATTEMPTS", "12") or "12")
 NFE_SYNC_POLL = (env("NFE_SYNC_POLL", "false") or "false").lower() in ("1", "true", "yes")
+# RF-46: invoice em polling/submitting sem task ativa há N segundos → reconcilia
+NFE_RECONCILE_STALE_SECONDS = int(env("NFE_RECONCILE_STALE_SECONDS", "120") or "120")
 
 FOCUS_HTTP_MODE = env("FOCUS_HTTP_MODE", "stub")  # stub | http
 FOCUS_API_BASE_URL = env(

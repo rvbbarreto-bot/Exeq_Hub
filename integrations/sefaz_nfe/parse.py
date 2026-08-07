@@ -151,7 +151,7 @@ _EVENTO_CANCEL_OK = frozenset({"135", "155"})
 
 
 def map_cstat_to_status(c_stat: str) -> str:
-    """authorized | rejected | polling | failed | cancelled (evento)."""
+    """authorized | denegada | rejected | polling | failed | cancelled (evento)."""
     code = (c_stat or "").strip()
     if code in _AUTHORIZED:
         return "authorized"
@@ -161,7 +161,7 @@ def map_cstat_to_status(c_stat: str) -> str:
         # 104 sem infProt útil → polling (I5 completa consulta do recibo)
         return "polling"
     if code in _DENEGADA:
-        return "rejected"
+        return "denegada"
     if code and code.isdigit() and len(code) <= 3:
         return "rejected"
     if code:

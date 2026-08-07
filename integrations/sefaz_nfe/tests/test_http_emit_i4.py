@@ -93,7 +93,7 @@ def test_parse_lote_103_polling():
 def test_map_cstat_authorized():
     assert map_cstat_to_status("100") == "authorized"
     assert map_cstat_to_status("150") == "authorized"
-    assert map_cstat_to_status("110") == "rejected"
+    assert map_cstat_to_status("110") == "denegada"
 
 
 def test_sanitize_strips_secrets_and_xml():
@@ -188,7 +188,22 @@ def _minimal_snap():
 
 
 def _passthrough_sign(nfe_xml, pfx_bytes, password=""):
-    return nfe_xml if isinstance(nfe_xml, (bytes, bytearray)) else str(nfe_xml).encode()
+    """Simula assinado (injeta Signature) para mocks de POST sem PFX real."""
+    raw = nfe_xml if isinstance(nfe_xml, (bytes, bytearray)) else str(nfe_xml).encode()
+    text = raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else str(raw)
+    if "Signature" in text:
+        return raw if isinstance(raw, (bytes, bytearray)) else text.encode()
+    # Namespace dsig mínimo — basta tag local Signature no preflight
+    fake_sig = (
+        '<Signature xmlns="http://www.w3.org/2000/09/xmldsig#">'
+        "<SignedInfo/><SignatureValue>dGVzdA==</SignatureValue>"
+        "</Signature>"
+    )
+    if "</NFe>" in text:
+        text = text.replace("</NFe>", fake_sig + "</NFe>", 1)
+    else:
+        text = text + fake_sig
+    return text.encode("utf-8")
 
 
 def test_http_provider_cert_missing():

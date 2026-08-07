@@ -33,6 +33,8 @@ Repositório: https://github.com/rvbbarreto-bot/Exeq_Hub
 | U15 Inutilização nNF | `Exeq_Hub_NFe_U15_Inutilizacao.md` | InutNFe + counter + `POST …/config/inutilize` |
 | U16 UI inut + RF-71 e-mail | `Exeq_Hub_NFe_U16_UI_Inut_RF71_Email.md` | Hub inutilizar · e-mail XML/DANFE outbox |
 | U17 ops RF-64/92/91 | `Exeq_Hub_NFe_U17_Ops_RF64_RF92_RF91.md` | DANFE retry beat · poll_exhausted · metrics API |
+| U18 reconcile + preflight | `Exeq_Hub_NFe_U18_Reconcile_Preflight.md` | RF-46 órfãs · RF-41 lite sem POST |
+| U19 hardening + freeze | `Exeq_Hub_NFe_U19_Hardening_Freeze.md` | Outbox 1× · denegada · cancel órfão · freeze código |
 | U6 config/gate/discard/clone | `Exeq_Hub_NFe_U6_Config_Gate.md` | T0/T6 API + FSM operator paths (stub) |
 | U7 outbox NF-e RF-70 | `Exeq_Hub_NFe_U7_Outbox.md` | `nfe.authorized` / rejected / cancelled |
 | U8 lista + timeline | `Exeq_Hub_NFe_U8_Lista_Timeline.md` | Filtros T1 + `GET …/events` |

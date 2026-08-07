@@ -319,6 +319,16 @@ class HttpNfeProvider:
                 raw=raw,
                 signed_xml=signed_xml,
             )
+        if status == "denegada":
+            raw = {**raw, "denegada": True}
+            return NfeEmitResult(
+                status="denegada",
+                access_key=key,
+                rejection_code=resp.c_stat,
+                rejection_message=resp.x_motivo or "NF-e denegada",
+                raw=raw,
+                signed_xml=signed_xml,
+            )
         return NfeEmitResult(
             status="failed",
             access_key=key or access_key_fallback,
@@ -358,6 +368,25 @@ class HttpNfeProvider:
             unsigned = build_nfe_xml(snapshot=invoice_snapshot)
             signed = sign_nfe_xml(nfe_xml=unsigned, pfx_bytes=pfx_bytes, password=password)
             access_key = access_key_from_signed_or_snap(signed, invoice_snapshot)
+            # RF-41 / EX-PRE-04: preflight estrutural — sem POST se XML inválido
+            from integrations.sefaz_nfe.xml_preflight import preflight_signed_nfe
+
+            pf = preflight_signed_nfe(signed, require_signature=True)
+            if not pf.ok:
+                return NfeEmitResult(
+                    status="failed",
+                    rejection_code="XSD",
+                    rejection_message=f"Preflight XML (sem HTTP): {'; '.join(pf.errors)}",
+                    access_key=access_key,
+                    raw=sanitize_sefaz_raw(
+                        {
+                            "mode": "http",
+                            "stage": "preflight",
+                            "errors": list(pf.errors),
+                        }
+                    ),
+                    signed_xml=signed,
+                )
             lote = str(header.get("number") or 1).zfill(15)[:15]
             envi = wrap_envi_nfe(signed_nfe_xml=signed, id_lote=lote, ind_sinc="1")
         except Exception as exc:  # noqa: BLE001

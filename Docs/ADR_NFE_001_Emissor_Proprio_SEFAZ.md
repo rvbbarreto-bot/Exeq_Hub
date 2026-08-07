@@ -151,6 +151,8 @@ Regras:
 | **U15** | Inutilização de faixa nNF (InutNFe) | `Docs/Exeq_Hub_NFe_U15_Inutilizacao.md` |
 | **U16** | UI inutilização + RF-71 e-mail XML/DANFE | `Docs/Exeq_Hub_NFe_U16_UI_Inut_RF71_Email.md` |
 | **U17** | RF-64 PDF retry · RF-92 poll_exhausted · RF-91 metrics | `Docs/Exeq_Hub_NFe_U17_Ops_RF64_RF92_RF91.md` |
+| **U18** | RF-46 reconciliação órfãs + RF-41 preflight XML | `Docs/Exeq_Hub_NFe_U18_Reconcile_Preflight.md` |
+| **U19** | Hardening terminal + freeze fábrica código | `Docs/Exeq_Hub_NFe_U19_Hardening_Freeze.md` |
 
 UI e domínio **em paralelo** a partir de U0/U1 (impacto §7).
 

@@ -557,12 +557,18 @@ def emit_invoice(
             sefaz_meta.setdefault("poll_attempts", 0)
             snap["sefaz"] = sefaz_meta
             inv.fiscal_snapshot = snap
-    elif result.status == "rejected":
+    elif result.status in ("rejected", "denegada"):
         inv.status = NfeInvoice.Status.REJECTED
         inv.access_key = result.access_key or inv.access_key
         inv.rejection_code = result.rejection_code
         inv.rejection_message = result.rejection_message
         inv.number_consumed = True
+        if result.status == "denegada" or (
+            isinstance(result.raw, dict) and result.raw.get("denegada")
+        ):
+            flags = dict(inv.last_validation or {})
+            flags["denegada"] = True
+            inv.last_validation = flags
     else:
         inv.status = NfeInvoice.Status.FAILED
         inv.access_key = result.access_key or inv.access_key
