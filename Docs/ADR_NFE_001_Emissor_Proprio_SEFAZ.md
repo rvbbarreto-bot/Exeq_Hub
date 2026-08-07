@@ -143,6 +143,7 @@ Regras:
 | **U6** | Gate T0 + `GET/PUT /nfe/config/` + discard/clone | `Docs/Exeq_Hub_NFe_U6_Config_Gate.md` |
 | **U7** | Outbox RF-70 `nfe.authorized` / `.rejected` / `.cancelled` | `Docs/Exeq_Hub_NFe_U7_Outbox.md` |
 | **U8** | Filtros lista T1 + timeline `…/events` | `Docs/Exeq_Hub_NFe_U8_Lista_Timeline.md` |
+| **U9** | NumberSeries concorrência (DoD #4) + checklist G-EMIT ops | `Docs/Exeq_Hub_NFe_U9_NumberSeries_G_EMIT.md` |
 
 UI e domínio **em paralelo** a partir de U0/U1 (impacto §7).
 
