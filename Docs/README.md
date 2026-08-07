@@ -35,6 +35,9 @@ Repositório: https://github.com/rvbbarreto-bot/Exeq_Hub
 | U17 ops RF-64/92/91 | `Exeq_Hub_NFe_U17_Ops_RF64_RF92_RF91.md` | DANFE retry beat · poll_exhausted · metrics API |
 | U18 reconcile + preflight | `Exeq_Hub_NFe_U18_Reconcile_Preflight.md` | RF-46 órfãs · RF-41 lite sem POST |
 | U19 hardening + freeze | `Exeq_Hub_NFe_U19_Hardening_Freeze.md` | Outbox 1× · denegada · cancel órfão · freeze código |
+| U20–U22 sprint pré-G-EMIT | `Exeq_Hub_NFe_U20_U22_Sprint.md` | RF-44 attempts · gate · catalog · Hub KPIs |
+| U23 G-EMIT prep | `Exeq_Hub_NFe_U23_G_EMIT_Prep.md` | OpenAPI attempts · checklist CLI · CCe/inut log |
+| U24 ops lista + retry PDF | `Exeq_Hub_NFe_U24_Ops_List_Retry_PDF.md` | filtros pdf_pending/denegada · POST retry-pdf |
 | U6 config/gate/discard/clone | `Exeq_Hub_NFe_U6_Config_Gate.md` | T0/T6 API + FSM operator paths (stub) |
 | U7 outbox NF-e RF-70 | `Exeq_Hub_NFe_U7_Outbox.md` | `nfe.authorized` / rejected / cancelled |
 | U8 lista + timeline | `Exeq_Hub_NFe_U8_Lista_Timeline.md` | Filtros T1 + `GET …/events` |

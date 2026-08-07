@@ -57,6 +57,8 @@ def test_spike_stub_no_network(tmp_path, tenant_a, provider_lab):
     assert len(inv.access_key) == 44
     # stub authorized grava artefatos; G-EMIT exige HTTP+SP
     assert data["artifacts"]["xml_authorized"] is True
+    assert data.get("schema_version") == "1.0"
+    assert data.get("correlation_id")
 
 
 @pytest.mark.django_db

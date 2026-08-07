@@ -327,6 +327,8 @@ NFE_POLL_MAX_ATTEMPTS = int(env("NFE_POLL_MAX_ATTEMPTS", "12") or "12")
 NFE_SYNC_POLL = (env("NFE_SYNC_POLL", "false") or "false").lower() in ("1", "true", "yes")
 # RF-46: invoice em polling/submitting sem task ativa há N segundos → reconcilia
 NFE_RECONCILE_STALE_SECONDS = int(env("NFE_RECONCILE_STALE_SECONDS", "120") or "120")
+# RF-41: path opcional para XSD oficial (vazio = só preflight estrutural)
+NFE_XSD_PATH = env("NFE_XSD_PATH", "")
 
 FOCUS_HTTP_MODE = env("FOCUS_HTTP_MODE", "stub")  # stub | http
 FOCUS_API_BASE_URL = env(

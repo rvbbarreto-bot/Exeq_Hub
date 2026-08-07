@@ -75,11 +75,13 @@ def validate_cfop_against_ufs(*, cfop: str, emit_uf: str, dest_uf: str) -> str |
 
 def rtc_hooks_placeholder() -> dict[str, Any]:
     """U5: chaves futuras IBS/CBS (RF-25) — sem cálculo até norma/RTC."""
+    from apps.nfe.catalog import CATALOG_VERSION
+
     return {
         "ibs": None,
         "cbs": None,
         "is": None,
-        "catalog_version": None,
+        "catalog_version": CATALOG_VERSION,
         "note": "RTC hooks reservados; sem cálculo em goods-0.2.0-u5",
     }
 
@@ -181,6 +183,24 @@ def build_validation(
     emit_uf = _uf(addr)
     if not emit_uf:
         errors.append({"field": "provider.address.uf", "message": "UF do emitente obrigatória"})
+    # G-EMIT prep: IBGE emit/dest (rejeições SEFAZ evitáveis)
+    ibge_emit = str(addr.get("codigo_ibge") or addr.get("cMun") or "").strip()
+    if len("".join(ch for ch in ibge_emit if ch.isdigit())) != 7:
+        errors.append(
+            {
+                "field": "provider.address.codigo_ibge",
+                "message": "código IBGE do município do emitente obrigatório (7 dígitos)",
+            }
+        )
+    if not (addr.get("logradouro") or addr.get("street")):
+        errors.append(
+            {
+                "field": "provider.address",
+                "message": "logradouro do emitente obrigatório",
+            }
+        )
+    if not getattr(provider, "tax_regime", None):
+        errors.append({"field": "provider.tax_regime", "message": "CRT/regime tributário obrigatório"})
 
     if not customer.document:
         errors.append({"field": "customer", "message": "destinatário sem documento"})
@@ -190,6 +210,14 @@ def build_validation(
         errors.append({"field": "customer.address", "message": "endereço do destinatário incompleto"})
     if not _uf(c_addr):
         errors.append({"field": "customer.address.uf", "message": "UF do destinatário obrigatória"})
+    ibge_dest = str(c_addr.get("codigo_ibge") or c_addr.get("cMun") or "").strip()
+    if len("".join(ch for ch in ibge_dest if ch.isdigit())) != 7:
+        errors.append(
+            {
+                "field": "customer.address.codigo_ibge",
+                "message": "código IBGE do município do destinatário obrigatório (7 dígitos)",
+            }
+        )
     if invoice.ind_ie_dest == "1":
         ie = (c_addr.get("ie") or c_addr.get("state_registration") or "").strip()
         if not ie:
@@ -215,6 +243,12 @@ def build_validation(
     for it in items:
         if not it.ncm or len(it.ncm) < 8:
             errors.append({"field": f"items[{it.line_number}].ncm", "message": "NCM inválido"})
+        elif require_ie:  # http mode: catálogo MVP (RF-100 lite)
+            from apps.nfe.catalog import validate_ncm
+
+            ncm_err = validate_ncm(it.ncm)
+            if ncm_err:
+                errors.append({"field": f"items[{it.line_number}].ncm", "message": ncm_err})
         if not it.cfop or len(it.cfop) != 4:
             errors.append({"field": f"items[{it.line_number}].cfop", "message": "CFOP inválido"})
         else:
@@ -225,6 +259,14 @@ def build_validation(
                 errors.append(
                     {"field": f"items[{it.line_number}].cfop", "message": cfop_err}
                 )
+            elif require_ie:
+                from apps.nfe.catalog import validate_cfop_catalog
+
+                cat_err = validate_cfop_catalog(it.cfop)
+                if cat_err:
+                    errors.append(
+                        {"field": f"items[{it.line_number}].cfop", "message": cat_err}
+                    )
         if it.quantity <= 0:
             errors.append(
                 {
@@ -298,6 +340,8 @@ def build_validation(
             }
         )
 
+    from apps.nfe.catalog import CATALOG_VERSION
+
     totals = {
         "products_cents": products_cents,
         "freight_cents": freight,
@@ -308,6 +352,7 @@ def build_validation(
         "pis_cents": pis_total,
         "cofins_cents": cofins_total,
         "tax_engine_version": TAX_ENGINE_VERSION,
+        "catalog_version": CATALOG_VERSION,
         "operation": {
             "emit_uf": emit_uf,
             "dest_uf": dest_uf,

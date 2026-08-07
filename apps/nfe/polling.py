@@ -133,6 +133,23 @@ def poll_nfe_invoice(invoice: NfeInvoice, *, actor: str = "worker") -> NfeInvoic
         },
     )
 
+    from apps.nfe.attempts import record_transmission_attempt
+
+    record_transmission_attempt(
+        tenant=inv.tenant,
+        invoice=inv,
+        stage="poll",
+        result=result,
+        provider_kind=getattr(provider, "kind", ""),
+        correlation_id=inv.correlation_id,
+    )
+    logger.info(
+        "nfe.poll invoice=%s correlation_id=%s status=%s",
+        inv.id,
+        inv.correlation_id,
+        result.status,
+    )
+
     raw_meta = result.raw if isinstance(result.raw, dict) else {}
     # Persist nRec se a consulta devolver outro (raro) e contador
     new_rec = str(raw_meta.get("nRec") or n_rec or "").strip()

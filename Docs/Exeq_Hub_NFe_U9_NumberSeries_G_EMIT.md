@@ -36,3 +36,9 @@ python manage.py nfe_spike_sefaz --tenant <slug> --cnpj 37229907000137 --mode ht
 ```
 
 6. Marcar gate só se `g_emit_candidate=true` + anexar JSON  
+
+**Pré-req local (código U23, sem SEFAZ):**
+
+```bash
+python manage.py nfe_g_emit_checklist --tenant <slug> --cnpj 37229907000137
+```

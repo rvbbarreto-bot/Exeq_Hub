@@ -223,6 +223,7 @@ class Command(BaseCommand):
         )
 
         evidence = {
+            "schema_version": "1.0",
             "ticket": "I7+U5",
             "gate": "G-NFE-SPIKE / G-EMIT-NFE",
             "g_spike_candidate": g_spike,
@@ -246,11 +247,17 @@ class Command(BaseCommand):
             "cnpj": cnpj,
             "mode": mode,
             "dry_run": dry_run,
+            "http_mode_setting": mode,
+            "tp_amb": inv.tp_amb or "2",
+            "uf": (provider.address or {}).get("uf") if isinstance(provider.address, dict) else "",
+            "ie_present": bool((provider.state_registration or "").strip()),
             "invoice_id": str(inv.id),
+            "correlation_id": str(inv.correlation_id),
             "status": inv.status,
             "series": inv.series,
             "number": inv.number,
             "access_key": inv.access_key or "",
+            "key_cuf": (inv.access_key or "")[:2] if inv.access_key else "",
             "protocol": inv.protocol or "",
             "rejection_code": inv.rejection_code or "",
             "rejection_message": (inv.rejection_message or "")[:300],

@@ -29,13 +29,13 @@ def filter_invoice_queryset(
     date_from: str | None = None,
     date_to: str | None = None,
     days: str | int | None = None,
+    flag: str | None = None,
     apply_default_period: bool = True,
 ) -> QuerySet[NfeInvoice]:
     """
-    Aplica status, busca livre e janela de datas em `issue_date`.
+    Aplica status, busca livre, flags ops (pdf_pending|denegada) e janela de datas.
 
-    Default: últimos 30 dias em issue_date se nenhum from/to/days explícito
-    (e se não pedir all period via days=0 ou all=1 no caller).
+    Default: últimos 30 dias em issue_date se nenhum from/to/days explícito.
     """
     status_f = (status or "").strip().lower()
     if status_f and status_f != "all":
@@ -48,8 +48,25 @@ def filter_invoice_queryset(
                     NfeInvoice.Status.CANCEL_REQUESTED,
                 ]
             )
+        elif status_f == "pdf_pending":
+            # atalho T1: authorized com DANFE pendente
+            qs = qs.filter(
+                status=NfeInvoice.Status.AUTHORIZED,
+                last_validation__pdf_pending=True,
+            )
+        elif status_f == "denegada":
+            qs = qs.filter(
+                status=NfeInvoice.Status.REJECTED,
+                last_validation__denegada=True,
+            )
         else:
             qs = qs.filter(status=status_f)
+
+    flag_f = (flag or "").strip().lower()
+    if flag_f == "pdf_pending":
+        qs = qs.filter(last_validation__pdf_pending=True)
+    elif flag_f == "denegada":
+        qs = qs.filter(last_validation__denegada=True)
 
     term = (q or "").strip()
     if term:

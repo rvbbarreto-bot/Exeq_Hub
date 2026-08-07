@@ -90,18 +90,29 @@ def inutilize_number_range(
     cnpj = "".join(ch for ch in str(provider.document or "") if ch.isdigit())
 
     sefaz = get_nfe_provider()
-    result = sefaz.inutilizar(
-        n_ini=ini,
-        n_fin=fin,
-        x_just=just,
-        context={
-            "tenant": tenant,
-            "cnpj": cnpj,
-            "tp_amb": amb,
-            "uf": emit_uf,
-            "series": ser,
-            "ano": aa,
-        },
+    from apps.nfe.attempts import AttemptTimer, record_transmission_attempt
+
+    with AttemptTimer() as timer:
+        result = sefaz.inutilizar(
+            n_ini=ini,
+            n_fin=fin,
+            x_just=just,
+            context={
+                "tenant": tenant,
+                "cnpj": cnpj,
+                "tp_amb": amb,
+                "uf": emit_uf,
+                "series": ser,
+                "ano": aa,
+            },
+        )
+    record_transmission_attempt(
+        tenant=tenant,
+        invoice=None,
+        stage="inut",
+        result=result,
+        provider_kind=getattr(sefaz, "kind", ""),
+        duration_ms=timer.ms,
     )
     raw = result.raw if isinstance(result.raw, dict) else {}
     status = (

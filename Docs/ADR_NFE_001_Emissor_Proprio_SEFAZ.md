@@ -153,6 +153,9 @@ Regras:
 | **U17** | RF-64 PDF retry · RF-92 poll_exhausted · RF-91 metrics | `Docs/Exeq_Hub_NFe_U17_Ops_RF64_RF92_RF91.md` |
 | **U18** | RF-46 reconciliação órfãs + RF-41 preflight XML | `Docs/Exeq_Hub_NFe_U18_Reconcile_Preflight.md` |
 | **U19** | Hardening terminal + freeze fábrica código | `Docs/Exeq_Hub_NFe_U19_Hardening_Freeze.md` |
+| **U20–U22** | Attempts · gate RF-01 · catalog lite · Hub ops | `Docs/Exeq_Hub_NFe_U20_U22_Sprint.md` |
+| **U23** | OpenAPI attempts · CCe/inut log · checklist G-EMIT | `Docs/Exeq_Hub_NFe_U23_G_EMIT_Prep.md` |
+| **U24** | Lista ops pdf_pending/denegada + retry-pdf | `Docs/Exeq_Hub_NFe_U24_Ops_List_Retry_PDF.md` |
 
 UI e domínio **em paralelo** a partir de U0/U1 (impacto §7).
 

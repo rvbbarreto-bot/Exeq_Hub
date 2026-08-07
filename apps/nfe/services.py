@@ -120,6 +120,11 @@ def allowed_actions(invoice: NfeInvoice) -> list[str]:
         actions.append("cce")
         if has_xml_authorized(invoice) or has_danfe_pdf(invoice):
             actions.append("resend_email")
+        flags = invoice.last_validation if isinstance(invoice.last_validation, dict) else {}
+        if flags.get("pdf_pending") or (
+            has_xml_authorized(invoice) and not has_danfe_pdf(invoice)
+        ):
+            actions.append("retry_pdf")
     if s in {NfeInvoice.Status.AUTHORIZED, NfeInvoice.Status.CANCELLED}:
         if has_xml_authorized(invoice):
             actions.append("download_xml")
@@ -409,6 +414,8 @@ def validate_invoice(invoice: NfeInvoice) -> dict[str, Any]:
 
 
 def _snapshot_for_emit(invoice: NfeInvoice, validation: dict[str, Any]) -> dict[str, Any]:
+    from apps.nfe.catalog import CATALOG_VERSION
+
     provider = invoice.provider
     customer = invoice.customer
     items = []
@@ -432,6 +439,7 @@ def _snapshot_for_emit(invoice: NfeInvoice, validation: dict[str, Any]) -> dict[
         )
     snap = {
         "tax_engine_version": TAX_ENGINE_VERSION,
+        "catalog_version": validation.get("totals", {}).get("catalog_version") or CATALOG_VERSION,
         "layout_version": getattr(settings, "NFE_LAYOUT_VERSION", "pl009-stub"),
         "tenant_id": str(invoice.tenant_id),
         "emitente": {
@@ -526,9 +534,21 @@ def emit_invoice(
     _record_event(inv, from_status=prev, to_status=NfeInvoice.Status.SUBMITTING, actor=actor)
 
     sefaz = get_nfe_provider()
-    result = sefaz.emitir(
-        invoice_snapshot=snap,
-        context={"tenant": inv.tenant, "invoice_id": str(inv.id)},
+    from apps.nfe.attempts import AttemptTimer, record_transmission_attempt
+
+    with AttemptTimer() as timer:
+        result = sefaz.emitir(
+            invoice_snapshot=snap,
+            context={"tenant": inv.tenant, "invoice_id": str(inv.id)},
+        )
+    record_transmission_attempt(
+        tenant=inv.tenant,
+        invoice=inv,
+        stage="emit",
+        result=result,
+        provider_kind=getattr(sefaz, "kind", ""),
+        duration_ms=timer.ms,
+        correlation_id=inv.correlation_id,
     )
 
     prev = inv.status
@@ -641,17 +661,29 @@ def cancel_invoice(
             cnpj = "".join(ch for ch in str(emit_cnpj) if ch.isdigit())
 
     sefaz = get_nfe_provider()
-    result = sefaz.cancelar(
-        access_key=inv.access_key,
-        justificativa=just,
-        context={
-            "tenant": inv.tenant,
-            "invoice_id": str(inv.id),
-            "protocol": inv.protocol,
-            "cnpj": cnpj,
-            "tp_amb": inv.tp_amb,
-            "uf": uf,
-        },
+    from apps.nfe.attempts import AttemptTimer, record_transmission_attempt
+
+    with AttemptTimer() as timer:
+        result = sefaz.cancelar(
+            access_key=inv.access_key,
+            justificativa=just,
+            context={
+                "tenant": inv.tenant,
+                "invoice_id": str(inv.id),
+                "protocol": inv.protocol,
+                "cnpj": cnpj,
+                "tp_amb": inv.tp_amb,
+                "uf": uf,
+            },
+        )
+    record_transmission_attempt(
+        tenant=inv.tenant,
+        invoice=inv,
+        stage="cancel",
+        result=result,
+        provider_kind=getattr(sefaz, "kind", ""),
+        duration_ms=timer.ms,
+        correlation_id=inv.correlation_id,
     )
     prev = inv.status
     raw_meta = result.raw if isinstance(result.raw, dict) else {}
@@ -725,18 +757,30 @@ def issue_carta_correcao(
             cnpj = "".join(ch for ch in str(emit_cnpj) if ch.isdigit())
 
     sefaz = get_nfe_provider()
-    result = sefaz.carta_correcao(
-        access_key=inv.access_key,
-        x_correcao=corr,
-        context={
-            "tenant": inv.tenant,
-            "invoice_id": str(inv.id),
-            "protocol": inv.protocol,
-            "cnpj": cnpj,
-            "tp_amb": inv.tp_amb,
-            "uf": uf,
-            "n_seq_evento": n_seq,
-        },
+    from apps.nfe.attempts import AttemptTimer, record_transmission_attempt
+
+    with AttemptTimer() as timer:
+        result = sefaz.carta_correcao(
+            access_key=inv.access_key,
+            x_correcao=corr,
+            context={
+                "tenant": inv.tenant,
+                "invoice_id": str(inv.id),
+                "protocol": inv.protocol,
+                "cnpj": cnpj,
+                "tp_amb": inv.tp_amb,
+                "uf": uf,
+                "n_seq_evento": n_seq,
+            },
+        )
+    record_transmission_attempt(
+        tenant=inv.tenant,
+        invoice=inv,
+        stage="cce",
+        result=result,
+        provider_kind=getattr(sefaz, "kind", ""),
+        duration_ms=timer.ms,
+        correlation_id=inv.correlation_id,
     )
     prev = inv.status
     raw_meta = result.raw if isinstance(result.raw, dict) else {}

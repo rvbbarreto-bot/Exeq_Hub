@@ -113,11 +113,18 @@ paths:
   /nfe/invoices/:
     get:
       tags: [nfe]
-      summary: Lista NF-e (filtros status, q, days/date_from/date_to)
+      summary: Lista NF-e (filtros status, q, flag, days/date_from/date_to)
       parameters:
         - in: query
           name: status
-          schema: { type: string }
+          schema:
+            type: string
+            description: "draft|authorized|rejected|…|processing|pdf_pending|denegada"
+        - in: query
+          name: flag
+          schema:
+            type: string
+            enum: [pdf_pending, denegada]
         - in: query
           name: q
           schema: { type: string }
@@ -267,6 +274,17 @@ paths:
           description: Sem destinatário
         "502":
           description: Falha backend e-mail
+  /nfe/invoices/{id}/retry-pdf:
+    post:
+      tags: [nfe]
+      summary: Regenera DANFE se xml ok / pdf_pending (RF-64)
+      parameters:
+        - $ref: "#/components/parameters/NfeId"
+      responses:
+        "200":
+          description: Invoice + pdf_retry_ok
+        "400":
+          description: Status inválido
   /nfe/invoices/{id}/discard:
     post:
       tags: [nfe]
@@ -303,6 +321,18 @@ paths:
       responses:
         "200":
           description: "{ invoice_id, events[] }"
+  /nfe/invoices/{id}/attempts:
+    get:
+      tags: [nfe]
+      summary: Tentativas SEFAZ redacted (RF-44)
+      parameters:
+        - $ref: "#/components/parameters/NfeId"
+      responses:
+        "200":
+          description: "{ invoice_id, attempts[] }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NfeAttempts" }
   /nfe/invoices/{id}/artifacts/xml:
     get:
       tags: [nfe]
@@ -438,8 +468,32 @@ components:
         allowed_actions:
           type: array
           items: { type: string }
+        flags:
+          type: object
+          properties:
+            denegada: { type: boolean }
+            pdf_pending: { type: boolean }
         artifacts:
           type: object
           properties:
             xml_authorized: { type: boolean }
             danfe_pdf: { type: boolean }
+            xml_cce: { type: boolean }
+    NfeAttempts:
+      type: object
+      properties:
+        invoice_id: { type: string, format: uuid }
+        attempts:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string, format: uuid }
+              stage: { type: string, enum: [emit, poll, cancel, cce, inut] }
+              result_status: { type: string }
+              c_stat: { type: string }
+              x_motivo: { type: string }
+              http_status: { type: integer, nullable: true }
+              duration_ms: { type: integer, nullable: true }
+              correlation_id: { type: string, format: uuid, nullable: true }
+              created_at: { type: string, format: date-time }

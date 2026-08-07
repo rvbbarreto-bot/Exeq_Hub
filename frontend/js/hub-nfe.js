@@ -25,13 +25,20 @@
   let draftState = null;
   let itemRows = 1;
 
-  function statusBadge(status) {
+  function statusBadge(status, flags) {
     const s = String(status || "").toLowerCase();
+    const f = flags || {};
+    if (f.denegada || (s === "rejected" && f.denegada)) {
+      return { cls: "danger", label: "Denegada" };
+    }
     if (["draft"].includes(s)) return { cls: "neutral", label: "Rascunho" };
     if (["queued", "submitting", "polling", "cancel_requested"].includes(s)) {
       return { cls: "info", label: "Processando" };
     }
-    if (s === "authorized") return { cls: "success", label: "Autorizada" };
+    if (s === "authorized") {
+      if (f.pdf_pending) return { cls: "warn", label: "Autorizada · PDF pendente" };
+      return { cls: "success", label: "Autorizada" };
+    }
     if (s === "rejected") return { cls: "danger", label: "Rejeitada" };
     if (s === "cancelled") return { cls: "neutral", label: "Cancelada" };
     if (s === "failed") return { cls: "danger", label: "Falhou" };
@@ -279,14 +286,34 @@
     }
   }
 
+  async function loadMetrics() {
+    const api = A();
+    const box = document.getElementById("nfe-metrics-box");
+    if (!box) return;
+    try {
+      const m = await api.api("/nfe/metrics/?days=30");
+      const rate =
+        m.authorize_rate != null
+          ? `${Math.round(Number(m.authorize_rate) * 1000) / 10}%`
+          : "—";
+      box.innerHTML = `
+        <div class="hint">Total ${escapeHtml(m.total)} · taxa authorize ${escapeHtml(rate)}</div>
+        <div class="hint">Fila poll ${escapeHtml(m.polling_queue)} · pdf_pending ${escapeHtml(
+        m.pdf_pending
+      )} · poll_exhausted ${escapeHtml(m.poll_exhausted)}</div>`;
+    } catch (_e) {
+      box.innerHTML = '<div class="hint">Métricas indisponíveis</div>';
+    }
+  }
+
   async function loadList() {
     const api = A();
     const tbody = document.getElementById("tbody-nfe");
     if (!tbody) return;
     tbody.innerHTML = '<tr><td colspan="7">Carregando…</td></tr>';
     try {
-      if (!gate) await loadGate();
-      else await loadGate();
+      await loadGate();
+      loadMetrics();
       if (!caches.customers.length) await loadLookups();
       if (!gate.enabled) {
         tbody.innerHTML = '<tr><td colspan="7">Feature NF-e desligada.</td></tr>';
@@ -302,6 +329,9 @@
       });
       if (statusFilter && statusFilter !== "all") {
         params.set("status", statusFilter);
+      }
+      if (statusFilter === "pdf_pending" || statusFilter === "denegada") {
+        // status shortcut already encoded in filter_invoice_queryset
       }
       if (searchQuery) params.set("q", searchQuery);
       if (listDays === "all") params.set("days", "0");
@@ -334,6 +364,8 @@
       ["draft", "Rascunho"],
       ["processing", "Processando"],
       ["authorized", "Autorizadas"],
+      ["pdf_pending", "PDF pendente"],
+      ["denegada", "Denegadas"],
       ["rejected", "Rejeitadas"],
       ["cancelled", "Canceladas"],
       ["failed", "Falhas"],
@@ -370,7 +402,7 @@
   function renderRow(row) {
     const api = A();
     const tr = document.createElement("tr");
-    const badge = statusBadge(row.status);
+    const badge = statusBadge(row.status, row.flags || (row.last_validation || {}));
     const num =
       row.number != null
         ? `${row.series}/${row.number}`
@@ -411,6 +443,9 @@
     }
     if (actions.includes("download_pdf")) {
       cell.appendChild(iconBtn("Baixar DANFE PDF", "download_pdf", () => downloadArtifact(row, "pdf")));
+    }
+    if (actions.includes("retry_pdf")) {
+      cell.appendChild(iconBtn("Regenerar DANFE", "emit", () => retryPdf(row)));
     }
     if (actions.includes("download_cce")) {
       cell.appendChild(iconBtn("Baixar XML CCe", "download_cce", () => downloadArtifact(row, "cce")));
@@ -470,6 +505,19 @@
     btn.innerHTML = icons[kind] || icons.poll;
     btn.addEventListener("click", onClick);
     return btn;
+  }
+
+  async function retryPdf(row) {
+    const api = A();
+    if (!row || !row.id) return;
+    try {
+      const r = await api.api(`/nfe/invoices/${row.id}/retry-pdf`, { method: "POST", body: {} });
+      if (r && r.pdf_retry_ok) api.toast("DANFE regenerado", "success");
+      else api.toast("DANFE ainda pendente — verifique XML/logs", "danger");
+      await loadList();
+    } catch (err) {
+      api.toast(api.handleApiError(err.body).message, "danger");
+    }
   }
 
   async function downloadArtifact(row, kind) {
@@ -773,8 +821,10 @@
       body.innerHTML = `<div class="hint">${escapeHtml(api.handleApiError(err.body).message)}</div>`;
       return;
     }
-    const actions = (detail.allowed_actions || []).join(", ") || "—";
+    const actions = detail.allowed_actions || [];
     const arts = detail.artifacts || {};
+    const flags = detail.flags || {};
+    const badge = statusBadge(detail.status, flags);
     const timeline = events
       .map((ev) => {
         const meta = ev.metadata || {};
@@ -790,8 +840,37 @@
         }</span></li>`;
       })
       .join("");
+    let attemptsHtml = "";
+    try {
+      const attPayload = await api.api(`/nfe/invoices/${row.id}/attempts`);
+      const attempts = (attPayload && attPayload.attempts) || [];
+      attemptsHtml = attempts
+        .slice(0, 8)
+        .map((a) => {
+          return `<li><code>${escapeHtml((a.created_at || "").replace("T", " ").slice(0, 19))}</code> ${escapeHtml(
+            a.stage
+          )} → ${escapeHtml(a.result_status || "—")} cStat=${escapeHtml(a.c_stat || "—")}${
+            a.duration_ms != null ? ` · ${a.duration_ms}ms` : ""
+          }</li>`;
+        })
+        .join("");
+    } catch (_e) {
+      attemptsHtml = "";
+    }
     body.innerHTML = `
-      <div class="hint">Status: <b>${escapeHtml(detail.status)}</b> · v${escapeHtml(detail.version)}</div>
+      <div class="hint">Status: <span class="badge ${badge.cls}">${escapeHtml(badge.label)}</span> · v${escapeHtml(
+      detail.version
+    )}</div>
+      ${
+        flags.denegada
+          ? '<div class="hint" style="color:var(--danger,#b00020)"><b>Denegada SEFAZ</b> — número consumido; use clone para reemitir.</div>'
+          : ""
+      }
+      ${
+        flags.pdf_pending
+          ? '<div class="hint"><b>DANFE pendente</b> (EX-PDF) — XML ok; retry automático via beat.</div>'
+          : ""
+      }
       <div class="hint">Série/nº: ${escapeHtml(detail.series)}/${escapeHtml(detail.number ?? "—")}</div>
       <div class="hint">Emissão: ${escapeHtml(detail.issue_date || "—")}</div>
       <div class="hint">Chave: <code id="nfe-detail-access-key">${escapeHtml(detail.access_key || "—")}</code>
@@ -809,13 +888,15 @@
       <div class="hint">Artefatos: XML=${arts.xml_authorized ? "sim" : "não"} · DANFE=${
       arts.danfe_pdf ? "sim" : "não"
     } · CCe=${arts.xml_cce ? "sim" : "não"}</div>
-      <div class="hint">allowed_actions: ${escapeHtml(actions)}</div>
+      <div class="hint">allowed_actions: ${escapeHtml(actions.join(", ") || "—")}</div>
       <div class="hint">correlation: ${escapeHtml(detail.correlation_id || "")}</div>
       <div class="row-actions" id="nfe-detail-downloads" style="margin-top:12px;gap:8px;display:flex;flex-wrap:wrap"></div>
       <h4 style="margin:16px 0 8px;font-size:0.95rem">Timeline</h4>
       <ul id="nfe-detail-timeline" class="hint" style="padding-left:18px;margin:0">${
         timeline || "<li>Sem eventos</li>"
-      }</ul>`;
+      }</ul>
+      <h4 style="margin:16px 0 8px;font-size:0.95rem">Tentativas SEFAZ (RF-44)</h4>
+      <ul class="hint" style="padding-left:18px;margin:0">${attemptsHtml || "<li>Sem tentativas</li>"}</ul>`;
     const host = document.getElementById("nfe-detail-downloads");
     if (host) {
       const acts = detail.allowed_actions || [];
@@ -833,6 +914,17 @@
         b.className = "btn btn-primary";
         b.textContent = "Baixar DANFE PDF";
         b.addEventListener("click", () => downloadArtifact(detail, "pdf"));
+        host.appendChild(b);
+      }
+      if (acts.includes("retry_pdf")) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "btn btn-ghost";
+        b.textContent = "Regenerar DANFE";
+        b.addEventListener("click", async () => {
+          await retryPdf(detail);
+          openDetail(detail);
+        });
         host.appendChild(b);
       }
       if (acts.includes("cce")) {

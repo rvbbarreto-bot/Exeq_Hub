@@ -8,6 +8,7 @@ from apps.nfe.models import (
     NfeInvoiceItem,
     NfeNumberSeries,
     NfeProduct,
+    NfeTransmissionAttempt,
 )
 
 
@@ -21,6 +22,24 @@ class NfeArtifactInline(admin.TabularInline):
     extra = 0
     readonly_fields = ("kind", "checksum_sha256", "stored_file", "created_at")
     can_delete = False
+
+
+class NfeAttemptInline(admin.TabularInline):
+    model = NfeTransmissionAttempt
+    extra = 0
+    can_delete = False
+    readonly_fields = (
+        "stage",
+        "result_status",
+        "c_stat",
+        "x_motivo",
+        "http_status",
+        "duration_ms",
+        "created_at",
+    )
+    fields = readonly_fields
+    ordering = ("-created_at",)
+    show_change_link = True
 
 
 @admin.register(NfeProduct)
@@ -58,6 +77,7 @@ class NfeInvoiceAdmin(admin.ModelAdmin):
         "series",
         "number",
         "status",
+        "rejection_code",
         "total_cents",
         "provider",
         "customer",
@@ -65,9 +85,16 @@ class NfeInvoiceAdmin(admin.ModelAdmin):
         "created_at",
     )
     list_filter = ("status", "tp_amb")
-    search_fields = ("idempotency_key", "access_key", "protocol")
-    inlines = [NfeInvoiceItemInline, NfeArtifactInline]
-    readonly_fields = ("correlation_id", "payload_hash", "fiscal_snapshot", "created_at", "updated_at")
+    search_fields = ("idempotency_key", "access_key", "protocol", "rejection_code")
+    inlines = [NfeInvoiceItemInline, NfeArtifactInline, NfeAttemptInline]
+    readonly_fields = (
+        "correlation_id",
+        "payload_hash",
+        "fiscal_snapshot",
+        "last_validation",
+        "created_at",
+        "updated_at",
+    )
 
 
 @admin.register(NfeInvoiceEvent)
@@ -79,4 +106,33 @@ class NfeInvoiceEventAdmin(admin.ModelAdmin):
 @admin.register(NfeArtifact)
 class NfeArtifactAdmin(admin.ModelAdmin):
     list_display = ("invoice", "kind", "checksum_sha256", "tenant", "created_at")
-    list_filter = ("kind",)
+
+
+@admin.register(NfeTransmissionAttempt)
+class NfeTransmissionAttemptAdmin(admin.ModelAdmin):
+    list_display = (
+        "stage",
+        "c_stat",
+        "result_status",
+        "invoice",
+        "duration_ms",
+        "tenant",
+        "created_at",
+    )
+    list_filter = ("stage", "result_status")
+    search_fields = ("access_key", "c_stat", "x_motivo")
+    readonly_fields = (
+        "invoice",
+        "stage",
+        "provider_kind",
+        "result_status",
+        "http_status",
+        "c_stat",
+        "x_motivo",
+        "access_key",
+        "duration_ms",
+        "correlation_id",
+        "raw",
+        "created_at",
+        "updated_at",
+    )

@@ -236,7 +236,15 @@ class NfeInvoiceViewSet(viewsets.ViewSet):
     permission_classes = [IsTenantWriter]
 
     def get_throttles(self):
-        if self.action in {"create", "emit", "cancel", "clone", "cce", "resend_email"}:
+        if self.action in {
+            "create",
+            "emit",
+            "cancel",
+            "clone",
+            "cce",
+            "resend_email",
+            "retry_pdf",
+        }:
             return [NfeWriteThrottle()]
         return []
 
@@ -254,6 +262,7 @@ class NfeInvoiceViewSet(viewsets.ViewSet):
             or request.query_params.get("from"),
             date_to=request.query_params.get("date_to") or request.query_params.get("to"),
             days=request.query_params.get("days"),
+            flag=request.query_params.get("flag"),
             apply_default_period=request.query_params.get("all") not in {"1", "true", "yes"},
         )
         page = HubPageNumberPagination()
@@ -381,6 +390,36 @@ class NfeInvoiceViewSet(viewsets.ViewSet):
             )
         return Response({"invoice_id": str(inv.id), "events": data})
 
+    @action(detail=True, methods=["get"], url_path="attempts")
+    def attempts(self, request, pk=None):
+        """RF-44 — tentativas SEFAZ redacted."""
+        from apps.nfe.models import NfeTransmissionAttempt
+
+        inv = get_object_or_404(NfeInvoice, pk=pk, tenant=request.tenant)
+        rows = NfeTransmissionAttempt.objects.filter(
+            tenant=request.tenant, invoice=inv
+        ).order_by("-created_at")[:50]
+        data = [
+            {
+                "id": str(a.id),
+                "stage": a.stage,
+                "provider_kind": a.provider_kind,
+                "result_status": a.result_status,
+                "http_status": a.http_status,
+                "c_stat": a.c_stat,
+                "x_motivo": a.x_motivo,
+                "access_key": a.access_key,
+                "duration_ms": a.duration_ms,
+                "correlation_id": str(a.correlation_id) if a.correlation_id else None,
+                "raw": a.raw,
+                "created_at": a.created_at.isoformat()
+                if hasattr(a.created_at, "isoformat")
+                else str(a.created_at),
+            }
+            for a in rows
+        ]
+        return Response({"invoice_id": str(inv.id), "attempts": data})
+
     @action(detail=True, methods=["post"], url_path="cancel")
     def cancel(self, request, pk=None):
         inv = get_object_or_404(NfeInvoice, pk=pk, tenant=request.tenant)
@@ -455,6 +494,25 @@ class NfeInvoiceViewSet(viewsets.ViewSet):
                 status=502,
             )
         return Response(NfeInvoiceSerializer(inv).data)
+
+    @action(detail=True, methods=["post"], url_path="retry-pdf")
+    def retry_pdf(self, request, pk=None):
+        """RF-64 — tenta regenerar DANFE mantendo authorized (EX-PDF)."""
+        inv = get_object_or_404(NfeInvoice, pk=pk, tenant=request.tenant)
+        if inv.status != NfeInvoice.Status.AUTHORIZED:
+            return _err(NfeInvalidTransitionError("retry-pdf só para autorizada"), 400)
+        try:
+            if not nfe_feature_enabled():
+                raise NfeDisabledError("NF-e desabilitada")
+            from apps.nfe.pdf_retry import retry_pending_danfe_for_invoice
+
+            ok = retry_pending_danfe_for_invoice(inv)
+            inv.refresh_from_db()
+            payload = NfeInvoiceSerializer(inv).data
+            payload["pdf_retry_ok"] = ok
+            return Response(payload)
+        except NfeDisabledError as exc:
+            return _err(exc, 403)
 
     @action(detail=True, methods=["post"], url_path="discard")
     def discard(self, request, pk=None):

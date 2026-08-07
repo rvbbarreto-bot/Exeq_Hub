@@ -58,6 +58,7 @@ class NfeInvoiceSerializer(serializers.ModelSerializer):
     items = NfeInvoiceItemSerializer(many=True, read_only=True)
     allowed_actions = serializers.SerializerMethodField()
     artifacts = serializers.SerializerMethodField()
+    flags = serializers.SerializerMethodField()
 
     class Meta:
         model = NfeInvoice
@@ -95,9 +96,11 @@ class NfeInvoiceSerializer(serializers.ModelSerializer):
             "items",
             "allowed_actions",
             "artifacts",
+            "flags",
             "created_at",
             "updated_at",
         )
+        read_only_fields = fields
 
     def get_allowed_actions(self, obj: NfeInvoice) -> list[str]:
         return allowed_actions(obj)
@@ -109,6 +112,13 @@ class NfeInvoiceSerializer(serializers.ModelSerializer):
             "xml_authorized": has_xml_authorized(obj),
             "danfe_pdf": has_danfe_pdf(obj),
             "xml_cce": has_xml_cce(obj),
+        }
+
+    def get_flags(self, obj: NfeInvoice) -> dict:
+        lv = obj.last_validation if isinstance(obj.last_validation, dict) else {}
+        return {
+            "denegada": bool(lv.get("denegada")),
+            "pdf_pending": bool(lv.get("pdf_pending")),
         }
 
 

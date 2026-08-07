@@ -6,8 +6,10 @@ from typing import Any
 
 from django.conf import settings
 from django.db import transaction
+from django.utils import timezone
 
 from apps.accounts.certificates import get_primary_certificate
+from apps.accounts.models import DigitalCertificate
 from apps.master_data.models import Provider
 from apps.nfe.models import NfeNumberSeries
 from apps.nfe.services import nfe_feature_enabled
@@ -30,6 +32,10 @@ def _provider_uf(addr: dict | None) -> str:
     if not isinstance(addr, dict):
         return ""
     return str(addr.get("uf") or addr.get("UF") or "").upper().strip()
+
+
+def _digits(value: str) -> str:
+    return "".join(ch for ch in str(value or "") if ch.isdigit())
 
 
 def list_series_for_tenant(*, tenant, provider: Provider | None = None) -> list[dict[str, Any]]:
@@ -81,7 +87,6 @@ def upsert_number_series(
     if next_number is not None:
         n = max(1, int(next_number))
         if not created and n < row.next_number:
-            # operador pode baixar só se ainda não usou (igual: next); bloqueio fraco
             raise ValueError(
                 f"next_number={n} menor que contador atual {row.next_number}; "
                 "não regrida sem processo de inutilização"
@@ -134,6 +139,7 @@ def build_gate_payload(
     mode = http_mode()
     ser = series if series is not None else default_series()
     amb = (tp_amb or default_tp_amb())[:1]
+    supported = list_supported_ufs()
     checks: list[dict[str, Any]] = [
         {"id": "nfe_enabled", "ok": enabled, "label": "NFE_ENABLED", "must": True},
     ]
@@ -157,9 +163,14 @@ def build_gate_payload(
             {"id": "provider", "ok": False, "label": "Nenhum prestador ativo", "must": True}
         )
     else:
-        addr = provider.address or {}
-        uf = _provider_uf(addr if isinstance(addr, dict) else {})
+        addr = provider.address if isinstance(provider.address, dict) else {}
+        uf = _provider_uf(addr)
         ie = (provider.state_registration or "").strip()
+        ie_digits = _digits(ie)
+        ie_isento = ie.upper() in {"ISENTO", "ISENTA"}
+        ibge = _digits(str(addr.get("codigo_ibge") or addr.get("cMun") or ""))
+        logradouro = str(addr.get("logradouro") or addr.get("street") or "").strip()
+
         checks.append(
             {
                 "id": "provider",
@@ -168,49 +179,127 @@ def build_gate_payload(
                 "must": True,
             }
         )
+        uf_ok = bool(uf)
         checks.append(
             {
                 "id": "uf",
-                "ok": bool(uf),
+                "ok": uf_ok,
                 "label": f"UF emitente={uf or '—'}",
                 "must": True,
             }
         )
-        ie_ok = bool(ie) or mode == "stub"
+        uf_matrix_ok = (not uf) or (uf in supported)
         checks.append(
             {
-                "id": "ie",
-                "ok": ie_ok,
+                "id": "uf_supported",
+                "ok": uf_matrix_ok,
                 "label": (
-                    f"IE={'ok' if ie else 'pendente'}"
-                    + ("" if ie else " (ok em stub)" if mode == "stub" else " obrigatória em http")
+                    f"UF {uf} na matriz U4"
+                    if uf and uf_matrix_ok
+                    else (f"UF {uf} fora da matriz" if uf else "UF não informada")
                 ),
                 "must": True,
             }
         )
+        # IE: stub aceita vazio; http exige dígitos ou ISENTO
+        if mode == "stub":
+            ie_ok = True
+            ie_label = f"IE={'ok' if ie else 'pendente (ok em stub)'}"
+        else:
+            ie_ok = ie_isento or len(ie_digits) >= 2
+            ie_label = (
+                "IE isento"
+                if ie_isento
+                else (f"IE ok ({len(ie_digits)} dig.)" if ie_ok else "IE pendente/inválida (obrigatória em http)")
+            )
+        checks.append({"id": "ie", "ok": ie_ok, "label": ie_label, "must": True})
+
+        crt_ok = bool(getattr(provider, "tax_regime", None))
+        checks.append(
+            {
+                "id": "crt",
+                "ok": crt_ok,
+                "label": f"CRT/regime={provider.tax_regime or '—'}",
+                "must": True,
+            }
+        )
+        ibge_ok = len(ibge) == 7
+        checks.append(
+            {
+                "id": "ibge_emit",
+                "ok": ibge_ok,
+                "label": f"IBGE emitente={ibge or '—'}",
+                "must": True,
+            }
+        )
+        addr_ok = bool(logradouro)
+        checks.append(
+            {
+                "id": "address_min",
+                "ok": addr_ok,
+                "label": "Endereço emitente (logradouro)" if addr_ok else "Logradouro emitente ausente",
+                "must": True,
+            }
+        )
+
         cert = get_primary_certificate(tenant=tenant, cnpj=provider.document)
-        cert_ok = cert is not None or mode == "stub"
+        if mode == "stub":
+            cert_ok = True
+            cert_label = (
+                f"Cert A1 {cert.status}" if cert else "Cert A1 ausente (ok em stub)"
+            )
+        else:
+            usable = {
+                DigitalCertificate.Status.ACTIVE,
+                DigitalCertificate.Status.EXPIRING,
+            }
+            cert_ok = cert is not None and cert.status in usable
+            cert_label = (
+                f"Cert A1 {cert.status}"
+                if cert
+                else "Cert A1 ausente"
+            )
+            if cert and cert.status not in usable:
+                cert_label = f"Cert A1 inutilizável ({cert.status})"
+        checks.append({"id": "cert", "ok": cert_ok, "label": cert_label, "must": True})
+
+        # warning < 30d (must=false)
+        cert_expiring = False
+        if cert and cert.status == DigitalCertificate.Status.EXPIRING:
+            cert_expiring = True
+        elif cert and getattr(cert, "not_after", None):
+            try:
+                delta = cert.not_after - timezone.now()
+                cert_expiring = 0 < delta.days <= 30
+            except Exception:  # noqa: BLE001
+                cert_expiring = False
         checks.append(
             {
-                "id": "cert",
-                "ok": cert_ok,
-                "label": (
-                    f"Cert A1 {cert.status}"
-                    if cert
-                    else (
-                        "Cert A1 ausente (ok em stub)"
-                        if mode == "stub"
-                        else "Cert A1 ausente"
-                    )
-                ),
-                "must": True,
+                "id": "cert_expiring",
+                "ok": not cert_expiring,
+                "label": "Cert A1 expira em ≤30d" if cert_expiring else "Cert A1 prazo ok",
+                "must": False,
             }
         )
+
+        # CNPJ cert == provider (quando cert existe)
+        if cert is not None:
+            cert_cnpj = _digits(cert.cnpj)
+            prov_cnpj = _digits(provider.document)
+            cnpj_ok = cert_cnpj == prov_cnpj and len(prov_cnpj) == 14
+            checks.append(
+                {
+                    "id": "cnpj_cert",
+                    "ok": cnpj_ok,
+                    "label": "CNPJ cert = emitente" if cnpj_ok else "CNPJ cert ≠ emitente",
+                    "must": mode != "stub",
+                }
+            )
+
         next_estimated, series_row = estimated_next_number(
             tenant=tenant, provider=provider, series=ser, tp_amb=amb
         )
         series_exists = series_row is not None
-        # stub: auto-seed no emit; http: exige série cadastrada explicitamente
         series_ok = series_exists or mode == "stub"
         checks.append(
             {
@@ -238,7 +327,7 @@ def build_gate_payload(
         "checks": checks,
         "http_mode": mode,
         "pivot_uf": getattr(settings, "NFE_PIVOT_UF", "SP"),
-        "supported_ufs": list_supported_ufs(),
+        "supported_ufs": supported,
         "provider_id": str(provider.id) if provider else None,
         "series": ser,
         "tp_amb": amb,

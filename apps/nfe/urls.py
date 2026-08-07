@@ -21,9 +21,11 @@ invoice_emit = NfeInvoiceViewSet.as_view({"post": "emit"})
 invoice_cancel = NfeInvoiceViewSet.as_view({"post": "cancel"})
 invoice_cce = NfeInvoiceViewSet.as_view({"post": "cce"})
 invoice_resend_email = NfeInvoiceViewSet.as_view({"post": "resend_email"})
+invoice_retry_pdf = NfeInvoiceViewSet.as_view({"post": "retry_pdf"})
 invoice_discard = NfeInvoiceViewSet.as_view({"post": "discard"})
 invoice_clone = NfeInvoiceViewSet.as_view({"post": "clone"})
 invoice_events = NfeInvoiceViewSet.as_view({"get": "events"})
+invoice_attempts = NfeInvoiceViewSet.as_view({"get": "attempts"})
 invoice_xml = NfeInvoiceViewSet.as_view({"get": "artifacts_xml"})
 invoice_pdf = NfeInvoiceViewSet.as_view({"get": "artifacts_pdf"})
 invoice_cce_xml = NfeInvoiceViewSet.as_view({"get": "artifacts_cce"})
@@ -45,9 +47,15 @@ urlpatterns = [
         invoice_resend_email,
         name="nfe-invoice-resend-email",
     ),
+    path(
+        "nfe/invoices/<uuid:pk>/retry-pdf",
+        invoice_retry_pdf,
+        name="nfe-invoice-retry-pdf",
+    ),
     path("nfe/invoices/<uuid:pk>/discard", invoice_discard, name="nfe-invoice-discard"),
     path("nfe/invoices/<uuid:pk>/clone", invoice_clone, name="nfe-invoice-clone"),
     path("nfe/invoices/<uuid:pk>/events", invoice_events, name="nfe-invoice-events"),
+    path("nfe/invoices/<uuid:pk>/attempts", invoice_attempts, name="nfe-invoice-attempts"),
     path("nfe/invoices/<uuid:pk>/artifacts/xml", invoice_xml, name="nfe-invoice-xml"),
     path("nfe/invoices/<uuid:pk>/artifacts/pdf", invoice_pdf, name="nfe-invoice-pdf"),
     path("nfe/invoices/<uuid:pk>/artifacts/cce", invoice_cce_xml, name="nfe-invoice-cce-xml"),

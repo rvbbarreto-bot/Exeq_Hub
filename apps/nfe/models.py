@@ -310,3 +310,45 @@ class NfeArtifact(TenantOwnedModel):
     def __str__(self) -> str:
         return f"{self.kind} · {self.invoice_id}"
 
+
+class NfeTransmissionAttempt(TenantOwnedModel):
+    """RF-44 — tentativa de transmissão/consulta SEFAZ (raw redacted)."""
+
+    class Stage(models.TextChoices):
+        EMIT = "emit", "Autorização"
+        POLL = "poll", "Consulta / poll"
+        CANCEL = "cancel", "Cancelamento"
+        CCE = "cce", "CCe"
+        INUT = "inut", "Inutilização"
+
+    invoice = models.ForeignKey(
+        NfeInvoice,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="transmission_attempts",
+        verbose_name="NF-e",
+    )
+    stage = models.CharField(max_length=16, choices=Stage.choices, verbose_name="Etapa")
+    provider_kind = models.CharField(max_length=16, blank=True, default="", verbose_name="Provider")
+    result_status = models.CharField(max_length=32, blank=True, default="", verbose_name="Status resultado")
+    http_status = models.PositiveIntegerField(null=True, blank=True, verbose_name="HTTP")
+    c_stat = models.CharField(max_length=8, blank=True, default="", verbose_name="cStat")
+    x_motivo = models.CharField(max_length=512, blank=True, default="", verbose_name="xMotivo")
+    access_key = models.CharField(max_length=44, blank=True, default="", verbose_name="Chave")
+    duration_ms = models.PositiveIntegerField(null=True, blank=True, verbose_name="Duração ms")
+    correlation_id = models.UUIDField(null=True, blank=True, verbose_name="Correlação")
+    raw = models.JSONField(default=dict, blank=True, verbose_name="Raw (sanitizado)")
+
+    class Meta:
+        verbose_name = "Tentativa SEFAZ NF-e"
+        verbose_name_plural = "Tentativas SEFAZ NF-e"
+        ordering = ("-created_at",)
+        indexes = [
+            models.Index(fields=["tenant", "invoice", "-created_at"]),
+            models.Index(fields=["tenant", "stage", "-created_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.stage} {self.c_stat or self.result_status}"
+
