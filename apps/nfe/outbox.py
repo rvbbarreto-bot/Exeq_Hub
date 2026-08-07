@@ -12,6 +12,7 @@ SCHEMA_VERSION = 1
 EVENT_AUTHORIZED = "nfe.authorized"
 EVENT_REJECTED = "nfe.rejected"
 EVENT_CANCELLED = "nfe.cancelled"
+EVENT_POLL_EXHAUSTED = "nfe.poll_exhausted"
 
 
 def _payload(invoice: NfeInvoice, *, extra: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -59,3 +60,16 @@ def publish_after_terminal_status(invoice: NfeInvoice) -> None:
         publish_nfe_lifecycle_event(invoice, event_type=EVENT_REJECTED)
     elif invoice.status == NfeInvoice.Status.CANCELLED:
         publish_nfe_lifecycle_event(invoice, event_type=EVENT_CANCELLED)
+
+
+def publish_poll_exhausted(invoice: NfeInvoice, *, poll_attempts: int, max_attempts: int) -> None:
+    """RF-92 — alerta outbox quando poll esgota (authorize não acontece)."""
+    publish_nfe_lifecycle_event(
+        invoice,
+        event_type=EVENT_POLL_EXHAUSTED,
+        extra={
+            "poll_attempts": poll_attempts,
+            "max_attempts": max_attempts,
+            "reason": "poll_exhausted",
+        },
+    )

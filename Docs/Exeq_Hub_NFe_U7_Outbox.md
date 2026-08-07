@@ -15,7 +15,7 @@
 
 Payload `schema_version=1`: ids, série/nº, chave, protocolo, cStat, totais.
 
-**Não** enfileira em `failed` / poll_exhausted (fora RF-70 Must).
+**Não** enfileira em `failed` genérico. **RF-92 (U17):** poll esgotado publica `nfe.poll_exhausted` — ver `Exeq_Hub_NFe_U17_Ops_RF64_RF92_RF91.md`.
 
 ## Dispatcher
 

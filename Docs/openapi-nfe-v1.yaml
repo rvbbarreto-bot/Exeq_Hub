@@ -28,6 +28,20 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/NfeGate" }
+  /nfe/metrics/:
+    get:
+      tags: [nfe]
+      summary: KPIs operacionais NF-e (RF-91)
+      parameters:
+        - in: query
+          name: days
+          schema: { type: integer, minimum: 1, maximum: 366, default: 30 }
+      responses:
+        "200":
+          description: Agregados por tenant (taxa authorize, cStat, filas)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NfeOpsMetrics" }
   /nfe/config/:
     get:
       tags: [nfe]
@@ -351,6 +365,22 @@ components:
         tp_amb: { type: string }
         next_number_estimated: { type: integer, nullable: true }
         provider_id: { type: string, format: uuid, nullable: true }
+    NfeOpsMetrics:
+      type: object
+      properties:
+        days: { type: integer }
+        since: { type: string, format: date-time }
+        total: { type: integer }
+        by_status:
+          type: object
+          additionalProperties: { type: integer }
+        authorize_rate: { type: number, nullable: true }
+        rejected_by_cstat:
+          type: object
+          additionalProperties: { type: integer }
+        poll_exhausted: { type: integer }
+        polling_queue: { type: integer }
+        pdf_pending: { type: integer }
     NfeConfigSeriesPut:
       type: object
       required: [provider_id]

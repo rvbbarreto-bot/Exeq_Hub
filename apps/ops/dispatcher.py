@@ -70,6 +70,7 @@ def _handle(msg: OutboxMessage) -> None:
         "nfe.authorized": _notify_nfe_lifecycle,
         "nfe.rejected": _notify_nfe_lifecycle,
         "nfe.cancelled": _notify_nfe_lifecycle,
+        "nfe.poll_exhausted": _notify_nfe_poll_exhausted,
         "charge.paid": _notify_charge_paid,
         "guia_fiscal.available": _notify_guia_available,
         "appointment.pending": _notify_appointment,
@@ -234,6 +235,28 @@ def _notify_nfe_lifecycle(msg: OutboxMessage) -> None:
             invoice=inv,
             payload=msg.payload if isinstance(msg.payload, dict) else None,
         )
+
+
+def _notify_nfe_poll_exhausted(msg: OutboxMessage) -> None:
+    """RF-92 — WhatsApp ops quando poll SEFAZ esgota (status failed)."""
+    phone = _notify_phone(msg.tenant)
+    if not phone:
+        return
+    from apps.channel.services import enqueue_notification
+
+    payload = msg.payload or {}
+    ref = payload.get("access_key") or payload.get("number") or str(msg.aggregate_id)[:8]
+    attempts = payload.get("poll_attempts") or "?"
+    max_att = payload.get("max_attempts") or "?"
+    enqueue_notification(
+        tenant=msg.tenant,
+        phone_e164=phone,
+        event_type=msg.event_type,
+        message_body=(
+            f"NF-e poll esgotado. Ref {ref}. "
+            f"Tentativas {attempts}/{max_att}. Verifique SEFAZ/recibo."
+        )[:1000],
+    )
 
 
 def _notify_charge_paid(msg: OutboxMessage) -> None:

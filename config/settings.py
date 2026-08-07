@@ -168,6 +168,12 @@ CELERY_BEAT_SCHEDULE = {
         "task": "channel.expire_stale_sessions",
         "schedule": float(env("CHANNEL_EXPIRE_INTERVAL_SECONDS", "600") or "600"),
     },
+    # RF-64: retry DANFE para NF-e authorized com pdf_pending
+    "nfe-retry-pending-danfe": {
+        "task": "nfe.retry_pending_danfe",
+        "schedule": float(env("NFE_PDF_RETRY_INTERVAL_SECONDS", "900") or "900"),
+        "kwargs": {"limit": int(env("NFE_PDF_RETRY_BATCH_LIMIT", "50") or "50")},
+    },
 }
 NF_SYNC_PROCESSING = env("NF_SYNC_PROCESSING", "false").lower() == "true"
 # Reforma Tributária (NFS-e Nacional): off | shadow (calcula+snapshot, não envia) | emit

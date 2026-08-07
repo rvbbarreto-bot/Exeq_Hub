@@ -150,6 +150,7 @@ Regras:
 | **U14** | CCe 110110 (U5-CCE-01…04) | `Docs/Exeq_Hub_NFe_U14_CCe.md` |
 | **U15** | Inutilização de faixa nNF (InutNFe) | `Docs/Exeq_Hub_NFe_U15_Inutilizacao.md` |
 | **U16** | UI inutilização + RF-71 e-mail XML/DANFE | `Docs/Exeq_Hub_NFe_U16_UI_Inut_RF71_Email.md` |
+| **U17** | RF-64 PDF retry · RF-92 poll_exhausted · RF-91 metrics | `Docs/Exeq_Hub_NFe_U17_Ops_RF64_RF92_RF91.md` |
 
 UI e domínio **em paralelo** a partir de U0/U1 (impacto §7).
 

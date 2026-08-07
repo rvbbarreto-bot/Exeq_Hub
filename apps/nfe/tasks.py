@@ -1,4 +1,4 @@
-"""Celery tasks NF-e (I5 poll)."""
+"""Celery tasks NF-e (I5 poll · RF-64 DANFE retry)."""
 
 from __future__ import annotations
 
@@ -50,3 +50,13 @@ def poll_nfe_invoice_task(self, tenant_id: str, invoice_id: str) -> str:
     countdown = poll_countdown_seconds()
     backoff = min(countdown * (2 ** min(self.request.retries, 4)), 300)
     raise self.retry(countdown=backoff)
+
+
+@shared_task(name="nfe.retry_pending_danfe")
+def retry_pending_danfe_task(limit: int = 50) -> dict:
+    """RF-64 — reprocessa authorized com pdf_pending (beat)."""
+    from apps.nfe.pdf_retry import retry_pending_danfe_batch
+
+    result = retry_pending_danfe_batch(limit=limit)
+    logger.info("nfe.retry_pending_danfe %s", result)
+    return result

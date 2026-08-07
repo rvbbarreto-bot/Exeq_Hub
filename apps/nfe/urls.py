@@ -6,6 +6,7 @@ from apps.nfe.views import (
     NfeGateView,
     NfeInutilizeView,
     NfeInvoiceViewSet,
+    NfeMetricsView,
     NfeProductViewSet,
 )
 
@@ -29,6 +30,7 @@ invoice_cce_xml = NfeInvoiceViewSet.as_view({"get": "artifacts_cce"})
 
 urlpatterns = [
     path("nfe/gate/", NfeGateView.as_view(), name="nfe-gate"),
+    path("nfe/metrics/", NfeMetricsView.as_view(), name="nfe-metrics"),
     path("nfe/config/", NfeConfigView.as_view(), name="nfe-config"),
     path("nfe/config/inutilize", NfeInutilizeView.as_view(), name="nfe-config-inutilize"),
     path("nfe/invoices/", invoice_list, name="nfe-invoices"),

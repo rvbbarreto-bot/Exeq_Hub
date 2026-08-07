@@ -23,6 +23,7 @@ from apps.nfe.exceptions import (
 from apps.nfe.gate import build_config_payload, build_gate_payload, upsert_number_series
 from apps.nfe.inutilization import inutilize_number_range
 from apps.nfe.listing import filter_invoice_queryset, sanitize_event_metadata
+from apps.nfe.metrics import compute_nfe_ops_metrics
 from apps.nfe.models import NfeArtifact, NfeInvoice, NfeInvoiceEvent, NfeProduct
 from apps.nfe.serializers import (
     NfeCancelSerializer,
@@ -83,6 +84,23 @@ class NfeGateView(APIView):
                 tp_amb=tp_amb,
             )
         )
+
+
+class NfeMetricsView(APIView):
+    """GET /nfe/metrics/ — RF-91 KPIs operacionais (janela em dias)."""
+
+    permission_classes = [IsTenantWriter]
+
+    def get(self, request):
+        raw = (request.query_params.get("days") or "30").strip()
+        try:
+            days = int(raw)
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "days inválido", "code": "nfe_metrics"},
+                status=400,
+            )
+        return Response(compute_nfe_ops_metrics(tenant=request.tenant, days=days))
 
 
 class NfeConfigView(APIView):

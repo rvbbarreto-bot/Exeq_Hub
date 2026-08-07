@@ -100,6 +100,11 @@ def poll_nfe_invoice(invoice: NfeInvoice, *, actor: str = "worker") -> NfeInvoic
             inv.tenant_id,
             attempts,
         )
+        from apps.nfe.outbox import publish_poll_exhausted
+
+        publish_poll_exhausted(
+            inv, poll_attempts=attempts, max_attempts=max_att
+        )
         return inv
 
     provider = get_nfe_provider()
