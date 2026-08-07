@@ -137,6 +137,7 @@ REST_FRAMEWORK = {
         "webhook_evolution": env("WEBHOOK_EVOLUTION_THROTTLE", "120/min"),
         "cadastral_lookup": env("CADASTRO_LOOKUP_THROTTLE", "30/min"),
         "nf_issue_write": env("NF_ISSUE_WRITE_THROTTLE", "30/min"),
+        "nfe_write": env("NFE_WRITE_THROTTLE", "30/min"),
     },
 }
 

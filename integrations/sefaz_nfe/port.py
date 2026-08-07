@@ -49,6 +49,14 @@ class NfeProvider(Protocol):
         context: dict[str, Any] | None = None,
     ) -> NfeEmitResult: ...
 
+    def carta_correcao(
+        self,
+        *,
+        access_key: str,
+        x_correcao: str,
+        context: dict[str, Any] | None = None,
+    ) -> NfeEmitResult: ...
+
 
 class StubNfeProvider:
     kind = "stub"
@@ -144,6 +152,39 @@ class StubNfeProvider:
             protocol=f"STUBCANC{uuid4().hex[:8].upper()}",
             raw=sanitize_sefaz_raw(
                 {"mode": "stub", "justificativa_len": len(justificativa or "")}
+            ),
+            signed_xml=signed_xml,
+        )
+
+    def carta_correcao(
+        self,
+        *,
+        access_key: str,
+        x_correcao: str,
+        context: dict[str, Any] | None = None,
+    ) -> NfeEmitResult:
+        signed_xml = None
+        try:
+            from integrations.sefaz_nfe.evento_cce import build_cce_from_context
+
+            signed_xml = build_cce_from_context(
+                access_key=access_key,
+                x_correcao=x_correcao,
+                context=context,
+            )
+        except Exception:  # noqa: BLE001
+            signed_xml = None
+        return NfeEmitResult(
+            status="accepted",
+            access_key=access_key,
+            protocol=f"STUBCCE{uuid4().hex[:8].upper()}",
+            raw=sanitize_sefaz_raw(
+                {
+                    "mode": "stub",
+                    "tpEvento": "110110",
+                    "x_correcao_len": len(x_correcao or ""),
+                    "nSeqEvento": (context or {}).get("n_seq_evento") or 1,
+                }
             ),
             signed_xml=signed_xml,
         )
@@ -596,6 +637,176 @@ class HttpNfeProvider:
             access_key=key,
             rejection_code=resp.c_stat or str(resp.http_status),
             rejection_message=resp.x_motivo or "falha no cancelamento SEFAZ",
+            raw=raw,
+            signed_xml=signed,
+        )
+
+    def carta_correcao(
+        self,
+        *,
+        access_key: str,
+        x_correcao: str,
+        context: dict[str, Any] | None = None,
+    ) -> NfeEmitResult:
+        """Evento 110110 assinado + NFeRecepcaoEvento4 (U5-CCE-01)."""
+        from integrations.sefaz_nfe.endpoints import resolve_endpoints
+        from integrations.sefaz_nfe.evento_cce import (
+            EVENTO_CCE_OK,
+            NfeCceBuildError,
+            build_cce_from_context,
+        )
+        from integrations.sefaz_nfe.sign import sign_evento_nfe_xml
+        from integrations.sefaz_nfe.transport import post_nfe_evento
+
+        ctx = context or {}
+        key = "".join(ch for ch in str(access_key or "") if ch.isdigit())[:44]
+        corr = (x_correcao or "").strip()
+        if not (15 <= len(corr) <= 1000):
+            return NfeEmitResult(
+                status="failed",
+                access_key=key,
+                rejection_code="CORR",
+                rejection_message="xCorrecao deve ter 15–1000 caracteres",
+                raw=sanitize_sefaz_raw({"mode": "http", "stage": "cce_text"}),
+            )
+        if not key or len(key) != 44:
+            return NfeEmitResult(
+                status="failed",
+                rejection_code="CHAVE",
+                rejection_message="chNFe inválida para CCe",
+                raw=sanitize_sefaz_raw({"mode": "http", "stage": "cce_chave"}),
+            )
+
+        cnpj = self._emitente_cnpj(ctx)
+        if len(cnpj) != 14 and len(key) == 44:
+            cnpj = key[6:20]
+        amb = str(ctx.get("tp_amb") or getattr(settings, "NFE_DEFAULT_TP_AMB", "2")).strip()[
+            :1
+        ] or "2"
+        uf = str(ctx.get("uf") or getattr(settings, "NFE_PIVOT_UF", "SP")).upper()
+        n_seq = max(1, min(20, int(ctx.get("n_seq_evento") or 1)))
+
+        try:
+            pfx_bytes, password = self._load_pfx(ctx, cnpj)
+        except Exception as exc:  # noqa: BLE001
+            return NfeEmitResult(
+                status="failed",
+                access_key=key,
+                rejection_code="CERT",
+                rejection_message=f"Certificado A1 indisponível: {exc}",
+                raw=sanitize_sefaz_raw({"mode": "http", "stage": "cert"}),
+            )
+
+        signed: bytes | None = None
+        try:
+            unsigned = build_cce_from_context(
+                access_key=key,
+                x_correcao=corr,
+                context={
+                    **ctx,
+                    "cnpj": cnpj,
+                    "tp_amb": amb,
+                    "n_seq_evento": n_seq,
+                },
+            )
+            signed = sign_evento_nfe_xml(
+                env_evento_xml=unsigned, pfx_bytes=pfx_bytes, password=password
+            )
+        except NfeCceBuildError as exc:
+            return NfeEmitResult(
+                status="failed",
+                access_key=key,
+                rejection_code="XML",
+                rejection_message=f"Evento CCe inválido: {exc}",
+                raw=sanitize_sefaz_raw({"mode": "http", "stage": "cce_build"}),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("nfe_http_cce_sign_failed")
+            return NfeEmitResult(
+                status="failed",
+                access_key=key,
+                rejection_code="XML",
+                rejection_message=f"Falha montagem/assinatura evento 110110: {exc}",
+                raw=sanitize_sefaz_raw({"mode": "http", "stage": "cce_sign"}),
+            )
+
+        if self._is_dry_run():
+            return NfeEmitResult(
+                status="failed",
+                access_key=key,
+                rejection_code="DRY_RUN",
+                rejection_message="NFE_HTTP_DRY_RUN: evento 110110 assinado, sem POST SEFAZ",
+                raw=sanitize_sefaz_raw(
+                    {
+                        "mode": "http",
+                        "stage": "cce_dry_run",
+                        "xml_bytes": len(signed or b""),
+                        "chNFe": key,
+                        "nSeqEvento": n_seq,
+                    }
+                ),
+                signed_xml=signed,
+            )
+
+        try:
+            eps = resolve_endpoints(uf=uf, tp_amb=amb)
+            resp = post_nfe_evento(
+                url=eps.recepcao_evento,
+                evento_xml=signed,
+                pfx_bytes=pfx_bytes,
+                password=password,
+                timeout=float(getattr(settings, "NFE_HTTP_TIMEOUT", 60) or 60),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("nfe_http_cce_post_failed")
+            return NfeEmitResult(
+                status="failed",
+                access_key=key,
+                rejection_code="HTTP",
+                rejection_message=f"Falha HTTP SEFAZ CCe: {exc}",
+                raw=sanitize_sefaz_raw({"mode": "http", "stage": "cce_transport"}),
+                signed_xml=signed,
+            )
+
+        raw = sanitize_sefaz_raw(
+            {
+                "mode": "http",
+                "stage": "cce_evento",
+                "http": resp.http_status,
+                "cStat": resp.c_stat,
+                "xMotivo": resp.x_motivo,
+                "nProt": resp.protocol,
+                "chNFe": resp.access_key or key,
+                "lote_cStat": resp.lote_c_stat,
+                "tpEvento": "110110",
+                "nSeqEvento": n_seq,
+                "body": resp.body,
+            }
+        )
+        code = (resp.c_stat or "").strip()
+        if code in EVENTO_CCE_OK:
+            return NfeEmitResult(
+                status="accepted",
+                access_key=resp.access_key or key,
+                protocol=resp.protocol or f"CCE{n_seq}",
+                raw=raw,
+                signed_xml=signed,
+            )
+        status = map_cstat_to_status(code)
+        if status == "rejected":
+            return NfeEmitResult(
+                status="rejected",
+                access_key=key,
+                rejection_code=code,
+                rejection_message=resp.x_motivo or "rejeição na CCe",
+                raw=raw,
+                signed_xml=signed,
+            )
+        return NfeEmitResult(
+            status="failed",
+            access_key=key,
+            rejection_code=code or str(resp.http_status),
+            rejection_message=resp.x_motivo or "falha na CCe SEFAZ",
             raw=raw,
             signed_xml=signed,
         )

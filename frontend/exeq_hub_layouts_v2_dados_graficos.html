@@ -1185,6 +1185,7 @@
       <button type="button" class="icon-btn" data-close-modal="modal-nfe" title="Fechar">✕</button>
     </div>
     <form id="form-nfe">
+      <div class="hint" id="nfe-modal-series-hint" style="margin-bottom:10px"></div>
       <div class="form-grid">
         <div class="field">
           <label>Emitente</label>
@@ -1260,6 +1261,28 @@
       <div class="form-actions">
         <button type="button" class="btn btn-ghost" data-close-modal="modal-nfe-cancel">Fechar</button>
         <button type="submit" class="btn btn-primary">Confirmar cancelamento</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-nfe-cce" class="hub-modal">
+  <div class="hub-modal-card">
+    <div class="modal-head">
+      <div>
+        <h3>Carta de Correção (CCe)</h3>
+        <div class="modal-sub" id="nfe-cce-summary">Texto 15–1000 caracteres (não altera valores/CFOP/chave).</div>
+      </div>
+      <button type="button" class="icon-btn" data-close-modal="modal-nfe-cce">✕</button>
+    </div>
+    <form id="form-nfe-cce">
+      <div class="field full">
+        <label>Correção (xCorrecao)</label>
+        <textarea name="x_correcao" required minlength="15" maxlength="1000"></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-ghost" data-close-modal="modal-nfe-cce">Fechar</button>
+        <button type="submit" class="btn btn-primary">Transmitir CCe</button>
       </div>
     </form>
   </div>

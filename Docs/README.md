@@ -28,11 +28,15 @@ Repositório: https://github.com/rvbbarreto-bot/Exeq_Hub
 | Reanálise impacto NF-e × NFS-e homologada | `Exeq_Hub_NFe_Reanalise_Impacto_NFSe_Homologada.md` | **1.0.0** — inventário reuso, riscos recalibrados, parecer Aprovado c/ ressalvas |
 | Tickets U3 NF-e I1–I8 | `Exeq_Hub_NFe_U3_Tickets_I1_I8.md` | Backlog G-SPIKE → G-EMIT-NFE |
 | Multi-UF NF-e U4 | `Exeq_Hub_NFe_U4_Multi_UF.md` | Catálogo 10 UFs + matriz QA (G-MULTI-10) |
-| U5 interestadual + CCe backlog + G-EMIT SP | `Exeq_Hub_NFe_U5_Interestadual_CCe_G_EMIT.md` | RF-23/CFOP · CCe scaffold · runbook homolog |
+| U5 interestadual + CCe backlog + G-EMIT SP | `Exeq_Hub_NFe_U5_Interestadual_CCe_G_EMIT.md` | RF-23/CFOP · CCe via U14 · runbook homolog |
+| U14 CCe 110110 | `Exeq_Hub_NFe_U14_CCe.md` | API + artefato + UI (stub/HTTP dry-run) |
 | U6 config/gate/discard/clone | `Exeq_Hub_NFe_U6_Config_Gate.md` | T0/T6 API + FSM operator paths (stub) |
 | U7 outbox NF-e RF-70 | `Exeq_Hub_NFe_U7_Outbox.md` | `nfe.authorized` / rejected / cancelled |
 | U8 lista + timeline | `Exeq_Hub_NFe_U8_Lista_Timeline.md` | Filtros T1 + `GET …/events` |
 | U9 NumberSeries + G-EMIT ops | `Exeq_Hub_NFe_U9_NumberSeries_G_EMIT.md` | DoD #4 concorrência · checklist G-EMIT |
+| U10–U12 fábrica (OpenAPI · imutab. · UI) | `Exeq_Hub_NFe_U10_U12_Factory.md` | DoD #9 OpenAPI + freeze snapshot + polish stub |
+| U13 EX-SEC NF-e + throttle | `Exeq_Hub_NFe_U13_EX_SEC.md` | Isolamento multi-tenant + `nfe_write` rate limit |
+| RF-72 mídia WhatsApp NF-e | `Exeq_Hub_NFe_RF72_Midia_WhatsApp.md` | DANFE/XML se sessão canal ligar `nfe.authorized` |
 | Reforma Tributária / RTC | `Exeq_Hub_Reforma_Tributaria_RTC_MultiDocumento_Estudo_Tecnico.md` | **0.1.0-draft** (estudo direção — IBS/CBS/IS, multi-DF-e, contábil) |
 | ADR RTC execução | `ADR_RTC_001_Priorizacao_Pilares.md` | **Aceito** (PO 2026-07-26 — pilares 1→5→2→4→3) |
 | Billing Inter | `Exeq_Hub_Inter_Billing_Integration_Study.md` | **1.0.0** (Sprint 5 — Inter first / BolePix v3) |

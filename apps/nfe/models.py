@@ -240,6 +240,7 @@ class NfeArtifact(TenantOwnedModel):
     class Kind(models.TextChoices):
         XML_AUTHORIZED = "xml_authorized", "XML autorizado"
         XML_CANCEL = "xml_cancel", "XML cancelamento"
+        XML_CCE = "xml_cce", "XML CCe (última)"
         DANFE_PDF = "danfe_pdf", "DANFE PDF"
 
     invoice = models.ForeignKey(

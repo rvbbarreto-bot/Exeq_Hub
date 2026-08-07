@@ -31,6 +31,14 @@ class ChannelSession(TenantOwnedModel):
         related_name="channel_sessions",
         verbose_name="Emissão NFS-e",
     )
+    nfe_invoice = models.ForeignKey(
+        "nfe.NfeInvoice",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="channel_sessions",
+        verbose_name="Emissão NF-e",
+    )
     last_message_at = models.DateTimeField(
         default=timezone.now, verbose_name="Última mensagem em"
     )
@@ -69,6 +77,14 @@ class ChannelNotification(TenantOwnedModel):
         blank=True,
         related_name="channel_notifications",
     )
+    nfe_invoice = models.ForeignKey(
+        "nfe.NfeInvoice",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="channel_notifications",
+        verbose_name="NF-e",
+    )
     phone_e164 = models.CharField(max_length=20, verbose_name="Telefone (E.164)")
     event_type = models.CharField(max_length=64, verbose_name="Tipo de evento")
     message_body = models.TextField(verbose_name="Mensagem")
@@ -77,6 +93,9 @@ class ChannelNotification(TenantOwnedModel):
         choices=Status.choices,
         default=Status.PENDING,
         verbose_name="Status",
+    )
+    provider = models.CharField(
+        max_length=16, blank=True, default="", verbose_name="Provedor WhatsApp"
     )
     provider_ref = models.CharField(
         max_length=128, blank=True, default="", verbose_name="Referência do provedor"

@@ -293,6 +293,56 @@ def ensure_cancel_xml(
         return None
 
 
+def has_xml_cce(invoice: NfeInvoice) -> bool:
+    return has_artifact(invoice, NfeArtifact.Kind.XML_CCE)
+
+
+def ensure_cce_xml(
+    invoice: NfeInvoice,
+    *,
+    xml_bytes: bytes | None = None,
+    provider_raw: dict | None = None,
+    n_seq: int = 1,
+) -> NfeArtifact | None:
+    """Persiste última CCe (U5-CCE-02). Substitui kind xml_cce se já existir."""
+    invoice.refresh_from_db()
+    if invoice.status != NfeInvoice.Status.AUTHORIZED:
+        return None
+
+    data = xml_bytes
+    if not data and provider_raw:
+        inline = provider_raw.get("xml") or provider_raw.get("evento_xml")
+        if isinstance(inline, str) and "<" in inline:
+            data = inline.encode("utf-8")
+        elif isinstance(inline, (bytes, bytearray)):
+            data = bytes(inline)
+    if not data:
+        logger.warning("nfe_artifact_xml_cce_missing invoice=%s", invoice.id)
+        return None
+
+    existing = get_artifact(invoice, NfeArtifact.Kind.XML_CCE)
+    if existing is not None:
+        try:
+            existing.delete()
+        except Exception:  # noqa: BLE001
+            logger.exception("nfe_artifact_xml_cce_delete_failed invoice=%s", invoice.id)
+            return existing
+
+    try:
+        return store_artifact(
+            invoice,
+            kind=NfeArtifact.Kind.XML_CCE,
+            data=data,
+            content_type="application/xml",
+            filename_prefix=f"nfe-cce-{max(1, int(n_seq or 1)):02d}",
+            extension="xml",
+            purpose="nfe_xml_cce",
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("nfe_artifact_xml_cce_store_failed invoice=%s", invoice.id)
+        return None
+
+
 def read_artifact_bytes(artifact: NfeArtifact) -> bytes:
     storage = get_storage()
     return storage.get(key=artifact.stored_file.object_key)

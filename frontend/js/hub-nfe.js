@@ -333,11 +333,17 @@
     if (actions.includes("cancel")) {
       cell.appendChild(iconBtn("Cancelar", "cancel", () => openCancel(row)));
     }
+    if (actions.includes("cce")) {
+      cell.appendChild(iconBtn("Carta de Correção", "cce", () => openCce(row)));
+    }
     if (actions.includes("download_xml")) {
       cell.appendChild(iconBtn("Baixar XML", "download_xml", () => downloadArtifact(row, "xml")));
     }
     if (actions.includes("download_pdf")) {
       cell.appendChild(iconBtn("Baixar DANFE PDF", "download_pdf", () => downloadArtifact(row, "pdf")));
+    }
+    if (actions.includes("download_cce")) {
+      cell.appendChild(iconBtn("Baixar XML CCe", "download_cce", () => downloadArtifact(row, "cce")));
     }
     cell.appendChild(iconBtn("Detalhe", "poll", () => openDetail(row)));
     return tr;
@@ -399,22 +405,31 @@
   async function downloadArtifact(row, kind) {
     const api = A();
     if (!row || !row.id) return;
-    const path =
-      kind === "pdf"
-        ? `/nfe/invoices/${row.id}/artifacts/pdf`
-        : `/nfe/invoices/${row.id}/artifacts/xml`;
+    let path = `/nfe/invoices/${row.id}/artifacts/xml`;
+    let filenameSuffix = "xml";
+    let toastOk = "XML baixado";
+    if (kind === "pdf") {
+      path = `/nfe/invoices/${row.id}/artifacts/pdf`;
+      filenameSuffix = "pdf";
+      toastOk = "DANFE baixado";
+    } else if (kind === "cce") {
+      path = `/nfe/invoices/${row.id}/artifacts/cce`;
+      filenameSuffix = "xml";
+      toastOk = "XML CCe baixado";
+    }
     try {
       const blob = await api.api(path, { method: "GET", blob: true });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       const key = (row.access_key || row.id || "nfe").toString().slice(0, 44);
-      a.download = kind === "pdf" ? `danfe-${key}.pdf` : `nfe-${key}.xml`;
+      const prefix = kind === "pdf" ? "danfe" : kind === "cce" ? "cce" : "nfe";
+      a.download = `${prefix}-${key}.${filenameSuffix}`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      api.toast(kind === "pdf" ? "DANFE baixado" : "XML baixado", "success");
+      api.toast(toastOk, "success");
     } catch (err) {
       api.toast(api.handleApiError(err.body).message, "danger");
     }
@@ -466,6 +481,7 @@
 
   async function openCreateModal() {
     const api = A();
+    if (!gate) await loadGate();
     if (gate && !gate.can_create) {
       api.toast("Pré-condições NF-e incompletas. Veja o gate acima.", "danger");
       return;
@@ -476,6 +492,13 @@
     if (form) form.reset();
     document.getElementById("nfe-status-line").textContent = "";
     document.getElementById("nfe-validate-out").textContent = "";
+    const seriesHint = document.getElementById("nfe-modal-series-hint");
+    if (seriesHint && gate) {
+      const next = gate.next_number_estimated != null ? gate.next_number_estimated : "—";
+      seriesHint.innerHTML =
+        `Série <b>${escapeHtml(gate.series || 1)}</b> · próximo estimado <b>${escapeHtml(next)}</b> ` +
+        `(amb ${escapeHtml(gate.tp_amb || "2")}) · número definitivo só na transmissão.`;
+    }
     await loadLookups();
     renderItemRows();
     if (caches.providers[0]) {
@@ -635,6 +658,35 @@
     }
   }
 
+  function openCce(row) {
+    const form = document.getElementById("form-nfe-cce");
+    if (form) {
+      form.dataset.id = row.id;
+      form.x_correcao.value = "";
+    }
+    document.getElementById("nfe-cce-summary").textContent =
+      `NF-e ${row.series}/${row.number || "—"} · ${formatKey(row.access_key)}`;
+    A().openModal("modal-nfe-cce");
+  }
+
+  async function submitCce(ev) {
+    ev.preventDefault();
+    const api = A();
+    const form = document.getElementById("form-nfe-cce");
+    const id = form.dataset.id;
+    try {
+      await api.api(`/nfe/invoices/${id}/cce`, {
+        method: "POST",
+        body: { x_correcao: form.x_correcao.value },
+      });
+      api.toast("CCe registrada", "success");
+      api.closeModal("modal-nfe-cce");
+      loadList();
+    } catch (err) {
+      api.toast(api.handleApiError(err.body).message, "danger");
+    }
+  }
+
   async function openDetail(row) {
     const api = A();
     const body = document.getElementById("nfe-detail-body");
@@ -672,7 +724,13 @@
       <div class="hint">Status: <b>${escapeHtml(detail.status)}</b> · v${escapeHtml(detail.version)}</div>
       <div class="hint">Série/nº: ${escapeHtml(detail.series)}/${escapeHtml(detail.number ?? "—")}</div>
       <div class="hint">Emissão: ${escapeHtml(detail.issue_date || "—")}</div>
-      <div class="hint">Chave: <code>${escapeHtml(detail.access_key || "—")}</code></div>
+      <div class="hint">Chave: <code id="nfe-detail-access-key">${escapeHtml(detail.access_key || "—")}</code>
+        ${
+          detail.access_key
+            ? ' <button type="button" class="btn btn-ghost" id="btn-nfe-copy-key" style="padding:2px 8px;font-size:12px">Copiar</button>'
+            : ""
+        }
+      </div>
       <div class="hint">Protocolo: ${escapeHtml(detail.protocol || "—")}</div>
       <div class="hint">Total: ${escapeHtml(api.formatBrlFromCents(detail.total_cents))}</div>
       <div class="hint">Rejeição: ${escapeHtml(detail.rejection_code || "")} ${escapeHtml(
@@ -680,7 +738,7 @@
     )}</div>
       <div class="hint">Artefatos: XML=${arts.xml_authorized ? "sim" : "não"} · DANFE=${
       arts.danfe_pdf ? "sim" : "não"
-    }</div>
+    } · CCe=${arts.xml_cce ? "sim" : "não"}</div>
       <div class="hint">allowed_actions: ${escapeHtml(actions)}</div>
       <div class="hint">correlation: ${escapeHtml(detail.correlation_id || "")}</div>
       <div class="row-actions" id="nfe-detail-downloads" style="margin-top:12px;gap:8px;display:flex;flex-wrap:wrap"></div>
@@ -707,6 +765,36 @@
         b.addEventListener("click", () => downloadArtifact(detail, "pdf"));
         host.appendChild(b);
       }
+      if (acts.includes("cce")) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "btn btn-ghost";
+        b.textContent = "Carta de Correção";
+        b.addEventListener("click", () => {
+          api.closeModal("modal-nfe-detail");
+          openCce(detail);
+        });
+        host.appendChild(b);
+      }
+      if (acts.includes("download_cce")) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "btn btn-ghost";
+        b.textContent = "Baixar XML CCe";
+        b.addEventListener("click", () => downloadArtifact(detail, "cce"));
+        host.appendChild(b);
+      }
+    }
+    const copyBtn = document.getElementById("btn-nfe-copy-key");
+    if (copyBtn && detail.access_key) {
+      copyBtn.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(detail.access_key);
+          api.toast("Chave copiada", "success");
+        } catch (_e) {
+          api.toast("Não foi possível copiar", "danger");
+        }
+      });
     }
   }
 
@@ -782,6 +870,8 @@
     if (formConfirm) formConfirm.addEventListener("submit", onEmitConfirm);
     const cancelForm = document.getElementById("form-nfe-cancel");
     if (cancelForm) cancelForm.addEventListener("submit", submitCancel);
+    const cceForm = document.getElementById("form-nfe-cce");
+    if (cceForm) cceForm.addEventListener("submit", submitCce);
     const prodForm = document.getElementById("form-nfe-product");
     if (prodForm) prodForm.addEventListener("submit", onCreateProduct);
     const price = document.getElementById("nfe-product-price");

@@ -3,6 +3,7 @@ from django.shortcuts import get_object_or_404
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.throttling import UserRateThrottle
 from rest_framework.views import APIView
 
 from apps.accounts.permissions import IsTenantWriter
@@ -24,6 +25,7 @@ from apps.nfe.listing import filter_invoice_queryset, sanitize_event_metadata
 from apps.nfe.models import NfeArtifact, NfeInvoice, NfeInvoiceEvent, NfeProduct
 from apps.nfe.serializers import (
     NfeCancelSerializer,
+    NfeCceSerializer,
     NfeCloneSerializer,
     NfeConfigSeriesSerializer,
     NfeDraftCreateSerializer,
@@ -38,6 +40,7 @@ from apps.nfe.services import (
     create_draft,
     discard_draft,
     emit_invoice,
+    issue_carta_correcao,
     nfe_feature_enabled,
     replace_items,
     validate_invoice,
@@ -47,6 +50,12 @@ from shared.pagination import HubPageNumberPagination
 
 def _err(exc, http=400):
     return Response({"detail": str(exc), "code": getattr(exc, "code", "nfe_error")}, status=http)
+
+
+class NfeWriteThrottle(UserRateThrottle):
+    """Limita create/emit/cancel/clone NF-e (paridade SEC-P1-02 NFS-e)."""
+
+    scope = "nfe_write"
 
 
 class NfeGateView(APIView):
@@ -149,6 +158,11 @@ class NfeProductViewSet(viewsets.ModelViewSet):
 
 class NfeInvoiceViewSet(viewsets.ViewSet):
     permission_classes = [IsTenantWriter]
+
+    def get_throttles(self):
+        if self.action in {"create", "emit", "cancel", "clone", "cce"}:
+            return [NfeWriteThrottle()]
+        return []
 
     def list(self, request):
         qs = (
@@ -309,6 +323,24 @@ class NfeInvoiceViewSet(viewsets.ViewSet):
             return _err(exc, 400)
         return Response(NfeInvoiceSerializer(inv).data)
 
+    @action(detail=True, methods=["post"], url_path="cce")
+    def cce(self, request, pk=None):
+        inv = get_object_or_404(NfeInvoice, pk=pk, tenant=request.tenant)
+        ser = NfeCceSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        try:
+            issue_carta_correcao(
+                inv,
+                x_correcao=ser.validated_data["x_correcao"],
+                actor=getattr(request.user, "email", "api") or "api",
+            )
+            inv.refresh_from_db()
+        except NfeDisabledError as exc:
+            return _err(exc, 403)
+        except (NfeInvalidTransitionError, NfeValidationError) as exc:
+            return _err(exc, 400)
+        return Response(NfeInvoiceSerializer(inv).data)
+
     @action(detail=True, methods=["post"], url_path="discard")
     def discard(self, request, pk=None):
         inv = get_object_or_404(NfeInvoice, pk=pk, tenant=request.tenant)
@@ -387,6 +419,30 @@ class NfeInvoiceViewSet(viewsets.ViewSet):
         data = read_artifact_bytes(art)
         filename = f"danfe-{inv.access_key or inv.id}.pdf"
         resp = HttpResponse(data, content_type="application/pdf")
+        resp["Content-Disposition"] = f'attachment; filename="{filename}"'
+        resp["X-Checksum-SHA256"] = art.checksum_sha256
+        return resp
+
+    @action(detail=True, methods=["get"], url_path="artifacts/cce")
+    def artifacts_cce(self, request, pk=None):
+        inv = get_object_or_404(NfeInvoice, pk=pk, tenant=request.tenant)
+        if inv.status not in {
+            NfeInvoice.Status.AUTHORIZED,
+            NfeInvoice.Status.CANCELLED,
+        }:
+            return Response(
+                {"detail": "CCe disponível só para autorizada/cancelada", "code": "nfe_artifact"},
+                status=404,
+            )
+        art = get_artifact(inv, NfeArtifact.Kind.XML_CCE)
+        if art is None:
+            return Response(
+                {"detail": "XML CCe ainda não disponível", "code": "nfe_artifact_missing"},
+                status=404,
+            )
+        data = read_artifact_bytes(art)
+        filename = f"cce-{inv.access_key or inv.id}.xml"
+        resp = HttpResponse(data, content_type="application/xml; charset=utf-8")
         resp["Content-Disposition"] = f'attachment; filename="{filename}"'
         resp["X-Checksum-SHA256"] = art.checksum_sha256
         return resp

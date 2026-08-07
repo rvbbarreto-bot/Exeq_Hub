@@ -157,37 +157,75 @@ def _notify_nf_authorized(msg: OutboxMessage) -> None:
     )
 
 
-def _notify_nfe_lifecycle(msg: OutboxMessage) -> None:
-    """
-    RF-70 NF-e (modelo 55): notify_phone com texto.
-    RF-72 mídia tomador só quando canal ligar a nfe.authorized (pós-MVP).
-    """
-    phone = _notify_phone(msg.tenant)
-    if not phone:
-        return
-    from apps.channel.services import enqueue_notification
-    from apps.nfe.models import NfeInvoice
-
-    inv = NfeInvoice.objects.filter(tenant=msg.tenant, id=msg.aggregate_id).first()
+def _nfe_lifecycle_body(msg: OutboxMessage, inv) -> str:
     payload = msg.payload or {}
     key = (payload.get("access_key") or (inv.access_key if inv else "") or "")[:44]
     series = payload.get("series") if inv is None else inv.series
     number = payload.get("number") if inv is None else inv.number
     ref = f"{series}/{number}" if number is not None else (key or str(msg.aggregate_id)[:8])
     if msg.event_type == "nfe.authorized":
-        body = f"NF-e autorizada. {ref}" + (f" chave {key[:10]}…" if len(key) >= 10 else "")
-    elif msg.event_type == "nfe.rejected":
+        return f"NF-e autorizada. {ref}" + (
+            f" chave {key[:10]}…" if len(key) >= 10 else ""
+        )
+    if msg.event_type == "nfe.rejected":
         code = payload.get("rejection_code") or (inv.rejection_code if inv else "") or "—"
-        body = f"NF-e rejeitada. {ref} cStat={code}"
-    elif msg.event_type == "nfe.cancelled":
-        body = f"NF-e cancelada. {ref}" + (f" chave {key[:10]}…" if len(key) >= 10 else "")
-    else:
-        body = f"NF-e evento {msg.event_type}: {ref}"
+        return f"NF-e rejeitada. {ref} cStat={code}"
+    if msg.event_type == "nfe.cancelled":
+        return f"NF-e cancelada. {ref}" + (
+            f" chave {key[:10]}…" if len(key) >= 10 else ""
+        )
+    return f"NF-e evento {msg.event_type}: {ref}"
+
+
+def _notify_nfe_lifecycle(msg: OutboxMessage) -> None:
+    """RF-70 texto; RF-72 mídia (DANFE/XML) só se sessão de canal ligar a nfe.authorized."""
+    from apps.channel.models import ChannelSession
+    from apps.channel.services import deliver_nfe_artifacts, enqueue_notification
+    from apps.nfe.models import NfeInvoice
+
+    inv = NfeInvoice.objects.filter(tenant=msg.tenant, id=msg.aggregate_id).first()
+    body = _nfe_lifecycle_body(msg, inv)[:1000]
+
+    session = None
+    if inv is not None and msg.event_type == "nfe.authorized":
+        session = (
+            ChannelSession.objects.filter(
+                tenant=msg.tenant,
+                nfe_invoice=inv,
+                status=ChannelSession.Status.EMITTED,
+            )
+            .order_by("-last_message_at")
+            .first()
+        )
+
+    if session is not None and inv is not None:
+        # RF-72: entrega ao solicitante; falha de mídia → retry outbox.
+        deliver_nfe_artifacts(
+            tenant=msg.tenant,
+            nfe_invoice=inv,
+            phone_e164=session.phone_e164,
+            session=session,
+        )
+        ops_phone = _notify_phone(msg.tenant)
+        if ops_phone and ops_phone != session.phone_e164:
+            enqueue_notification(
+                tenant=msg.tenant,
+                phone_e164=ops_phone,
+                event_type=msg.event_type,
+                message_body=body,
+                nfe_invoice=inv,
+            )
+        return
+
+    phone = _notify_phone(msg.tenant)
+    if not phone:
+        return
     enqueue_notification(
         tenant=msg.tenant,
         phone_e164=phone,
         event_type=msg.event_type,
-        message_body=body[:1000],
+        message_body=body,
+        nfe_invoice=inv,
     )
 
 

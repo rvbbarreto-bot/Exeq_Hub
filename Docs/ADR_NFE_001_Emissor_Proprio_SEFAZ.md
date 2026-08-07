@@ -144,6 +144,10 @@ Regras:
 | **U7** | Outbox RF-70 `nfe.authorized` / `.rejected` / `.cancelled` | `Docs/Exeq_Hub_NFe_U7_Outbox.md` |
 | **U8** | Filtros lista T1 + timeline `…/events` | `Docs/Exeq_Hub_NFe_U8_Lista_Timeline.md` |
 | **U9** | NumberSeries concorrência (DoD #4) + checklist G-EMIT ops | `Docs/Exeq_Hub_NFe_U9_NumberSeries_G_EMIT.md` |
+| **U10–U12** | OpenAPI NF-e + imutabilidade + UI stub MVP | `Docs/Exeq_Hub_NFe_U10_U12_Factory.md` |
+| **U13** | EX-SEC multi-tenant + throttle `nfe_write` | `Docs/Exeq_Hub_NFe_U13_EX_SEC.md` |
+| **RF-72** | Mídia WhatsApp DANFE/XML em `nfe.authorized` | `Docs/Exeq_Hub_NFe_RF72_Midia_WhatsApp.md` |
+| **U14** | CCe 110110 (U5-CCE-01…04) | `Docs/Exeq_Hub_NFe_U14_CCe.md` |
 
 UI e domínio **em paralelo** a partir de U0/U1 (impacto §7).
 

@@ -18,6 +18,8 @@ REQUIRED_PATHS = (
     "/certificates/upload",
     "/openapi.json",
     "/nf-issue/",
+    "/nfe/gate/",
+    "/nfe/invoices/",
 )
 
 
@@ -61,6 +63,7 @@ def test_openapi_fallback_when_yaml_fails(monkeypatch):
     spec = load_openapi_dict()
     assert spec["info"]["version"] == "4.1.0-draft"
     assert "/electronic-proxies/" in spec["paths"]
+    assert "/nfe/gate/" in spec["paths"]
     load_openapi_dict.cache_clear()
 
 

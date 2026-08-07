@@ -37,6 +37,55 @@ def http_mode_requires_ie() -> bool:
     return (getattr(settings, "NFE_HTTP_MODE", "stub") or "stub").lower() == "http"
 
 
+# Pós-submit fiscal: conteúdo + snapshot de negócio imutáveis (U11 / DoD)
+_CONTENT_LOCKED_STATUSES = frozenset(
+    {
+        NfeInvoice.Status.QUEUED,
+        NfeInvoice.Status.SUBMITTING,
+        NfeInvoice.Status.POLLING,
+        NfeInvoice.Status.AUTHORIZED,
+        NfeInvoice.Status.CANCEL_REQUESTED,
+        NfeInvoice.Status.CANCELLED,
+    }
+)
+
+_SNAPSHOT_FROZEN_STATUSES = frozenset(
+    {
+        NfeInvoice.Status.AUTHORIZED,
+        NfeInvoice.Status.CANCELLED,
+    }
+)
+
+
+def is_content_locked(invoice: NfeInvoice) -> bool:
+    """True se itens/natureza não podem mais ser reescritos pelo operador."""
+    if invoice.status in _CONTENT_LOCKED_STATUSES:
+        return True
+    if invoice.status in {NfeInvoice.Status.REJECTED, NfeInvoice.Status.FAILED}:
+        return bool(invoice.number_consumed)
+    return False
+
+
+def is_snapshot_frozen(invoice: NfeInvoice) -> bool:
+    """Snapshot fiscal congelado (authorized/cancelled) — RF imutabilidade."""
+    return invoice.status in _SNAPSHOT_FROZEN_STATUSES and bool(invoice.fiscal_snapshot)
+
+
+def require_content_mutable(invoice: NfeInvoice) -> None:
+    if is_content_locked(invoice):
+        raise NfeInvalidTransitionError(
+            f"NF-e imutável em status={invoice.status}"
+            + (" (número consumido — use clone)" if invoice.number_consumed else "")
+        )
+
+
+def require_not_snapshot_frozen(invoice: NfeInvoice, *, field: str = "fiscal_snapshot") -> None:
+    if is_snapshot_frozen(invoice):
+        raise NfeInvalidTransitionError(
+            f"não é permitido alterar {field} em NF-e {invoice.status}"
+        )
+
+
 def _record_event(
     invoice: NfeInvoice,
     *,
@@ -56,7 +105,7 @@ def _record_event(
 
 
 def allowed_actions(invoice: NfeInvoice) -> list[str]:
-    from apps.nfe.artifacts import has_danfe_pdf, has_xml_authorized
+    from apps.nfe.artifacts import has_danfe_pdf, has_xml_authorized, has_xml_cce
 
     s = invoice.status
     actions: list[str] = ["refresh"]
@@ -68,11 +117,14 @@ def allowed_actions(invoice: NfeInvoice) -> list[str]:
         actions.append("clone")
     if s == NfeInvoice.Status.AUTHORIZED:
         actions.append("cancel")
+        actions.append("cce")
     if s in {NfeInvoice.Status.AUTHORIZED, NfeInvoice.Status.CANCELLED}:
         if has_xml_authorized(invoice):
             actions.append("download_xml")
         if has_danfe_pdf(invoice):
             actions.append("download_pdf")
+        if has_xml_cce(invoice):
+            actions.append("download_cce")
     return actions
 
 
@@ -216,6 +268,7 @@ def replace_items(
     expected_version: int | None = None,
 ) -> NfeInvoice:
     require_nfe_enabled()
+    require_content_mutable(invoice)
     if invoice.status != NfeInvoice.Status.DRAFT and not (
         invoice.status in {NfeInvoice.Status.REJECTED, NfeInvoice.Status.FAILED}
         and not invoice.number_consumed
@@ -286,8 +339,48 @@ def replace_items(
     return invoice
 
 
+def apply_operator_header_update(
+    invoice: NfeInvoice,
+    *,
+    nature_operation: str | None = None,
+    freight_cents: int | None = None,
+    discount_cents: int | None = None,
+    payment_method: str | None = None,
+    payment_amount_cents: int | None = None,
+    expected_version: int | None = None,
+) -> NfeInvoice:
+    """Atualiza cabeçalho mutável; bloqueado se conteúdo locked / snapshot frozen."""
+    require_nfe_enabled()
+    require_content_mutable(invoice)
+    require_not_snapshot_frozen(invoice, field="header")
+    if expected_version is not None and invoice.version != expected_version:
+        raise NfeVersionConflictError(f"versão esperada {expected_version}, atual {invoice.version}")
+    updates: list[str] = []
+    if nature_operation is not None:
+        invoice.nature_operation = nature_operation[:60]
+        updates.append("nature_operation")
+    if freight_cents is not None:
+        invoice.freight_cents = int(freight_cents)
+        updates.append("freight_cents")
+    if discount_cents is not None:
+        invoice.discount_cents = int(discount_cents)
+        updates.append("discount_cents")
+    if payment_method is not None:
+        invoice.payment_method = str(payment_method)[:2]
+        updates.append("payment_method")
+    if payment_amount_cents is not None:
+        invoice.payment_amount_cents = int(payment_amount_cents)
+        updates.append("payment_amount_cents")
+    if updates:
+        invoice.version += 1
+        updates.extend(["version", "updated_at"])
+        invoice.save(update_fields=updates)
+    return invoice
+
+
 def validate_invoice(invoice: NfeInvoice) -> dict[str, Any]:
     require_nfe_enabled()
+    require_content_mutable(invoice)
     result = build_validation(invoice, require_ie=http_mode_requires_ie())
     for row in result["items_taxes"]:
         NfeInvoiceItem.objects.filter(
@@ -586,6 +679,105 @@ def cancel_invoice(
         from apps.nfe.outbox import publish_after_terminal_status
 
         publish_after_terminal_status(inv)
+    return inv
+
+
+@transaction.atomic
+def issue_carta_correcao(
+    invoice: NfeInvoice,
+    *,
+    x_correcao: str,
+    actor: str = "api",
+) -> NfeInvoice:
+    """CCe 110110 — NF-e permanece authorized; grava evento + artefato xml_cce."""
+    require_nfe_enabled()
+    inv = NfeInvoice.objects.select_for_update().get(pk=invoice.pk)
+    if inv.status != NfeInvoice.Status.AUTHORIZED:
+        raise NfeInvalidTransitionError("CCe só em NF-e autorizada")
+    if not inv.access_key or len("".join(c for c in inv.access_key if c.isdigit())) != 44:
+        raise NfeValidationError("NF-e sem chave de acesso válida")
+
+    corr = (x_correcao or "").strip()
+    if not (15 <= len(corr) <= 1000):
+        raise NfeValidationError("xCorrecao deve ter 15–1000 caracteres")
+
+    flags = dict(inv.last_validation or {})
+    n_seq = int(flags.get("cce_n_seq") or 0) + 1
+    if n_seq > 20:
+        raise NfeValidationError("limite de 20 CCe por NF-e atingido")
+
+    cnpj = "".join(ch for ch in str(getattr(inv.provider, "document", "") or "") if ch.isdigit())
+    uf = getattr(settings, "NFE_PIVOT_UF", "SP")
+    if isinstance(inv.fiscal_snapshot, dict):
+        addr = (inv.fiscal_snapshot.get("emitente") or {}).get("address") or {}
+        if addr.get("uf"):
+            uf = str(addr["uf"]).upper()
+        emit_cnpj = (inv.fiscal_snapshot.get("emitente") or {}).get("cnpj")
+        if emit_cnpj:
+            cnpj = "".join(ch for ch in str(emit_cnpj) if ch.isdigit())
+
+    sefaz = get_nfe_provider()
+    result = sefaz.carta_correcao(
+        access_key=inv.access_key,
+        x_correcao=corr,
+        context={
+            "tenant": inv.tenant,
+            "invoice_id": str(inv.id),
+            "protocol": inv.protocol,
+            "cnpj": cnpj,
+            "tp_amb": inv.tp_amb,
+            "uf": uf,
+            "n_seq_evento": n_seq,
+        },
+    )
+    prev = inv.status
+    raw_meta = result.raw if isinstance(result.raw, dict) else {}
+    accepted = result.status == "accepted"
+    meta = {
+        "provider": sefaz.kind,
+        "raw": raw_meta,
+        "tpEvento": "110110",
+        "nSeqEvento": n_seq,
+        "xCorrecao": corr[:200],
+        "cce_status": result.status,
+    }
+    if accepted:
+        flags["cce_n_seq"] = n_seq
+        flags["cce_last_protocol"] = result.protocol or ""
+        inv.last_validation = flags
+        inv.version += 1
+        inv.save(update_fields=["last_validation", "version", "updated_at"])
+        from apps.nfe.artifacts import ensure_cce_xml
+
+        signed = getattr(result, "signed_xml", None)
+        ensure_cce_xml(
+            inv,
+            xml_bytes=signed if isinstance(signed, (bytes, bytearray)) else None,
+            provider_raw=raw_meta,
+            n_seq=n_seq,
+        )
+        _record_event(
+            inv,
+            from_status=prev,
+            to_status=inv.status,
+            actor=actor,
+            metadata=meta,
+        )
+    else:
+        inv.rejection_code = result.rejection_code or inv.rejection_code
+        inv.rejection_message = result.rejection_message or "CCe não aceita"
+        inv.version += 1
+        inv.save(update_fields=["rejection_code", "rejection_message", "version", "updated_at"])
+        _record_event(
+            inv,
+            from_status=prev,
+            to_status=inv.status,
+            actor=actor,
+            metadata={**meta, "cStat": result.rejection_code},
+        )
+        raise NfeValidationError(
+            result.rejection_message or "CCe não aceita pela SEFAZ/stub"
+        )
     return inv
 
 

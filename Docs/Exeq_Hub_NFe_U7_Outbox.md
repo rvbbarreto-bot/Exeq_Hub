@@ -21,7 +21,7 @@ Payload `schema_version=1`: ids, série/nº, chave, protocolo, cStat, totais.
 
 - `apps/ops/dispatcher.py` → `_notify_nfe_lifecycle`
 - Ops `tenant.settings.notify_phone` → WhatsApp texto
-- RF-72 mídia tomador (DANFE/XML) **fora** deste ciclo
+- RF-72 mídia tomador (DANFE/XML) se sessão canal ligar — `Exeq_Hub_NFe_RF72_Midia_WhatsApp.md`
 
 ## Testes
 

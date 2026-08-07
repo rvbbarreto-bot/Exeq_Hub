@@ -1,7 +1,6 @@
-"""Carta de Correção Eletrônica (CCe) — evento 110110 (U5 backlog / scaffold).
+"""Carta de Correção Eletrônica (CCe) — evento 110110 (U5-CCE).
 
-Fora do MVP de produção: só montagem XML sem POST SEFAZ (ADR: CCe pós-MVP).
-Quando G-EMIT-NFE + backlog liberar: assinar like 110111 e NFeRecepcaoEvento4.
+Monta envEvento; assinatura + POST em HttpNfeProvider.carta_correcao.
 """
 
 from __future__ import annotations
@@ -19,6 +18,8 @@ NFE_NS = "http://www.portalfiscal.inf.br/nfe"
 TP_EVENTO_CCE = "110110"
 VER_EVENTO = "1.00"
 TZ_BR = ZoneInfo("America/Sao_Paulo")
+# cStat event registered (mesmos códigos do cancel em muitos retornos).
+EVENTO_CCE_OK = frozenset({"135", "136"})
 
 
 class NfeCceBuildError(ValueError):
@@ -58,6 +59,9 @@ def build_cce_env_evento_xml(
         raise NfeCceBuildError("CNPJ emitente inválido")
     if not (15 <= len(corr) <= 1000):
         raise NfeCceBuildError("xCorrecao deve ter entre 15 e 1000 caracteres")
+    seq = max(1, int(n_seq or 1))
+    if seq > 20:
+        raise NfeCceBuildError("nSeqEvento CCe máximo 20")
 
     orgao = (c_orgao or ch[:2] or UF_IBGE_CODE["SP"]).strip()
     if not orgao.isdigit():
@@ -68,7 +72,7 @@ def build_cce_env_evento_xml(
         now = now.replace(tzinfo=TZ_BR)
     dh = now.isoformat(timespec="seconds")
 
-    inf_id = build_inf_evento_id(access_key=ch, tp_evento=TP_EVENTO_CCE, n_seq=n_seq)
+    inf_id = build_inf_evento_id(access_key=ch, tp_evento=TP_EVENTO_CCE, n_seq=seq)
     lote = str(int(id_lote) if str(id_lote).isdigit() else 1).zfill(15)[:15]
 
     env = etree.Element(f"{{{NFE_NS}}}envEvento", nsmap={None: NFE_NS}, versao=VER_EVENTO)
@@ -82,7 +86,7 @@ def build_cce_env_evento_xml(
     _txt(inf, "chNFe", ch)
     _txt(inf, "dhEvento", dh)
     _txt(inf, "tpEvento", TP_EVENTO_CCE)
-    _txt(inf, "nSeqEvento", str(max(1, int(n_seq or 1))))
+    _txt(inf, "nSeqEvento", str(seq))
     _txt(inf, "verEvento", VER_EVENTO)
 
     det = etree.SubElement(inf, f"{{{NFE_NS}}}detEvento", versao=VER_EVENTO)

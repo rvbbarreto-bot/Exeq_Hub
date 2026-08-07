@@ -103,11 +103,12 @@ class NfeInvoiceSerializer(serializers.ModelSerializer):
         return allowed_actions(obj)
 
     def get_artifacts(self, obj: NfeInvoice) -> dict:
-        from apps.nfe.artifacts import has_danfe_pdf, has_xml_authorized
+        from apps.nfe.artifacts import has_danfe_pdf, has_xml_authorized, has_xml_cce
 
         return {
             "xml_authorized": has_xml_authorized(obj),
             "danfe_pdf": has_danfe_pdf(obj),
+            "xml_cce": has_xml_cce(obj),
         }
 
 
@@ -133,6 +134,10 @@ class NfeEmitSerializer(serializers.Serializer):
 
 class NfeCancelSerializer(serializers.Serializer):
     justificativa = serializers.CharField(min_length=15, max_length=255)
+
+
+class NfeCceSerializer(serializers.Serializer):
+    x_correcao = serializers.CharField(min_length=15, max_length=1000)
 
 
 class NfeConfigSeriesSerializer(serializers.Serializer):

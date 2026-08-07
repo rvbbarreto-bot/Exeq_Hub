@@ -12,7 +12,7 @@
 |------|---------|------|
 | Interestadual simples | CFOP 5xxx/6xxx (RF-05); alíquota ICMS CST00 7%/12% default; auto-CFOP no draft | ST, FCP full, DIFAL UI |
 | RTC hooks | `taxes.rtc` reservado `ibs`/`cbs`/`is` nulos | Cálculo norma RTC |
-| CCe | Build XML evento **110110** (scaffold) | POST SEFAZ, API cancel-like, UI |
+| CCe | Build XML evento **110110** | **U14 full** (API/UI/stub; HTTP real com ops) |
 
 ### API motor
 
@@ -20,16 +20,16 @@
 - `suggest_cfop` / `validate_cfop_against_ufs` / `default_icms_interestadual_rate_bp`
 - `replace_items` escolhe `cfop_internal` vs `cfop_interstate` do produto
 
-### CCe backlog (próximos tickets)
+### CCe backlog (U5)
 
-| ID | Título | Depende |
-|----|--------|---------|
-| U5-CCE-01 | Assinar + `HttpNfeProvider.carta_correcao` | G-EMIT-NFE |
-| U5-CCE-02 | Persist `xml_cce` artifact kind | U5-CCE-01 |
-| U5-CCE-03 | API `POST …/cce` + allowed_actions | U5-CCE-02 |
-| U5-CCE-04 | UI Hub | U5-CCE-03 |
+| ID | Título | Status |
+|----|--------|--------|
+| U5-CCE-01 | Assinar + `HttpNfeProvider.carta_correcao` | **done** → `Exeq_Hub_NFe_U14_CCe.md` |
+| U5-CCE-02 | Persist `xml_cce` artifact kind | **done** |
+| U5-CCE-03 | API `POST …/cce` + allowed_actions | **done** |
+| U5-CCE-04 | UI Hub | **done** |
 
-Scaffold: `integrations/sefaz_nfe/evento_cce.py`.
+Scaffold original: `integrations/sefaz_nfe/evento_cce.py` (agora full path stub+HTTP).
 
 ---
 
