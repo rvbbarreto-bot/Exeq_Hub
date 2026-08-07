@@ -139,7 +139,8 @@ Regras:
 | **U2** | Domain: series, draft/invoice, snapshot, FSM, tax min SN+CST00 | BE |
 | **U3** | SEFAZ **SP** + sign + artifacts DANFE + cancel | G-SPIKE → G-EMIT-NFE |
 | **U4** | Multi-UF (10) + matriz QA | G-MULTI-10 |
-| **U5** | Profundidade fiscal + hooks RTC + ops | Contínuo |
+| **U5** | Interestadual/CFOP + RTC hooks + CCe scaffold + G-EMIT SP runbook | `Docs/Exeq_Hub_NFe_U5_Interestadual_CCe_G_EMIT.md` (G-EMIT-NFE ainda **ops**/homolog) |
+| **U6** | Gate T0 + `GET/PUT /nfe/config/` + discard/clone | `Docs/Exeq_Hub_NFe_U6_Config_Gate.md` |
 
 UI e domínio **em paralelo** a partir de U0/U1 (impacto §7).
 

@@ -146,11 +146,65 @@
       gate.next_number_estimated != null
         ? `série ${escapeHtml(gate.series)} · próximo estimado ${escapeHtml(gate.next_number_estimated)}`
         : "",
+      gate.can_create ? "pode criar: sim" : "pode criar: não",
     ]
       .filter(Boolean)
       .join(" · ");
-    box.innerHTML = `<div style="margin-bottom:8px">${lines}</div><div class="hint">${meta}</div>`;
+    const providerId = gate.provider_id || (caches.providers[0] && caches.providers[0].id) || "";
+    const seriesForm = `
+      <div class="form-grid" style="margin-top:12px;max-width:520px">
+        <div class="field">
+          <label>Série</label>
+          <input id="nfe-cfg-series" type="number" min="1" value="${escapeHtml(gate.series || 1)}">
+        </div>
+        <div class="field">
+          <label>Ambiente</label>
+          <select id="nfe-cfg-tp-amb">
+            <option value="2" ${(gate.tp_amb || "2") === "2" ? "selected" : ""}>Homologação (2)</option>
+            <option value="1" ${gate.tp_amb === "1" ? "selected" : ""}>Produção (1)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Próximo nº (estimado)</label>
+          <input id="nfe-cfg-next" type="number" min="1" value="${escapeHtml(gate.next_number_estimated || 1)}">
+        </div>
+        <div class="field" style="align-self:end">
+          <button type="button" class="btn btn-ghost" id="btn-nfe-save-series">Salvar série</button>
+        </div>
+      </div>
+      <input type="hidden" id="nfe-cfg-provider" value="${escapeHtml(providerId)}">
+      <div class="hint" style="margin-top:8px">T6 — contador por emitente/ambiente. Em stub a série auto-cria no emit; em HTTP cadastre antes.</div>
+    `;
+    box.innerHTML = `<div style="margin-bottom:8px">${lines}</div><div class="hint">${meta}</div>${seriesForm}`;
     if (btnNew) btnNew.disabled = !gate.can_create;
+    const saveBtn = document.getElementById("btn-nfe-save-series");
+    if (saveBtn) {
+      saveBtn.onclick = () => saveSeriesConfig();
+    }
+  }
+
+  async function saveSeriesConfig() {
+    const api = A();
+    const provider_id =
+      (document.getElementById("nfe-cfg-provider") || {}).value ||
+      (caches.providers[0] && caches.providers[0].id);
+    if (!provider_id) {
+      api.toast("Cadastre um prestador antes de configurar série.", "danger");
+      return;
+    }
+    const series = Number((document.getElementById("nfe-cfg-series") || {}).value || 1);
+    const tp_amb = String((document.getElementById("nfe-cfg-tp-amb") || {}).value || "2");
+    const next_number = Number((document.getElementById("nfe-cfg-next") || {}).value || 1);
+    try {
+      await api.api("/nfe/config/", {
+        method: "PUT",
+        body: { provider_id, series, tp_amb, next_number, is_active: true },
+      });
+      api.toast("Série NF-e salva", "success");
+      await loadGate();
+    } catch (err) {
+      api.toast(api.handleApiError(err.body).message, "danger");
+    }
   }
 
   async function loadList() {
@@ -270,6 +324,12 @@
     if (actions.includes("emit") || actions.includes("validate")) {
       cell.appendChild(iconBtn("Transmitir", "emit", () => openDraft(row)));
     }
+    if (actions.includes("clone")) {
+      cell.appendChild(iconBtn("Corrigir (clone)", "clone", () => cloneInvoice(row)));
+    }
+    if (actions.includes("discard")) {
+      cell.appendChild(iconBtn("Descartar rascunho", "discard", () => discardInvoice(row)));
+    }
     if (actions.includes("cancel")) {
       cell.appendChild(iconBtn("Cancelar", "cancel", () => openCancel(row)));
     }
@@ -283,6 +343,35 @@
     return tr;
   }
 
+  async function discardInvoice(row) {
+    const api = A();
+    if (!row || !row.id) return;
+    if (!confirm("Descartar este rascunho? Não pode ser desfeito.")) return;
+    try {
+      await api.api(`/nfe/invoices/${row.id}/discard`, { method: "POST", body: {} });
+      api.toast("Rascunho descartado", "success");
+      await loadList();
+    } catch (err) {
+      api.toast(api.handleApiError(err.body).message, "danger");
+    }
+  }
+
+  async function cloneInvoice(row) {
+    const api = A();
+    if (!row || !row.id) return;
+    try {
+      const clone = await api.api(`/nfe/invoices/${row.id}/clone`, {
+        method: "POST",
+        body: { idempotency_key: crypto.randomUUID() },
+      });
+      api.toast("Novo rascunho criado a partir da rejeitada", "success");
+      await loadList();
+      openDraft(clone);
+    } catch (err) {
+      api.toast(api.handleApiError(err.body).message, "danger");
+    }
+  }
+
   function iconBtn(title, kind, onClick) {
     const btn = document.createElement("button");
     btn.type = "button";
@@ -292,6 +381,10 @@
       emit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14M12 5l7 7-7 7"/></svg>',
       cancel:
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M8 12h8"/></svg>',
+      clone:
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="11" height="11" rx="1"/><path d="M5 15V5h10"/></svg>',
+      discard:
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M9 7V5h6v2M10 11v6M14 11v6M6 7l1 12h10l1-12"/></svg>',
       download_xml:
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 19h14"/><path d="M8 6h8" opacity=".35"/></svg>',
       download_pdf:

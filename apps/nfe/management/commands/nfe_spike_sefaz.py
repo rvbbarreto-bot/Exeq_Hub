@@ -210,15 +210,37 @@ class Command(BaseCommand):
         if mode == "stub":
             g_spike = False
 
+        from apps.nfe.artifacts import has_danfe_pdf, has_xml_authorized
+
+        art_xml = has_xml_authorized(inv) if inv.status == NfeInvoice.Status.AUTHORIZED else False
+        art_pdf = has_danfe_pdf(inv) if inv.status == NfeInvoice.Status.AUTHORIZED else False
+        # G-EMIT = HTTP authorized + artefatos (DoD)
+        g_emit = bool(
+            g_spike
+            and art_xml
+            and art_pdf
+            and (inv.access_key or "").startswith("35")  # SP pivot homolog lab
+        )
+
         evidence = {
-            "ticket": "I7",
-            "gate": "G-NFE-SPIKE",
+            "ticket": "I7+U5",
+            "gate": "G-NFE-SPIKE / G-EMIT-NFE",
             "g_spike_candidate": g_spike,
+            "g_emit_candidate": g_emit,
+            "artifacts": {
+                "xml_authorized": art_xml,
+                "danfe_pdf": art_pdf,
+            },
             "note": (
-                "Se g_spike_candidate=true, ops atualiza Docs/Exeq_Hub_NFe_U3_Tickets_I1_I8.md "
-                "e ADR com evidência de homolog (cStat 100)."
-                if g_spike
-                else "Lab stub/dry-run ou falha — G-SPIKE NÃO marcado automaticamente."
+                "g_emit_candidate=true → anexar evidence e marcar G-EMIT-NFE "
+                "(Docs/Exeq_Hub_NFe_U5_Interestadual_CCe_G_EMIT.md)."
+                if g_emit
+                else (
+                    "Se g_spike_candidate=true, ops marca G-SPIKE; "
+                    "G-EMIT exige XML+DANFE+chave SP (35)."
+                    if g_spike
+                    else "Lab stub/dry-run ou falha — gates NÃO marcados automaticamente."
+                )
             ),
             "tenant": slug,
             "cnpj": cnpj,
@@ -236,6 +258,7 @@ class Command(BaseCommand):
             "sefaz_raw_safe": last_raw,
             "events": sanitized_events,
             "nfe_enabled_prod_default": False,
+            "runbook": "Docs/Exeq_Hub_NFe_U5_Interestadual_CCe_G_EMIT.md",
         }
 
         out = Path(options["out"])
@@ -245,7 +268,13 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(f"status={inv.status} cStat={c_stat or '—'}"))
         self.stdout.write(f"invoice={inv.id} key={inv.access_key or '—'} prot={inv.protocol or '—'}")
         self.stdout.write(f"evidence={out.resolve()}")
-        if g_spike:
+        if g_emit:
+            self.stdout.write(
+                self.style.SUCCESS(
+                    "G-EMIT CANDIDATE: authorized + XML + DANFE (SP) — anexar evidence e marcar gate."
+                )
+            )
+        elif g_spike:
             self.stdout.write(
                 self.style.SUCCESS(
                     "G-SPIKE CANDIDATE: authorized em HTTP homolog — anexar evidence e marcar gate."

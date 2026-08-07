@@ -48,12 +48,15 @@ def test_spike_stub_no_network(tmp_path, tenant_a, provider_lab):
     data = json.loads(out.read_text(encoding="utf-8"))
     assert data["status"] == NfeInvoice.Status.AUTHORIZED
     assert data["g_spike_candidate"] is False
+    assert data.get("g_emit_candidate") is False
     assert data["mode"] == "stub"
     assert "password" not in json.dumps(data)
     assert data["nfe_enabled_prod_default"] is False
     inv = NfeInvoice.objects.get(id=data["invoice_id"])
     assert inv.status == NfeInvoice.Status.AUTHORIZED
     assert len(inv.access_key) == 44
+    # stub authorized grava artefatos; G-EMIT exige HTTP+SP
+    assert data["artifacts"]["xml_authorized"] is True
 
 
 @pytest.mark.django_db

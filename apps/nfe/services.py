@@ -64,6 +64,8 @@ def allowed_actions(invoice: NfeInvoice) -> list[str]:
         actions += ["edit", "validate", "emit", "discard"]
     if s in {NfeInvoice.Status.REJECTED, NfeInvoice.Status.FAILED} and not invoice.number_consumed:
         actions += ["edit", "validate", "emit"]
+    if s in {NfeInvoice.Status.REJECTED, NfeInvoice.Status.FAILED} and invoice.number_consumed:
+        actions.append("clone")
     if s == NfeInvoice.Status.AUTHORIZED:
         actions.append("cancel")
     if s in {NfeInvoice.Status.AUTHORIZED, NfeInvoice.Status.CANCELLED}:
@@ -72,6 +74,100 @@ def allowed_actions(invoice: NfeInvoice) -> list[str]:
         if has_danfe_pdf(invoice):
             actions.append("download_pdf")
     return actions
+
+
+@transaction.atomic
+def discard_draft(
+    invoice: NfeInvoice,
+    *,
+    actor: str = "api",
+) -> None:
+    """Remove rascunho puro (sem número consumido)."""
+    require_nfe_enabled()
+    if invoice.status != NfeInvoice.Status.DRAFT:
+        raise NfeInvalidTransitionError("discard só em draft")
+    if invoice.number_consumed or invoice.number is not None:
+        raise NfeInvalidTransitionError("draft com número — use clone/cancel se aplicável")
+    _record_event(
+        invoice,
+        from_status=invoice.status,
+        to_status="discarded",
+        actor=actor,
+        metadata={"reason": "operator_discard"},
+    )
+    invoice.delete()
+
+
+@transaction.atomic
+def clone_invoice(
+    source: NfeInvoice,
+    *,
+    idempotency_key: str,
+    actor: str = "api",
+) -> NfeInvoice:
+    """Novo draft a partir de rejected/failed com nNF consumido (sem reusar number)."""
+    require_nfe_enabled()
+    if source.status not in {NfeInvoice.Status.REJECTED, NfeInvoice.Status.FAILED}:
+        raise NfeInvalidTransitionError("clone só a partir de rejected/failed")
+    if not source.number_consumed:
+        raise NfeInvalidTransitionError("clone desnecessário — reabra a nota sem número consumido")
+    inv = create_draft(
+        tenant=source.tenant,
+        provider=source.provider,
+        customer=source.customer,
+        idempotency_key=idempotency_key,
+        nature_operation=source.nature_operation or "VENDA",
+        series=source.series or 1,
+        tp_amb=source.tp_amb,
+        ind_ie_dest=source.ind_ie_dest or "9",
+        issue_date=timezone.localdate(),
+        actor=actor,
+    )
+    if inv.id != source.id and not inv.items.exists():
+        source_items = list(source.items.order_by("line_number"))
+        if source_items:
+            payload = []
+            for it in source_items:
+                row: dict[str, Any] = {
+                    "code": it.code,
+                    "description": it.description,
+                    "ncm": it.ncm,
+                    "cfop": it.cfop,
+                    "unit": it.unit,
+                    "quantity": str(it.quantity),
+                    "unit_price_cents": it.unit_price_cents,
+                    "discount_cents": it.discount_cents,
+                    "origin": it.origin,
+                    "csosn": it.csosn,
+                    "icms_cst": it.icms_cst,
+                }
+                if it.product_id:
+                    row["product_id"] = str(it.product_id)
+                payload.append(row)
+            replace_items(inv, items=payload)
+    inv.freight_cents = source.freight_cents or 0
+    inv.discount_cents = source.discount_cents or 0
+    inv.payment_method = source.payment_method or ""
+    inv.payment_amount_cents = source.payment_amount_cents
+    inv.nature_operation = source.nature_operation
+    inv.save(
+        update_fields=[
+            "freight_cents",
+            "discount_cents",
+            "payment_method",
+            "payment_amount_cents",
+            "nature_operation",
+            "updated_at",
+        ]
+    )
+    _record_event(
+        inv,
+        from_status=NfeInvoice.Status.DRAFT,
+        to_status=NfeInvoice.Status.DRAFT,
+        actor=actor,
+        metadata={"cloned_from": str(source.id)},
+    )
+    return inv
 
 
 
@@ -129,6 +225,10 @@ def replace_items(
         raise NfeVersionConflictError(f"versão esperada {expected_version}, atual {invoice.version}")
 
     invoice.items.all().delete()
+    emit_uf = str((invoice.provider.address or {}).get("uf") or "").upper()
+    dest_uf = str((invoice.customer.address or {}).get("uf") or emit_uf).upper()
+    from apps.nfe.tax import suggest_cfop
+
     for idx, raw in enumerate(items, start=1):
         product = None
         product_id = raw.get("product_id")
@@ -139,7 +239,17 @@ def replace_items(
             raw.get("description") or (product.description if product else "") or code
         )[:120]
         ncm = (raw.get("ncm") or (product.ncm if product else "") or "")[:8]
-        cfop = (raw.get("cfop") or (product.cfop_internal if product else "5102") or "5102")[:4]
+        if raw.get("cfop"):
+            cfop = str(raw.get("cfop"))[:4]
+        elif product:
+            cfop = suggest_cfop(
+                emit_uf=emit_uf,
+                dest_uf=dest_uf,
+                cfop_internal=product.cfop_internal or "5102",
+                cfop_interstate=product.cfop_interstate or "6102",
+            )
+        else:
+            cfop = suggest_cfop(emit_uf=emit_uf, dest_uf=dest_uf)
         unit = (raw.get("unit") or (product.unit if product else "UN") or "UN")[:6]
         qty = Decimal(str(raw.get("quantity") or "1"))
         unit_cents = int(
@@ -479,6 +589,7 @@ def create_product(
     unit: str = "UN",
     origin: str = "0",
     cfop_internal: str = "5102",
+    cfop_interstate: str = "6102",
     csosn: str = "102",
     icms_cst: str = "",
     icms_rate_bp: int = 0,
@@ -494,6 +605,7 @@ def create_product(
         unit_price_cents=unit_price_cents,
         origin=origin[:1],
         cfop_internal=cfop_internal[:4],
+        cfop_interstate=(cfop_interstate or "6102")[:4],
         csosn=csosn[:3],
         icms_cst=icms_cst[:3],
         icms_rate_bp=icms_rate_bp,

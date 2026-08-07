@@ -1,4 +1,3 @@
-from django.conf import settings
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import status, viewsets
@@ -20,9 +19,12 @@ from apps.nfe.exceptions import (
     NfeValidationError,
     NfeVersionConflictError,
 )
+from apps.nfe.gate import build_config_payload, build_gate_payload, upsert_number_series
 from apps.nfe.models import NfeArtifact, NfeInvoice, NfeProduct
 from apps.nfe.serializers import (
     NfeCancelSerializer,
+    NfeCloneSerializer,
+    NfeConfigSeriesSerializer,
     NfeDraftCreateSerializer,
     NfeEmitSerializer,
     NfeInvoiceSerializer,
@@ -31,19 +33,15 @@ from apps.nfe.serializers import (
 )
 from apps.nfe.services import (
     cancel_invoice,
+    clone_invoice,
     create_draft,
+    discard_draft,
     emit_invoice,
     nfe_feature_enabled,
     replace_items,
     validate_invoice,
 )
 from shared.pagination import HubPageNumberPagination
-
-
-def _supported_nfe_ufs() -> list[str]:
-    from integrations.sefaz_nfe.endpoints import list_supported_ufs
-
-    return list_supported_ufs()
 
 
 def _err(exc, http=400):
@@ -54,85 +52,73 @@ class NfeGateView(APIView):
     permission_classes = [IsTenantWriter]
 
     def get(self, request):
-        tenant = request.tenant
-        enabled = nfe_feature_enabled()
-        http = (getattr(settings, "NFE_HTTP_MODE", "stub") or "stub").lower()
-        providers = list(
-            Provider.objects.filter(tenant=tenant, is_active=True).values(
-                "id",
-                "document",
-                "legal_name",
-                "state_registration",
-                "municipal_registration",
-                "tax_regime",
-                "address",
+        provider_id = (request.query_params.get("provider_id") or "").strip() or None
+        series = request.query_params.get("series")
+        tp_amb = (request.query_params.get("tp_amb") or "").strip() or None
+        try:
+            ser = int(series) if series not in (None, "") else None
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "series inválida", "code": "nfe_gate"},
+                status=400,
+            )
+        return Response(
+            build_gate_payload(
+                tenant=request.tenant,
+                provider_id=provider_id,
+                series=ser,
+                tp_amb=tp_amb,
             )
         )
-        from apps.accounts.certificates import get_primary_certificate
-        from apps.nfe.models import NfeNumberSeries
 
-        checks = [{"id": "nfe_enabled", "ok": enabled, "label": "NFE_ENABLED"}]
-        next_estimated = None
-        series = 1
-        tp_amb = getattr(settings, "NFE_DEFAULT_TP_AMB", "2")
-        if providers:
-            p = providers[0]
-            addr = p.get("address") or {}
-            uf = (addr.get("uf") or addr.get("UF") or "").upper()
-            ie = (p.get("state_registration") or "").strip()
-            checks.append(
-                {"id": "provider", "ok": True, "label": f"Emitente {p['document']}"}
+
+class NfeConfigView(APIView):
+    """GET/PUT /nfe/config/ — série, ambiente, próximo nº (T6)."""
+
+    permission_classes = [IsTenantWriter]
+
+    def get(self, request):
+        provider_id = (request.query_params.get("provider_id") or "").strip() or None
+        return Response(
+            build_config_payload(tenant=request.tenant, provider_id=provider_id)
+        )
+
+    def put(self, request):
+        if not nfe_feature_enabled():
+            return _err(NfeDisabledError("NF-e desabilitada"), 403)
+        ser = NfeConfigSeriesSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        data = ser.validated_data
+        provider = get_object_or_404(
+            Provider, pk=data["provider_id"], tenant=request.tenant
+        )
+        try:
+            row = upsert_number_series(
+                tenant=request.tenant,
+                provider=provider,
+                series=data.get("series") or 1,
+                tp_amb=data.get("tp_amb"),
+                next_number=data.get("next_number"),
+                is_active=data.get("is_active", True),
             )
-            checks.append({"id": "uf", "ok": bool(uf), "label": f"UF emitente={uf or '—'}"})
-            checks.append(
-                {
-                    "id": "ie",
-                    "ok": bool(ie) or http == "stub",
-                    "label": f"IE={'ok' if ie else 'pendente (ok em stub)'}",
-                }
+        except ValueError as exc:
+            return Response(
+                {"detail": str(exc), "code": "nfe_config"},
+                status=400,
             )
-            cert = get_primary_certificate(tenant=tenant, cnpj=p["document"])
-            checks.append(
-                {
-                    "id": "cert",
-                    "ok": cert is not None or http == "stub",
-                    "label": (
-                        f"Cert A1 {cert.status}" if cert else "Cert A1 ausente (ok em stub)"
-                    ),
-                }
-            )
-            row = (
-                NfeNumberSeries.objects.filter(
-                    tenant=tenant,
-                    provider_id=p["id"],
-                    series=series,
-                    tp_amb=tp_amb,
-                    is_active=True,
-                )
-                .order_by("id")
-                .first()
-            )
-            next_estimated = row.next_number if row else 1
-            checks.append(
-                {
-                    "id": "series",
-                    "ok": True,
-                    "label": f"Série {series} · próximo estimado {next_estimated}",
-                }
-            )
-        else:
-            checks.append({"id": "provider", "ok": False, "label": "Nenhum prestador ativo"})
         return Response(
             {
-                "enabled": enabled,
-                "can_create": enabled and bool(providers),
-                "checks": checks,
-                "http_mode": http,
-                "pivot_uf": getattr(settings, "NFE_PIVOT_UF", "SP"),
-                "supported_ufs": _supported_nfe_ufs(),
-                "series": series,
-                "tp_amb": tp_amb,
-                "next_number_estimated": next_estimated,
+                "series": {
+                    "id": str(row.id),
+                    "provider_id": str(row.provider_id),
+                    "series": row.series,
+                    "tp_amb": row.tp_amb,
+                    "next_number": row.next_number,
+                    "is_active": row.is_active,
+                },
+                "config": build_config_payload(
+                    tenant=request.tenant, provider_id=str(provider.id)
+                ),
             }
         )
 
@@ -286,6 +272,36 @@ class NfeInvoiceViewSet(viewsets.ViewSet):
         except (NfeInvalidTransitionError, NfeValidationError) as exc:
             return _err(exc, 400)
         return Response(NfeInvoiceSerializer(inv).data)
+
+    @action(detail=True, methods=["post"], url_path="discard")
+    def discard(self, request, pk=None):
+        inv = get_object_or_404(NfeInvoice, pk=pk, tenant=request.tenant)
+        try:
+            discard_draft(inv, actor=getattr(request.user, "email", "api") or "api")
+        except NfeDisabledError as exc:
+            return _err(exc, 403)
+        except NfeInvalidTransitionError as exc:
+            return _err(exc, 400)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=["post"], url_path="clone")
+    def clone(self, request, pk=None):
+        inv = get_object_or_404(NfeInvoice, pk=pk, tenant=request.tenant)
+        ser = NfeCloneSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        try:
+            clone = clone_invoice(
+                inv,
+                idempotency_key=ser.validated_data["idempotency_key"],
+                actor=getattr(request.user, "email", "api") or "api",
+            )
+        except NfeDisabledError as exc:
+            return _err(exc, 403)
+        except NfeInvalidTransitionError as exc:
+            return _err(exc, 400)
+        except NfeGateError as exc:
+            return _err(exc, 400)
+        return Response(NfeInvoiceSerializer(clone).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["get"], url_path="artifacts/xml")
     def artifacts_xml(self, request, pk=None):

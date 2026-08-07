@@ -81,16 +81,30 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": env("POSTGRES_DB", "exeq_hub"),
-        "USER": env("POSTGRES_USER", "exeq"),
-        "PASSWORD": env("POSTGRES_PASSWORD", "exeq"),
-        "HOST": env("POSTGRES_HOST", "127.0.0.1"),
-        "PORT": env("POSTGRES_PORT", "5433"),
+if env("EXEQ_TEST_SQLITE", "").lower() in {"1", "true", "yes"}:
+    # Lab offline: pytest sem Postgres/docker (não usar em prod)
+    _sqlite = BASE_DIR / ".storage" / "pytest_exeq.sqlite3"
+    _sqlite.parent.mkdir(parents=True, exist_ok=True)
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": str(_sqlite),
+        }
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": env("POSTGRES_DB", "exeq_hub"),
+            "USER": env("POSTGRES_USER", "exeq"),
+            "PASSWORD": env("POSTGRES_PASSWORD", "exeq"),
+            "HOST": env("POSTGRES_HOST", "127.0.0.1"),
+            "PORT": env("POSTGRES_PORT", "5433"),
+            "OPTIONS": {
+                "connect_timeout": int(env("POSTGRES_CONNECT_TIMEOUT", "5") or "5"),
+            },
+        }
+    }
 
 AUTH_USER_MODEL = "accounts.User"
 

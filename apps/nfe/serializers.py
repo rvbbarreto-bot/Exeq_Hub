@@ -133,3 +133,15 @@ class NfeEmitSerializer(serializers.Serializer):
 
 class NfeCancelSerializer(serializers.Serializer):
     justificativa = serializers.CharField(min_length=15, max_length=255)
+
+
+class NfeConfigSeriesSerializer(serializers.Serializer):
+    provider_id = serializers.UUIDField()
+    series = serializers.IntegerField(required=False, default=1, min_value=1)
+    tp_amb = serializers.ChoiceField(choices=["1", "2"], required=False)
+    next_number = serializers.IntegerField(required=False, min_value=1)
+    is_active = serializers.BooleanField(required=False, default=True)
+
+
+class NfeCloneSerializer(serializers.Serializer):
+    idempotency_key = serializers.CharField(max_length=128)

@@ -28,6 +28,8 @@ Repositório: https://github.com/rvbbarreto-bot/Exeq_Hub
 | Reanálise impacto NF-e × NFS-e homologada | `Exeq_Hub_NFe_Reanalise_Impacto_NFSe_Homologada.md` | **1.0.0** — inventário reuso, riscos recalibrados, parecer Aprovado c/ ressalvas |
 | Tickets U3 NF-e I1–I8 | `Exeq_Hub_NFe_U3_Tickets_I1_I8.md` | Backlog G-SPIKE → G-EMIT-NFE |
 | Multi-UF NF-e U4 | `Exeq_Hub_NFe_U4_Multi_UF.md` | Catálogo 10 UFs + matriz QA (G-MULTI-10) |
+| U5 interestadual + CCe backlog + G-EMIT SP | `Exeq_Hub_NFe_U5_Interestadual_CCe_G_EMIT.md` | RF-23/CFOP · CCe scaffold · runbook homolog |
+| U6 config/gate/discard/clone | `Exeq_Hub_NFe_U6_Config_Gate.md` | T0/T6 API + FSM operator paths (stub) |
 | Reforma Tributária / RTC | `Exeq_Hub_Reforma_Tributaria_RTC_MultiDocumento_Estudo_Tecnico.md` | **0.1.0-draft** (estudo direção — IBS/CBS/IS, multi-DF-e, contábil) |
 | ADR RTC execução | `ADR_RTC_001_Priorizacao_Pilares.md` | **Aceito** (PO 2026-07-26 — pilares 1→5→2→4→3) |
 | Billing Inter | `Exeq_Hub_Inter_Billing_Integration_Study.md` | **1.0.0** (Sprint 5 — Inter first / BolePix v3) |
