@@ -57,6 +57,15 @@ class NfeProvider(Protocol):
         context: dict[str, Any] | None = None,
     ) -> NfeEmitResult: ...
 
+    def inutilizar(
+        self,
+        *,
+        n_ini: int,
+        n_fin: int,
+        x_just: str,
+        context: dict[str, Any] | None = None,
+    ) -> NfeEmitResult: ...
+
 
 class StubNfeProvider:
     kind = "stub"
@@ -184,6 +193,37 @@ class StubNfeProvider:
                     "tpEvento": "110110",
                     "x_correcao_len": len(x_correcao or ""),
                     "nSeqEvento": (context or {}).get("n_seq_evento") or 1,
+                }
+            ),
+            signed_xml=signed_xml,
+        )
+
+    def inutilizar(
+        self,
+        *,
+        n_ini: int,
+        n_fin: int,
+        x_just: str,
+        context: dict[str, Any] | None = None,
+    ) -> NfeEmitResult:
+        signed_xml = None
+        try:
+            from integrations.sefaz_nfe.inutilizacao import build_inut_from_context
+
+            signed_xml = build_inut_from_context(
+                n_ini=n_ini, n_fin=n_fin, x_just=x_just, context=context
+            )
+        except Exception:  # noqa: BLE001
+            signed_xml = None
+        return NfeEmitResult(
+            status="accepted",
+            protocol=f"STUBINUT{uuid4().hex[:8].upper()}",
+            raw=sanitize_sefaz_raw(
+                {
+                    "mode": "stub",
+                    "nNFIni": n_ini,
+                    "nNFFin": n_fin,
+                    "x_just_len": len(x_just or ""),
                 }
             ),
             signed_xml=signed_xml,
@@ -807,6 +847,157 @@ class HttpNfeProvider:
             access_key=key,
             rejection_code=code or str(resp.http_status),
             rejection_message=resp.x_motivo or "falha na CCe SEFAZ",
+            raw=raw,
+            signed_xml=signed,
+        )
+
+    def inutilizar(
+        self,
+        *,
+        n_ini: int,
+        n_fin: int,
+        x_just: str,
+        context: dict[str, Any] | None = None,
+    ) -> NfeEmitResult:
+        """InutNFe assinado + NFeInutilizacao4 (U15). cStat 102 = homologado."""
+        from integrations.sefaz_nfe.endpoints import resolve_inutilizacao_url
+        from integrations.sefaz_nfe.inutilizacao import NfeInutBuildError, build_inut_from_context
+        from integrations.sefaz_nfe.sign import sign_inut_nfe_xml
+        from integrations.sefaz_nfe.transport import post_nfe_inutilizacao
+
+        ctx = context or {}
+        just = (x_just or "").strip()
+        if not (15 <= len(just) <= 255):
+            return NfeEmitResult(
+                status="failed",
+                rejection_code="JUST",
+                rejection_message="xJust deve ter 15–255 caracteres",
+                raw=sanitize_sefaz_raw({"mode": "http", "stage": "inut_just"}),
+            )
+        try:
+            ini = int(n_ini)
+            fin = int(n_fin)
+        except (TypeError, ValueError):
+            return NfeEmitResult(
+                status="failed",
+                rejection_code="RANGE",
+                rejection_message="n_ini/n_fin inválidos",
+                raw=sanitize_sefaz_raw({"mode": "http", "stage": "inut_range"}),
+            )
+
+        cnpj = self._emitente_cnpj(ctx)
+        amb = str(ctx.get("tp_amb") or getattr(settings, "NFE_DEFAULT_TP_AMB", "2")).strip()[
+            :1
+        ] or "2"
+        uf = str(ctx.get("uf") or getattr(settings, "NFE_PIVOT_UF", "SP")).upper()
+
+        try:
+            pfx_bytes, password = self._load_pfx(ctx, cnpj)
+        except Exception as exc:  # noqa: BLE001
+            return NfeEmitResult(
+                status="failed",
+                rejection_code="CERT",
+                rejection_message=f"Certificado A1 indisponível: {exc}",
+                raw=sanitize_sefaz_raw({"mode": "http", "stage": "cert"}),
+            )
+
+        signed: bytes | None = None
+        try:
+            unsigned = build_inut_from_context(
+                n_ini=ini,
+                n_fin=fin,
+                x_just=just,
+                context={**ctx, "cnpj": cnpj, "tp_amb": amb, "uf": uf},
+            )
+            signed = sign_inut_nfe_xml(
+                inut_xml=unsigned, pfx_bytes=pfx_bytes, password=password
+            )
+        except NfeInutBuildError as exc:
+            return NfeEmitResult(
+                status="failed",
+                rejection_code="XML",
+                rejection_message=f"InutNFe inválido: {exc}",
+                raw=sanitize_sefaz_raw({"mode": "http", "stage": "inut_build"}),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("nfe_http_inut_sign_failed")
+            return NfeEmitResult(
+                status="failed",
+                rejection_code="XML",
+                rejection_message=f"Falha montagem/assinatura InutNFe: {exc}",
+                raw=sanitize_sefaz_raw({"mode": "http", "stage": "inut_sign"}),
+            )
+
+        if self._is_dry_run():
+            return NfeEmitResult(
+                status="failed",
+                rejection_code="DRY_RUN",
+                rejection_message="NFE_HTTP_DRY_RUN: InutNFe assinado, sem POST SEFAZ",
+                raw=sanitize_sefaz_raw(
+                    {
+                        "mode": "http",
+                        "stage": "inut_dry_run",
+                        "xml_bytes": len(signed or b""),
+                        "nNFIni": ini,
+                        "nNFFin": fin,
+                    }
+                ),
+                signed_xml=signed,
+            )
+
+        try:
+            url = resolve_inutilizacao_url(uf=uf, tp_amb=amb)
+            resp = post_nfe_inutilizacao(
+                url=url,
+                inut_xml=signed,
+                pfx_bytes=pfx_bytes,
+                password=password,
+                timeout=float(getattr(settings, "NFE_HTTP_TIMEOUT", 60) or 60),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("nfe_http_inut_post_failed")
+            return NfeEmitResult(
+                status="failed",
+                rejection_code="HTTP",
+                rejection_message=f"Falha HTTP SEFAZ inutilização: {exc}",
+                raw=sanitize_sefaz_raw({"mode": "http", "stage": "inut_transport"}),
+                signed_xml=signed,
+            )
+
+        code = (resp.c_stat or "").strip()
+        raw = sanitize_sefaz_raw(
+            {
+                "mode": "http",
+                "stage": "inutilizacao",
+                "http": resp.http_status,
+                "cStat": code,
+                "xMotivo": resp.x_motivo,
+                "nProt": resp.protocol,
+                "nNFIni": ini,
+                "nNFFin": fin,
+                "body": resp.body,
+            }
+        )
+        # 102 Inutilização de número homologada · 563 já inutilizado (tratamos reject)
+        if code == "102":
+            return NfeEmitResult(
+                status="accepted",
+                protocol=resp.protocol or f"INUT{ini}-{fin}",
+                raw=raw,
+                signed_xml=signed,
+            )
+        if code and code.isdigit():
+            return NfeEmitResult(
+                status="rejected",
+                rejection_code=code,
+                rejection_message=resp.x_motivo or "rejeição inutilização",
+                raw=raw,
+                signed_xml=signed,
+            )
+        return NfeEmitResult(
+            status="failed",
+            rejection_code=code or str(resp.http_status),
+            rejection_message=resp.x_motivo or "falha inutilização SEFAZ",
             raw=raw,
             signed_xml=signed,
         )

@@ -148,6 +148,8 @@ Regras:
 | **U13** | EX-SEC multi-tenant + throttle `nfe_write` | `Docs/Exeq_Hub_NFe_U13_EX_SEC.md` |
 | **RF-72** | Mídia WhatsApp DANFE/XML em `nfe.authorized` | `Docs/Exeq_Hub_NFe_RF72_Midia_WhatsApp.md` |
 | **U14** | CCe 110110 (U5-CCE-01…04) | `Docs/Exeq_Hub_NFe_U14_CCe.md` |
+| **U15** | Inutilização de faixa nNF (InutNFe) | `Docs/Exeq_Hub_NFe_U15_Inutilizacao.md` |
+| **U16** | UI inutilização + RF-71 e-mail XML/DANFE | `Docs/Exeq_Hub_NFe_U16_UI_Inut_RF71_Email.md` |
 
 UI e domínio **em paralelo** a partir de U0/U1 (impacto §7).
 

@@ -118,6 +118,8 @@ def allowed_actions(invoice: NfeInvoice) -> list[str]:
     if s == NfeInvoice.Status.AUTHORIZED:
         actions.append("cancel")
         actions.append("cce")
+        if has_xml_authorized(invoice) or has_danfe_pdf(invoice):
+            actions.append("resend_email")
     if s in {NfeInvoice.Status.AUTHORIZED, NfeInvoice.Status.CANCELLED}:
         if has_xml_authorized(invoice):
             actions.append("download_xml")

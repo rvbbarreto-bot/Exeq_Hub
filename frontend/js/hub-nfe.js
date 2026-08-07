@@ -176,12 +176,34 @@
       </div>
       <input type="hidden" id="nfe-cfg-provider" value="${escapeHtml(providerId)}">
       <div class="hint" style="margin-top:8px">T6 — contador por emitente/ambiente. Em stub a série auto-cria no emit; em HTTP cadastre antes.</div>
+      <div class="form-grid" style="margin-top:16px;max-width:520px;border-top:1px solid var(--border,#ddd);padding-top:12px">
+        <div class="field">
+          <label>Inutilizar nNF de</label>
+          <input id="nfe-inut-ini" type="number" min="1" placeholder="nIni">
+        </div>
+        <div class="field">
+          <label>Até</label>
+          <input id="nfe-inut-fin" type="number" min="1" placeholder="nFin">
+        </div>
+        <div class="field full">
+          <label>Justificativa (15–255)</label>
+          <input id="nfe-inut-just" type="text" minlength="15" maxlength="255" placeholder="Motivo da inutilização da faixa">
+        </div>
+        <div class="field" style="align-self:end">
+          <button type="button" class="btn btn-ghost" id="btn-nfe-inutilize">Inutilizar faixa</button>
+        </div>
+      </div>
+      <div class="hint" style="margin-top:6px">U15 — SEFAZ InutNFe. Avança o próximo nº se nFin ≥ contador. Não use em faixa já autorizada.</div>
     `;
     box.innerHTML = `<div style="margin-bottom:8px">${lines}</div><div class="hint">${meta}</div>${seriesForm}`;
     if (btnNew) btnNew.disabled = !gate.can_create;
     const saveBtn = document.getElementById("btn-nfe-save-series");
     if (saveBtn) {
       saveBtn.onclick = () => saveSeriesConfig();
+    }
+    const inutBtn = document.getElementById("btn-nfe-inutilize");
+    if (inutBtn) {
+      inutBtn.onclick = () => submitInutilize();
     }
   }
 
@@ -203,6 +225,54 @@
         body: { provider_id, series, tp_amb, next_number, is_active: true },
       });
       api.toast("Série NF-e salva", "success");
+      await loadGate();
+    } catch (err) {
+      api.toast(api.handleApiError(err.body).message, "danger");
+    }
+  }
+
+  async function submitInutilize() {
+    const api = A();
+    const provider_id =
+      (document.getElementById("nfe-cfg-provider") || {}).value ||
+      (caches.providers[0] && caches.providers[0].id);
+    if (!provider_id) {
+      api.toast("Cadastre um prestador antes.", "danger");
+      return;
+    }
+    const n_ini = Number((document.getElementById("nfe-inut-ini") || {}).value || 0);
+    const n_fin = Number((document.getElementById("nfe-inut-fin") || {}).value || 0);
+    const x_just = String((document.getElementById("nfe-inut-just") || {}).value || "").trim();
+    const series = Number((document.getElementById("nfe-cfg-series") || {}).value || 1);
+    const tp_amb = String((document.getElementById("nfe-cfg-tp-amb") || {}).value || "2");
+    if (!n_ini || !n_fin || n_fin < n_ini) {
+      api.toast("Informe nIni ≤ nFin válidos.", "danger");
+      return;
+    }
+    if (x_just.length < 15) {
+      api.toast("Justificativa deve ter no mínimo 15 caracteres.", "danger");
+      return;
+    }
+    if (
+      !confirm(
+        `Inutilizar números ${n_ini}–${n_fin} (série ${series}, amb ${tp_amb}) na SEFAZ/stub?`
+      )
+    ) {
+      return;
+    }
+    try {
+      const res = await api.api("/nfe/config/inutilize", {
+        method: "POST",
+        body: { provider_id, series, tp_amb, n_ini, n_fin, x_just },
+      });
+      api.toast(`Faixa inutilizada · próximo nº atualizado`, "success");
+      const iniEl = document.getElementById("nfe-inut-ini");
+      const finEl = document.getElementById("nfe-inut-fin");
+      if (iniEl) iniEl.value = "";
+      if (finEl) finEl.value = "";
+      if (res && res.config) {
+        /* refresh gate next estimate */
+      }
       await loadGate();
     } catch (err) {
       api.toast(api.handleApiError(err.body).message, "danger");
@@ -784,6 +854,14 @@
         b.addEventListener("click", () => downloadArtifact(detail, "cce"));
         host.appendChild(b);
       }
+      if (acts.includes("resend_email")) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "btn btn-ghost";
+        b.textContent = "Reenviar e-mail";
+        b.addEventListener("click", () => resendEmail(detail));
+        host.appendChild(b);
+      }
     }
     const copyBtn = document.getElementById("btn-nfe-copy-key");
     if (copyBtn && detail.access_key) {
@@ -795,6 +873,20 @@
           api.toast("Não foi possível copiar", "danger");
         }
       });
+    }
+  }
+
+  async function resendEmail(row) {
+    const api = A();
+    if (!row || !row.id) return;
+    try {
+      await api.api(`/nfe/invoices/${row.id}/resend-email`, {
+        method: "POST",
+        body: {},
+      });
+      api.toast("E-mail XML/DANFE reenviado (ou enfileirado)", "success");
+    } catch (err) {
+      api.toast(api.handleApiError(err.body).message, "danger");
     }
   }
 

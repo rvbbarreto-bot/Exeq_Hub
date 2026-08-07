@@ -227,3 +227,45 @@ def post_nfe_evento(
         )
     finally:
         tmp.cleanup()
+
+
+INUTILIZACAO_WS_NS = "http://www.portalfiscal.inf.br/nfe/wsdl/NFeInutilizacao4"
+
+
+def post_nfe_inutilizacao(
+    *,
+    url: str,
+    inut_xml: bytes | str,
+    pfx_bytes: bytes,
+    password: str = "",
+    timeout: float = 60.0,
+    session: requests.Session | None = None,
+) -> SefazHttpResponse:
+    """POST SOAP NFeInutilizacao4 — U15."""
+    body_inner = inut_xml.decode("utf-8") if isinstance(inut_xml, bytes) else inut_xml
+    body_inner = re.sub(r"<\?xml[^?]*\?>", "", body_inner).strip()
+    soap = _soap_envelope(body_xml=body_inner, soap_action_ns=INUTILIZACAO_WS_NS)
+    cert_path, key_path, tmp = _pfx_to_pem_files(pfx_bytes, password)
+    try:
+        post = session.post if session is not None else requests.post
+        resp = post(
+            url,
+            data=soap.encode("utf-8"),
+            headers={"Content-Type": "application/soap+xml; charset=utf-8"},
+            cert=(str(cert_path), str(key_path)),
+            timeout=timeout,
+        )
+        text = resp.text or ""
+        parsed = parse_autorizacao_response(text)
+        return SefazHttpResponse(
+            http_status=resp.status_code,
+            body=text[:20_000],
+            c_stat=parsed.c_stat,
+            x_motivo=parsed.x_motivo,
+            protocol=parsed.protocol,
+            access_key=parsed.access_key,
+            lote_c_stat=parsed.lote_c_stat,
+            n_rec=parsed.n_rec,
+        )
+    finally:
+        tmp.cleanup()

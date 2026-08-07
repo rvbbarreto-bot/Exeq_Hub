@@ -85,6 +85,45 @@ class NfeNumberSeries(TenantOwnedModel):
         return f"S{self.series}/{self.tp_amb} next={self.next_number}"
 
 
+class NfeInutilization(TenantOwnedModel):
+    """Auditoria de inutilização de faixa de nNF (U15 / D-14)."""
+
+    class Status(models.TextChoices):
+        ACCEPTED = "accepted", "Homologada"
+        REJECTED = "rejected", "Rejeitada"
+        FAILED = "failed", "Falhou"
+
+    provider = models.ForeignKey(
+        "master_data.Provider",
+        on_delete=models.PROTECT,
+        related_name="nfe_inutilizations",
+        verbose_name="Emitente",
+    )
+    series = models.PositiveIntegerField(verbose_name="Série")
+    tp_amb = models.CharField(max_length=1, verbose_name="Ambiente")
+    ano = models.CharField(max_length=2, verbose_name="Ano (AA)")
+    n_ini = models.PositiveIntegerField(verbose_name="nNF inicial")
+    n_fin = models.PositiveIntegerField(verbose_name="nNF final")
+    x_just = models.CharField(max_length=255, verbose_name="Justificativa")
+    status = models.CharField(
+        max_length=16, choices=Status.choices, verbose_name="Status"
+    )
+    protocol = models.CharField(max_length=60, blank=True, default="", verbose_name="Protocolo")
+    provider_raw = models.JSONField(default=dict, blank=True, verbose_name="Raw SEFAZ")
+    actor = models.CharField(max_length=120, blank=True, default="", verbose_name="Ator")
+
+    class Meta:
+        verbose_name = "Inutilização NF-e"
+        verbose_name_plural = "Inutilizações NF-e"
+        indexes = [
+            models.Index(fields=["tenant", "provider", "series", "tp_amb"]),
+            models.Index(fields=["tenant", "created_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"Inut S{self.series} {self.n_ini}-{self.n_fin} ({self.status})"
+
+
 class NfeInvoice(TenantOwnedModel):
     """Documento NF-e: draft → … → authorized (FSM LLR)."""
 

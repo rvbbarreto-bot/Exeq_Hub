@@ -148,5 +148,19 @@ class NfeConfigSeriesSerializer(serializers.Serializer):
     is_active = serializers.BooleanField(required=False, default=True)
 
 
+class NfeInutilizationSerializer(serializers.Serializer):
+    provider_id = serializers.UUIDField()
+    series = serializers.IntegerField(required=False, default=1, min_value=1)
+    tp_amb = serializers.ChoiceField(choices=["1", "2"], required=False)
+    n_ini = serializers.IntegerField(min_value=1)
+    n_fin = serializers.IntegerField(min_value=1)
+    x_just = serializers.CharField(min_length=15, max_length=255)
+    ano = serializers.CharField(required=False, allow_blank=True, max_length=4)
+
+
+class NfeResendEmailSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=False, allow_blank=True)
+
+
 class NfeCloneSerializer(serializers.Serializer):
     idempotency_key = serializers.CharField(max_length=128)

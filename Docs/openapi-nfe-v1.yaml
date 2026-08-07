@@ -54,6 +54,30 @@ paths:
           description: Validação (ex. regressão de contador)
         "403":
           description: NFE_ENABLED=false
+  /nfe/config/inutilize:
+    post:
+      tags: [nfe]
+      summary: Inutiliza faixa nNF (InutNFe / U15)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider_id, n_ini, n_fin, x_just]
+              properties:
+                provider_id: { type: string, format: uuid }
+                series: { type: integer, minimum: 1 }
+                tp_amb: { type: string, enum: ["1", "2"] }
+                n_ini: { type: integer, minimum: 1 }
+                n_fin: { type: integer, minimum: 1 }
+                x_just: { type: string, minLength: 15, maxLength: 255 }
+                ano: { type: string }
+      responses:
+        "201":
+          description: Inutilização aceita + config atualizado
+        "400":
+          description: Faixa inválida / rejeição SEFAZ
   /nfe/products/:
     get:
       tags: [nfe]
@@ -208,6 +232,27 @@ paths:
       responses:
         "200":
           description: NF-e authorized + CCe registrada (ou 400 se rejeitada)
+  /nfe/invoices/{id}/resend-email:
+    post:
+      tags: [nfe]
+      summary: Reenvia XML+DANFE por e-mail (RF-71; sem SEFAZ)
+      parameters:
+        - $ref: "#/components/parameters/NfeId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string, format: email }
+      responses:
+        "200":
+          description: Enviado
+        "400":
+          description: Sem destinatário
+        "502":
+          description: Falha backend e-mail
   /nfe/invoices/{id}/discard:
     post:
       tags: [nfe]

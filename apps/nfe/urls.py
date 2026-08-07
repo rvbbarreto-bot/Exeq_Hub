@@ -1,7 +1,13 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
-from apps.nfe.views import NfeConfigView, NfeGateView, NfeInvoiceViewSet, NfeProductViewSet
+from apps.nfe.views import (
+    NfeConfigView,
+    NfeGateView,
+    NfeInutilizeView,
+    NfeInvoiceViewSet,
+    NfeProductViewSet,
+)
 
 router = DefaultRouter()
 router.register("nfe/products", NfeProductViewSet, basename="nfe-products")
@@ -13,6 +19,7 @@ invoice_validate = NfeInvoiceViewSet.as_view({"post": "validate"})
 invoice_emit = NfeInvoiceViewSet.as_view({"post": "emit"})
 invoice_cancel = NfeInvoiceViewSet.as_view({"post": "cancel"})
 invoice_cce = NfeInvoiceViewSet.as_view({"post": "cce"})
+invoice_resend_email = NfeInvoiceViewSet.as_view({"post": "resend_email"})
 invoice_discard = NfeInvoiceViewSet.as_view({"post": "discard"})
 invoice_clone = NfeInvoiceViewSet.as_view({"post": "clone"})
 invoice_events = NfeInvoiceViewSet.as_view({"get": "events"})
@@ -23,6 +30,7 @@ invoice_cce_xml = NfeInvoiceViewSet.as_view({"get": "artifacts_cce"})
 urlpatterns = [
     path("nfe/gate/", NfeGateView.as_view(), name="nfe-gate"),
     path("nfe/config/", NfeConfigView.as_view(), name="nfe-config"),
+    path("nfe/config/inutilize", NfeInutilizeView.as_view(), name="nfe-config-inutilize"),
     path("nfe/invoices/", invoice_list, name="nfe-invoices"),
     path("nfe/invoices/<uuid:pk>/", invoice_detail, name="nfe-invoice-detail"),
     path("nfe/invoices/<uuid:pk>/items", invoice_items, name="nfe-invoice-items"),
@@ -30,6 +38,11 @@ urlpatterns = [
     path("nfe/invoices/<uuid:pk>/emit", invoice_emit, name="nfe-invoice-emit"),
     path("nfe/invoices/<uuid:pk>/cancel", invoice_cancel, name="nfe-invoice-cancel"),
     path("nfe/invoices/<uuid:pk>/cce", invoice_cce, name="nfe-invoice-cce"),
+    path(
+        "nfe/invoices/<uuid:pk>/resend-email",
+        invoice_resend_email,
+        name="nfe-invoice-resend-email",
+    ),
     path("nfe/invoices/<uuid:pk>/discard", invoice_discard, name="nfe-invoice-discard"),
     path("nfe/invoices/<uuid:pk>/clone", invoice_clone, name="nfe-invoice-clone"),
     path("nfe/invoices/<uuid:pk>/events", invoice_events, name="nfe-invoice-events"),

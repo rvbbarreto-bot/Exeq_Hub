@@ -57,3 +57,22 @@ def sign_evento_nfe_xml(*, env_evento_xml: bytes | str, pfx_bytes: bytes, passwo
         pfx_bytes=pfx_bytes,
         password=password,
     )
+
+
+def sign_inut_nfe_xml(*, inut_xml: bytes | str, pfx_bytes: bytes, password: str = "") -> bytes:
+    """Assina `infInut` (Id) em inutNFe — inutilização (U15)."""
+    root = safe_fromstring(inut_xml)
+    inf = None
+    for el in root.iter():
+        tag = el.tag.split("}")[-1] if "}" in el.tag else el.tag
+        if tag == "infInut":
+            inf = el
+            break
+    if inf is None:
+        raise SefinXmlDSigError("infInut não encontrado")
+    return sign_referenced_element(
+        root=root,
+        target=inf,
+        pfx_bytes=pfx_bytes,
+        password=password,
+    )

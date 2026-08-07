@@ -251,6 +251,35 @@ def resolve_endpoints(*, uf: str = "SP", tp_amb: str = "2") -> SefazNfeEndpoints
     return ep
 
 
+def resolve_inutilizacao_url(*, uf: str = "SP", tp_amb: str = "2") -> str:
+    """URL NFeInutilizacao4 (derivada do catálogo U4 — pivot SP explícito)."""
+    code = (uf or "SP").upper().strip()
+    amb = str(tp_amb or "2").strip()[:1] or "2"
+    if code == "SP":
+        if amb == "1":
+            return "https://nfe.fazenda.sp.gov.br/ws/nfeinutilizacao4.asmx"
+        return "https://homologacao.nfe.fazenda.sp.gov.br/ws/nfeinutilizacao4.asmx"
+    ep = resolve_endpoints(uf=code, tp_amb=amb)
+    if ep.authority == "SVRS":
+        base = (
+            "https://nfe.svrs.rs.gov.br/ws"
+            if amb == "1"
+            else "https://nfe-homologacao.svrs.rs.gov.br/ws"
+        )
+        return f"{base}/NfeInutilizacao/NFeInutilizacao4.asmx"
+    # Heurística: troca Autorizacao → Inutilizacao no path.
+    url = ep.autorizacao
+    for a, b in (
+        ("NFeAutorizacao4", "NFeInutilizacao4"),
+        ("nfeautorizacao4", "nfeinutilizacao4"),
+        ("NfeAutorizacao", "NfeInutilizacao"),
+        ("NFeAutorizacao", "NFeInutilizacao"),
+    ):
+        if a in url:
+            return url.replace(a, b)
+    raise ValueError(f"URL inutilização não resolvida para UF {code}")
+
+
 def qa_matrix_rows() -> list[dict[str, str]]:
     """Matriz QA (sem rede): UF × ambient × authority × URL autorizacao."""
     rows: list[dict[str, str]] = []

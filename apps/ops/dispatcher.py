@@ -178,7 +178,7 @@ def _nfe_lifecycle_body(msg: OutboxMessage, inv) -> str:
 
 
 def _notify_nfe_lifecycle(msg: OutboxMessage) -> None:
-    """RF-70 texto; RF-72 mídia (DANFE/XML) só se sessão de canal ligar a nfe.authorized."""
+    """RF-70 texto; RF-72 mídia se sessão; RF-71 e-mail XML+DANFE em authorized."""
     from apps.channel.models import ChannelSession
     from apps.channel.services import deliver_nfe_artifacts, enqueue_notification
     from apps.nfe.models import NfeInvoice
@@ -215,18 +215,25 @@ def _notify_nfe_lifecycle(msg: OutboxMessage) -> None:
                 message_body=body,
                 nfe_invoice=inv,
             )
-        return
+    else:
+        phone = _notify_phone(msg.tenant)
+        if phone:
+            enqueue_notification(
+                tenant=msg.tenant,
+                phone_e164=phone,
+                event_type=msg.event_type,
+                message_body=body,
+                nfe_invoice=inv,
+            )
 
-    phone = _notify_phone(msg.tenant)
-    if not phone:
-        return
-    enqueue_notification(
-        tenant=msg.tenant,
-        phone_e164=phone,
-        event_type=msg.event_type,
-        message_body=body,
-        nfe_invoice=inv,
-    )
+    # RF-71: e-mail não desfaz authorize; falha → retry outbox.
+    if inv is not None and msg.event_type == "nfe.authorized":
+        from apps.nfe.email_delivery import deliver_authorized_email
+
+        deliver_authorized_email(
+            invoice=inv,
+            payload=msg.payload if isinstance(msg.payload, dict) else None,
+        )
 
 
 def _notify_charge_paid(msg: OutboxMessage) -> None:

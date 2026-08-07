@@ -2,6 +2,7 @@ from django.contrib import admin
 
 from apps.nfe.models import (
     NfeArtifact,
+    NfeInutilization,
     NfeInvoice,
     NfeInvoiceEvent,
     NfeInvoiceItem,
@@ -32,6 +33,23 @@ class NfeProductAdmin(admin.ModelAdmin):
 @admin.register(NfeNumberSeries)
 class NfeNumberSeriesAdmin(admin.ModelAdmin):
     list_display = ("provider", "series", "tp_amb", "next_number", "is_active", "tenant")
+
+
+@admin.register(NfeInutilization)
+class NfeInutilizationAdmin(admin.ModelAdmin):
+    list_display = (
+        "provider",
+        "series",
+        "tp_amb",
+        "n_ini",
+        "n_fin",
+        "status",
+        "protocol",
+        "tenant",
+        "created_at",
+    )
+    list_filter = ("status", "tp_amb")
+    search_fields = ("protocol", "x_just")
 
 
 @admin.register(NfeInvoice)

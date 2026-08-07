@@ -30,6 +30,8 @@ Repositório: https://github.com/rvbbarreto-bot/Exeq_Hub
 | Multi-UF NF-e U4 | `Exeq_Hub_NFe_U4_Multi_UF.md` | Catálogo 10 UFs + matriz QA (G-MULTI-10) |
 | U5 interestadual + CCe backlog + G-EMIT SP | `Exeq_Hub_NFe_U5_Interestadual_CCe_G_EMIT.md` | RF-23/CFOP · CCe via U14 · runbook homolog |
 | U14 CCe 110110 | `Exeq_Hub_NFe_U14_CCe.md` | API + artefato + UI (stub/HTTP dry-run) |
+| U15 Inutilização nNF | `Exeq_Hub_NFe_U15_Inutilizacao.md` | InutNFe + counter + `POST …/config/inutilize` |
+| U16 UI inut + RF-71 e-mail | `Exeq_Hub_NFe_U16_UI_Inut_RF71_Email.md` | Hub inutilizar · e-mail XML/DANFE outbox |
 | U6 config/gate/discard/clone | `Exeq_Hub_NFe_U6_Config_Gate.md` | T0/T6 API + FSM operator paths (stub) |
 | U7 outbox NF-e RF-70 | `Exeq_Hub_NFe_U7_Outbox.md` | `nfe.authorized` / rejected / cancelled |
 | U8 lista + timeline | `Exeq_Hub_NFe_U8_Lista_Timeline.md` | Filtros T1 + `GET …/events` |

@@ -21,6 +21,7 @@ from apps.nfe.exceptions import (
     NfeVersionConflictError,
 )
 from apps.nfe.gate import build_config_payload, build_gate_payload, upsert_number_series
+from apps.nfe.inutilization import inutilize_number_range
 from apps.nfe.listing import filter_invoice_queryset, sanitize_event_metadata
 from apps.nfe.models import NfeArtifact, NfeInvoice, NfeInvoiceEvent, NfeProduct
 from apps.nfe.serializers import (
@@ -30,9 +31,11 @@ from apps.nfe.serializers import (
     NfeConfigSeriesSerializer,
     NfeDraftCreateSerializer,
     NfeEmitSerializer,
+    NfeInutilizationSerializer,
     NfeInvoiceSerializer,
     NfeItemsReplaceSerializer,
     NfeProductSerializer,
+    NfeResendEmailSerializer,
 )
 from apps.nfe.services import (
     cancel_invoice,
@@ -83,9 +86,15 @@ class NfeGateView(APIView):
 
 
 class NfeConfigView(APIView):
-    """GET/PUT /nfe/config/ — série, ambiente, próximo nº (T6)."""
+    """GET/PUT /nfe/config/ — série, ambiente, próximo nº (T6). POST …/inutilize — U15."""
 
     permission_classes = [IsTenantWriter]
+    throttle_classes = []
+
+    def get_throttles(self):
+        if self.request.method == "POST":
+            return [NfeWriteThrottle()]
+        return []
 
     def get(self, request):
         provider_id = (request.query_params.get("provider_id") or "").strip() or None
@@ -133,6 +142,55 @@ class NfeConfigView(APIView):
         )
 
 
+class NfeInutilizeView(APIView):
+    """POST /nfe/config/inutilize — inutiliza faixa de nNF (U15)."""
+
+    permission_classes = [IsTenantWriter]
+
+    def get_throttles(self):
+        return [NfeWriteThrottle()]
+
+    def post(self, request):
+        ser = NfeInutilizationSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        data = ser.validated_data
+        provider = get_object_or_404(
+            Provider, pk=data["provider_id"], tenant=request.tenant
+        )
+        try:
+            row = inutilize_number_range(
+                tenant=request.tenant,
+                provider=provider,
+                series=data.get("series") or 1,
+                tp_amb=data.get("tp_amb"),
+                n_ini=data["n_ini"],
+                n_fin=data["n_fin"],
+                x_just=data["x_just"],
+                ano=data.get("ano") or None,
+                actor=getattr(request.user, "email", "api") or "api",
+            )
+        except NfeDisabledError as exc:
+            return _err(exc, 403)
+        except NfeValidationError as exc:
+            return _err(exc, 400)
+        return Response(
+            {
+                "id": str(row.id),
+                "status": row.status,
+                "protocol": row.protocol,
+                "series": row.series,
+                "tp_amb": row.tp_amb,
+                "ano": row.ano,
+                "n_ini": row.n_ini,
+                "n_fin": row.n_fin,
+                "config": build_config_payload(
+                    tenant=request.tenant, provider_id=str(provider.id)
+                ),
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
 class NfeProductViewSet(viewsets.ModelViewSet):
     permission_classes = [IsTenantWriter]
     serializer_class = NfeProductSerializer
@@ -160,7 +218,7 @@ class NfeInvoiceViewSet(viewsets.ViewSet):
     permission_classes = [IsTenantWriter]
 
     def get_throttles(self):
-        if self.action in {"create", "emit", "cancel", "clone", "cce"}:
+        if self.action in {"create", "emit", "cancel", "clone", "cce", "resend_email"}:
             return [NfeWriteThrottle()]
         return []
 
@@ -339,6 +397,45 @@ class NfeInvoiceViewSet(viewsets.ViewSet):
             return _err(exc, 403)
         except (NfeInvalidTransitionError, NfeValidationError) as exc:
             return _err(exc, 400)
+        return Response(NfeInvoiceSerializer(inv).data)
+
+    @action(detail=True, methods=["post"], url_path="resend-email")
+    def resend_email(self, request, pk=None):
+        """RF-71 — reenvia XML+DANFE por e-mail (sem re-SEFAZ)."""
+        inv = get_object_or_404(NfeInvoice, pk=pk, tenant=request.tenant)
+        ser = NfeResendEmailSerializer(data=request.data or {})
+        ser.is_valid(raise_exception=True)
+        if inv.status != NfeInvoice.Status.AUTHORIZED:
+            return _err(NfeInvalidTransitionError("resend-email só para autorizada"), 400)
+        try:
+            if not nfe_feature_enabled():
+                raise NfeDisabledError("NF-e desabilitada")
+            from apps.nfe.email_delivery import (
+                NfeEmailDeliveryError,
+                deliver_authorized_email,
+            )
+
+            ok = deliver_authorized_email(
+                invoice=inv,
+                to_email=ser.validated_data.get("email") or None,
+                force=True,
+            )
+            if not ok:
+                return Response(
+                    {
+                        "detail": "Sem destinatário de e-mail (cliente ou nfe_notify_email)",
+                        "code": "nfe_email_missing",
+                    },
+                    status=400,
+                )
+            inv.refresh_from_db()
+        except NfeDisabledError as exc:
+            return _err(exc, 403)
+        except NfeEmailDeliveryError as exc:
+            return Response(
+                {"detail": str(exc), "code": "nfe_email_failed"},
+                status=502,
+            )
         return Response(NfeInvoiceSerializer(inv).data)
 
     @action(detail=True, methods=["post"], url_path="discard")
