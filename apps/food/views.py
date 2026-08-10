@@ -29,6 +29,8 @@ from apps.food.models import (
 from apps.food.operations import (
     assign_order_to_route,
     receive_purchase,
+    sync_all_marketplace_connections,
+    sync_marketplace_connection,
     transition_order_status,
     update_delivery_stop_status,
 )
@@ -324,6 +326,32 @@ class FoodMarketplaceImportView(APIView):
             .get(pk=order.pk)
         )
         return Response(FoodOrderSerializer(order).data, status=status.HTTP_201_CREATED)
+
+
+class FoodMarketplaceSyncView(APIView):
+    """
+    POST body opcional: { "connection_id": "<uuid>" }.
+    Sem id: sincroniza todas as conexões ativas do tenant.
+    """
+
+    permission_classes = [IsTenantWriter]
+
+    def post(self, request):
+        cid = request.data.get("connection_id") if hasattr(request, "data") else None
+        try:
+            if cid:
+                result = sync_marketplace_connection(
+                    tenant=request.tenant, connection_id=cid
+                )
+                return Response(result)
+            return Response(
+                {"results": sync_all_marketplace_connections(tenant=request.tenant)}
+            )
+        except FoodError as exc:
+            return Response(
+                {"detail": str(exc), "code": getattr(exc, "code", "food_error")},
+                status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
 
 
 class FoodOrderViewSet(TenantQuerysetMixin, viewsets.GenericViewSet):

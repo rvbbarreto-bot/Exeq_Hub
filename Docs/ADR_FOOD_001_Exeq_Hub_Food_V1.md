@@ -61,7 +61,9 @@ Na ausência de dossiê de fábrica preenchido, o PO **autoriza desenvolvimento 
 | **Fase 3** | Indústria: BOM, OP, capacidade, estoque reservado, MRP lite | **Feito (núcleo)** |
 | **Fase 4** | Inteligência: demanda, sugestões, churn/CLV/propensão, pricing dinâmico | **Feito (heurísticas)** |
 | **Hub UI ops** | Hub: pedidos (status), compras, produção, inteligência | **Feito** |
-| **Próximo** | HTTP real marketplace; ML avançado se dados sustentarem | Planejado |
+| **Marketplace HTTP** | Pull stub\|http, normalize iFood/aiqfome → Order unificado, Hub + beat | **Feito** |
+| **Régua Hub** | UI réguas, tick, enrollments/dispatches | **Feito** |
+| **Próximo** | Credenciais OAuth oficiais iFood/aiqfome; ML avançado se dados sustentarem | Planejado |
 
 ---
 

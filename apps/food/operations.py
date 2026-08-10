@@ -464,3 +464,110 @@ def import_marketplace_order(
         except FoodInvalidTransitionError:
             pass
     return order
+
+
+def sync_marketplace_connection(
+    *,
+    tenant,
+    connection: FoodMarketplaceConnection | None = None,
+    connection_id=None,
+    session=None,
+) -> dict[str, Any]:
+    """
+    Puxa pedidos via HTTP (ou stub) e importa no Order Service unificado.
+    Retorna contadores: fetched, imported, skipped, errors.
+    """
+    from integrations.marketplace.errors import MarketplaceError
+    from integrations.marketplace.factory import build_marketplace_gateway
+    from integrations.marketplace.normalize import normalize_marketplace_order
+
+    if connection is None:
+        if connection_id is None:
+            raise FoodInvalidOrderError("connection ou connection_id obrigatório.")
+        connection = FoodMarketplaceConnection.objects.filter(
+            tenant=tenant, pk=connection_id
+        ).first()
+        if connection is None:
+            raise FoodInvalidOrderError("Conexão marketplace não encontrada.")
+
+    if not connection.is_active:
+        raise FoodInvalidOrderError("Conexão marketplace inativa.")
+
+    result: dict[str, Any] = {
+        "connection_id": str(connection.id),
+        "provider": connection.provider,
+        "merchant_ref": connection.merchant_ref,
+        "fetched": 0,
+        "imported": 0,
+        "skipped": 0,
+        "errors": [],
+        "order_ids": [],
+    }
+    try:
+        gateway = build_marketplace_gateway(
+            provider=connection.provider,
+            conn_settings=connection.settings or {},
+            session=session,
+        )
+        raw_orders = gateway.fetch_orders(merchant_ref=connection.merchant_ref)
+    except MarketplaceError as exc:
+        result["errors"].append({"message": str(exc), "code": exc.code})
+        return result
+    except Exception as exc:  # pragma: no cover - rede
+        result["errors"].append({"message": str(exc), "code": "marketplace_error"})
+        return result
+
+    result["fetched"] = len(raw_orders)
+    sku_map = (connection.settings or {}).get("sku_map") or {}
+    if not isinstance(sku_map, dict):
+        sku_map = {}
+
+    for raw in raw_orders:
+        if not isinstance(raw, dict):
+            result["errors"].append({"message": "pedido bruto inválido"})
+            continue
+        try:
+            payload = normalize_marketplace_order(
+                provider=connection.provider,
+                raw=raw,
+                merchant_ref=connection.merchant_ref,
+                sku_map={str(k): str(v) for k, v in sku_map.items()},
+            )
+            if not payload.get("external_order_id"):
+                result["errors"].append({"message": "pedido sem id externo"})
+                continue
+            if not payload.get("lines"):
+                result["errors"].append(
+                    {
+                        "external_order_id": payload.get("external_order_id"),
+                        "message": "pedido sem lines",
+                    }
+                )
+                continue
+            idem = f"mp:{connection.provider}:{payload['external_order_id']}"
+            existed = FoodOrder.objects.filter(
+                tenant=tenant, idempotency_key=idem
+            ).exists()
+            order = import_marketplace_order(tenant=tenant, **payload)
+            if existed:
+                result["skipped"] += 1
+            else:
+                result["imported"] += 1
+                result["order_ids"].append(str(order.id))
+        except FoodError as exc:
+            result["errors"].append(
+                {
+                    "message": str(exc),
+                    "code": getattr(exc, "code", "food_error"),
+                }
+            )
+        except Exception as exc:  # pragma: no cover
+            result["errors"].append({"message": str(exc)})
+    return result
+
+
+def sync_all_marketplace_connections(*, tenant) -> list[dict[str, Any]]:
+    conns = FoodMarketplaceConnection.objects.filter(tenant=tenant, is_active=True)
+    return [
+        sync_marketplace_connection(tenant=tenant, connection=c) for c in conns
+    ]

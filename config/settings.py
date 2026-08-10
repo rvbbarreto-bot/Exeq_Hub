@@ -188,6 +188,11 @@ CELERY_BEAT_SCHEDULE = {
         "task": "food.process_retention_tick",
         "schedule": float(env("FOOD_RETENTION_INTERVAL_SECONDS", "3600") or "3600"),
     },
+    # Food marketplace: poll HTTP/stub de pedidos
+    "food-sync-marketplace-orders": {
+        "task": "food.sync_marketplace_orders",
+        "schedule": float(env("FOOD_MARKETPLACE_SYNC_INTERVAL_SECONDS", "120") or "120"),
+    },
 }
 NF_SYNC_PROCESSING = env("NF_SYNC_PROCESSING", "false").lower() == "true"
 # Reforma Tributária (NFS-e Nacional): off | shadow (calcula+snapshot, não envia) | emit
@@ -233,6 +238,14 @@ ALLOW_ENV_INTER_CREDENTIALS_FALLBACK = (
 )
 PAYMENT_HTTP_MODE = env("PAYMENT_HTTP_MODE", "stub")  # stub | http
 PAYMENT_DEFAULT_PROVIDER = env("PAYMENT_DEFAULT_PROVIDER", "inter")  # inter|asaas|c6
+# Food marketplace (iFood / aiqfome) — stub | http
+MARKETPLACE_HTTP_MODE = env("MARKETPLACE_HTTP_MODE", "stub")
+MARKETPLACE_HTTP_TIMEOUT = float(env("MARKETPLACE_HTTP_TIMEOUT", "15") or "15")
+MARKETPLACE_ORDERS_PATH = env("MARKETPLACE_ORDERS_PATH", "/orders") or "/orders"
+IFOOD_API_BASE_URL = env("IFOOD_API_BASE_URL", "")
+IFOOD_API_TOKEN = env("IFOOD_API_TOKEN", "")
+AIQFOME_API_BASE_URL = env("AIQFOME_API_BASE_URL", "")
+AIQFOME_API_TOKEN = env("AIQFOME_API_TOKEN", "")
 ASAAS_API_TOKEN = env("ASAAS_API_TOKEN", "")
 ASAAS_API_BASE_URL = env(
     "ASAAS_API_BASE_URL",

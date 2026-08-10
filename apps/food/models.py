@@ -855,7 +855,7 @@ class FoodDeliveryStop(TenantOwnedModel):
 
 
 class FoodMarketplaceConnection(TenantOwnedModel):
-    """Credencial/merchant marketplace. Integração HTTP real é stub/futuro."""
+    """Credencial/merchant marketplace. Pull via integrations.marketplace (stub|http)."""
 
     class Provider(models.TextChoices):
         IFOOD = "ifood", "iFood"
@@ -868,7 +868,14 @@ class FoodMarketplaceConnection(TenantOwnedModel):
         max_length=128, verbose_name="ID loja no marketplace"
     )
     is_active = models.BooleanField(default=True, verbose_name="Ativo")
-    settings = models.JSONField(default=dict, blank=True, verbose_name="Config")
+    settings = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name="Config",
+        help_text=(
+            "access_token, base_url, orders_path, sku_map, stub_orders, http_mode"
+        ),
+    )
 
     class Meta:
         verbose_name = "Conexão marketplace Food"

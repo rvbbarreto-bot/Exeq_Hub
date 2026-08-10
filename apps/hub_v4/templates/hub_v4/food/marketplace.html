@@ -1,0 +1,138 @@
+{% extends "hub_v4/base.html" %}
+{% load hub_v4_tags %}
+
+{% block page_actions %}
+{% if can_write %}
+<form method="post" style="display:inline;">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="sync_all" />
+  <button class="btn btn-primary" type="submit">Sincronizar todas</button>
+</form>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+{% include "hub_v4/food/_subnav.html" %}
+
+{% if can_write %}
+<form method="post" class="card" style="margin-bottom:12px;">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="upsert" />
+  <div class="section-label" style="margin-top:0;">Conexão marketplace</div>
+  <div class="form-grid">
+    <label>
+      <span>Provedor</span>
+      <select name="provider">
+        {% for val, label in provider_choices %}
+        <option value="{{ val }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      <span>Merchant / loja</span>
+      <input name="merchant_ref" required placeholder="id da loja" />
+    </label>
+    <label>
+      <span>Modo</span>
+      <select name="http_mode">
+        <option value="stub">stub (dev)</option>
+        <option value="http">http</option>
+      </select>
+    </label>
+    <label>
+      <span>Base URL (opcional)</span>
+      <input name="base_url" placeholder="https://…" />
+    </label>
+    <label class="full">
+      <span>Access token (Bearer)</span>
+      <input name="access_token" type="password" autocomplete="off" placeholder="deixe vazio para manter" />
+    </label>
+    <label>
+      <span>Ativa</span>
+      <select name="is_active">
+        <option value="1">Sim</option>
+        <option value="0">Não</option>
+      </select>
+    </label>
+  </div>
+  <div style="margin-top:12px;">
+    <button class="btn btn-primary" type="submit">Salvar conexão</button>
+  </div>
+  <p style="color:var(--text-muted);font-size:.85rem;margin:12px 0 0;">
+    Em stub, coloque <code>stub_orders</code> no JSON <code>settings</code> via API/admin para simular pull.
+    Em http: GET <code>{base}/orders?merchant=</code> com Bearer.
+  </p>
+</form>
+{% endif %}
+
+<div class="card" style="margin-bottom:12px;">
+  <div class="section-label" style="margin-top:0;">Conexões</div>
+  {% if connections %}
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Provedor</th>
+        <th>Merchant</th>
+        <th>Ativa</th>
+        <th>Modo</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in connections %}
+      <tr>
+        <td>{{ c.get_provider_display }}</td>
+        <td class="mono">{{ c.merchant_ref }}</td>
+        <td>{% if c.is_active %}Sim{% else %}Não{% endif %}</td>
+        <td class="mono">{{ c.settings.http_mode|default:"global" }}</td>
+        <td>
+          {% if can_write and c.is_active %}
+          <form method="post" style="display:inline;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="sync" />
+            <input type="hidden" name="connection_id" value="{{ c.id }}" />
+            <button class="btn btn-ghost btn-sm" type="submit">Sync</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="color:var(--text-muted);margin:0;">Nenhuma conexão. Cadastre iFood ou aiqfome acima.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="section-label" style="margin-top:0;">Pedidos marketplace recentes</div>
+  {% if recent_orders %}
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Cliente</th>
+        <th>Canal</th>
+        <th>Ref.</th>
+        <th>Status</th>
+        <th class="num">Total</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for o in recent_orders %}
+      <tr>
+        <td>{{ o.customer.name }}</td>
+        <td>{{ o.get_channel_display }}</td>
+        <td class="mono">{{ o.channel_ref|default:"—" }}</td>
+        <td>{{ o.get_status_display }}</td>
+        <td class="num">{{ o.total_cents|cents_brl }}</td>
+        <td><a class="btn btn-ghost btn-sm" href="{% url 'hub-v4-food-order-detail' o.id %}">Ver</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="color:var(--text-muted);margin:0;">Nenhum pedido de marketplace ainda.</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,156 @@
+{% extends "hub_v4/base.html" %}
+
+{% block page_actions %}
+{% if can_write %}
+<form method="post" style="display:inline;">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="tick" />
+  <button class="btn btn-primary" type="submit">Rodar tick agora</button>
+</form>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+{% include "hub_v4/food/_subnav.html" %}
+
+{% if can_write %}
+<form method="post" class="card" style="margin-bottom:12px;">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="create_rule" />
+  <div class="section-label" style="margin-top:0;">Nova régua</div>
+  <div class="form-grid">
+    <label class="full">
+      <span>Nome</span>
+      <input name="name" required placeholder="Reativação 30 dias" />
+    </label>
+    <label>
+      <span>Tipo</span>
+      <select name="kind">
+        {% for val, label in kind_choices %}
+        <option value="{{ val }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      <span>Dias inatividade</span>
+      <input name="inactivity_days" value="30" />
+    </label>
+    <label>
+      <span>Mín. pedidos (VIP)</span>
+      <input name="min_order_count" value="0" />
+    </label>
+    <label>
+      <span>Ticket médio mín. (centavos)</span>
+      <input name="min_avg_ticket_cents" value="0" />
+    </label>
+    <label class="full">
+      <span>Etapas (uma por linha: delay_dias|mensagem)</span>
+      <textarea name="steps_text" rows="4" placeholder="0|Oi {name}, sentimos sua falta!
+3|Ainda dá tempo — {coupon_code}"></textarea>
+    </label>
+  </div>
+  <div style="margin-top:12px;">
+    <button class="btn btn-primary" type="submit">Criar régua</button>
+  </div>
+</form>
+{% endif %}
+
+<div class="card" style="margin-bottom:12px;">
+  <div class="section-label" style="margin-top:0;">Réguas</div>
+  {% if rules %}
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Nome</th>
+        <th>Tipo</th>
+        <th>Ativa</th>
+        <th>Etapas</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rules %}
+      <tr>
+        <td>{{ r.name }}</td>
+        <td>{{ r.get_kind_display }}</td>
+        <td>{% if r.is_active %}Sim{% else %}Não{% endif %}</td>
+        <td>{{ r.steps.count }}</td>
+        <td>
+          {% if can_write %}
+          <form method="post" style="display:inline;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="toggle" />
+            <input type="hidden" name="rule_id" value="{{ r.id }}" />
+            <button class="btn btn-ghost btn-sm" type="submit">
+              {% if r.is_active %}Pausar{% else %}Ativar{% endif %}
+            </button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="color:var(--text-muted);margin:0;">Nenhuma régua cadastrada.</p>
+  {% endif %}
+</div>
+
+<div class="card" style="margin-bottom:12px;">
+  <div class="section-label" style="margin-top:0;">Inscrições recentes</div>
+  {% if enrollments %}
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Cliente</th>
+        <th>Régua</th>
+        <th>Status</th>
+        <th>Próx. disparo</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in enrollments %}
+      <tr>
+        <td>{{ e.customer.name }}</td>
+        <td>{{ e.rule.name }}</td>
+        <td>{{ e.get_status_display }}</td>
+        <td>{{ e.next_fire_at|date:"d/m/Y H:i" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="color:var(--text-muted);margin:0;">Sem inscrições ainda. Rode o tick.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="section-label" style="margin-top:0;">Disparos recentes</div>
+  {% if dispatches %}
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Quando</th>
+        <th>Cliente</th>
+        <th>Régua</th>
+        <th>Etapa</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for d in dispatches %}
+      <tr>
+        <td>{{ d.fired_at|date:"d/m/Y H:i" }}</td>
+        <td>{{ d.enrollment.customer.name }}</td>
+        <td>{{ d.enrollment.rule.name }}</td>
+        <td>{{ d.step.sequence }}</td>
+        <td>{{ d.get_status_display }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="color:var(--text-muted);margin:0;">Nenhum disparo registrado.</p>
+  {% endif %}
+</div>
+{% endblock %}

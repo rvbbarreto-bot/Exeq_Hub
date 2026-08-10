@@ -150,3 +150,85 @@ def test_hub_food_order_transition(client, hub_food):
     assert r.status_code == 302
     order.refresh_from_db()
     assert order.status == FoodOrder.Status.PREPARING
+
+
+@pytest.mark.django_db
+def test_hub_food_retention_create_and_tick(client, hub_food):
+    from apps.food.models import FoodRetentionRule
+
+    _login(client, hub_food)
+    r = client.post(
+        reverse("hub-v4-food-retention"),
+        {
+            "action": "create_rule",
+            "name": "Inativos Hub",
+            "kind": "inactivity",
+            "inactivity_days": "1",
+            "steps_text": "0|Oi {name} volte",
+        },
+    )
+    assert r.status_code == 302
+    assert FoodRetentionRule.objects.filter(
+        tenant=hub_food["tenant"], name="Inativos Hub"
+    ).exists()
+    page = client.get(reverse("hub-v4-food-retention"))
+    assert page.status_code == 200
+    assert "Inativos Hub" in page.content.decode()
+    tick = client.post(
+        reverse("hub-v4-food-retention"),
+        {"action": "tick"},
+    )
+    assert tick.status_code == 302
+
+
+@pytest.mark.django_db
+def test_hub_food_marketplace_upsert_and_sync(client, hub_food, settings):
+    from apps.food.models import FoodMarketplaceConnection, FoodOrder
+
+    settings.MARKETPLACE_HTTP_MODE = "stub"
+    _login(client, hub_food)
+    # create connection via hub (stub without stub_orders yet)
+    r = client.post(
+        reverse("hub-v4-food-marketplace"),
+        {
+            "action": "upsert",
+            "provider": "ifood",
+            "merchant_ref": "hub-loja",
+            "http_mode": "stub",
+            "is_active": "1",
+        },
+    )
+    assert r.status_code == 302
+    conn = FoodMarketplaceConnection.objects.get(
+        tenant=hub_food["tenant"], merchant_ref="hub-loja"
+    )
+    conn.settings = {
+        **(conn.settings or {}),
+        "stub_orders": [
+            {
+                "external_order_id": "HUB-MP-1",
+                "customer_name": "MP Hub",
+                "customer_phone": "+5511977776666",
+                "lines": [
+                    {
+                        "sku": hub_food["product"].sku,
+                        "quantity": "1",
+                        "unit_price_cents": 100,
+                    }
+                ],
+                "paid": True,
+            }
+        ],
+    }
+    conn.save(update_fields=["settings", "updated_at"])
+    sync = client.post(
+        reverse("hub-v4-food-marketplace"),
+        {"action": "sync", "connection_id": str(conn.id)},
+    )
+    assert sync.status_code == 302
+    assert FoodOrder.objects.filter(
+        tenant=hub_food["tenant"], channel_ref="HUB-MP-1"
+    ).exists()
+    page = client.get(reverse("hub-v4-food-marketplace"))
+    assert page.status_code == 200
+    assert "hub-loja" in page.content.decode()

@@ -12,6 +12,7 @@ from apps.food.views import (
     FoodIntelligenceView,
     FoodMarketplaceConnectionViewSet,
     FoodMarketplaceImportView,
+    FoodMarketplaceSyncView,
     FoodMrpView,
     FoodOrderViewSet,
     FoodProductViewSet,
@@ -64,6 +65,11 @@ urlpatterns = [
         "food/marketplace/import",
         FoodMarketplaceImportView.as_view(),
         name="food-marketplace-import",
+    ),
+    path(
+        "food/marketplace/sync",
+        FoodMarketplaceSyncView.as_view(),
+        name="food-marketplace-sync",
     ),
     *router.urls,
 ]

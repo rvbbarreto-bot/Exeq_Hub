@@ -16,10 +16,14 @@ from apps.food.exceptions import FoodError
 from apps.food.intelligence import intelligence_report
 from apps.food.models import (
     FoodCustomer,
+    FoodMarketplaceConnection,
     FoodOrder,
     FoodProduct,
     FoodProductionOrder,
     FoodPurchase,
+    FoodRetentionDispatch,
+    FoodRetentionEnrollment,
+    FoodRetentionRule,
     FoodSupplier,
 )
 from apps.food.operations import (
@@ -27,13 +31,16 @@ from apps.food.operations import (
     create_purchase,
     create_supplier,
     receive_purchase,
+    sync_marketplace_connection,
     transition_order_status,
+    upsert_marketplace_connection,
 )
 from apps.food.production import (
     complete_production,
     create_production_order,
     start_production,
 )
+from apps.food.retention import create_retention_rule, process_retention_tick
 from apps.food.services import (
     create_food_customer,
     create_order,
@@ -429,3 +436,200 @@ class FoodIntelligenceView(View):
                 horizon_days=horizon,
             ),
         )
+
+
+class FoodRetentionHubView(View):
+    def get(self, request: HttpRequest):
+        tenant, user, role, redir = require_hub(request)
+        if redir:
+            return redir
+        rules = (
+            FoodRetentionRule.objects.filter(tenant=tenant)
+            .prefetch_related("steps")
+            .order_by("name")
+        )
+        enrollments = (
+            FoodRetentionEnrollment.objects.filter(tenant=tenant)
+            .select_related("customer", "rule")
+            .order_by("-enrolled_at")[:50]
+        )
+        dispatches = (
+            FoodRetentionDispatch.objects.filter(tenant=tenant)
+            .select_related("enrollment__customer", "step", "enrollment__rule")
+            .order_by("-fired_at")[:50]
+        )
+        return render(
+            request,
+            "hub_v4/food/retention.html",
+            _food_ctx(
+                role,
+                food_section="retention",
+                page_title="Régua Food",
+                rules=rules,
+                enrollments=enrollments,
+                dispatches=dispatches,
+                kind_choices=FoodRetentionRule.Kind.choices,
+            ),
+        )
+
+    def post(self, request: HttpRequest):
+        tenant, user, role, redir = _require_writer_hub(request)
+        if redir:
+            return redir
+        action = (request.POST.get("action") or "").strip()
+        try:
+            if action == "tick":
+                result = process_retention_tick(tenant=tenant)
+                messages.success(
+                    request,
+                    f"Tick: enroll={result.get('enrolled', 0)} "
+                    f"fired={result.get('fired', 0)}",
+                )
+            elif action == "create_rule":
+                steps_raw = (request.POST.get("steps_text") or "").strip()
+                steps = []
+                if steps_raw:
+                    for i, line in enumerate(steps_raw.splitlines(), start=1):
+                        line = line.strip()
+                        if not line:
+                            continue
+                        # delay|mensagem
+                        if "|" in line:
+                            delay_s, msg = line.split("|", 1)
+                        else:
+                            delay_s, msg = "0", line
+                        steps.append(
+                            {
+                                "sequence": i,
+                                "delay_days": int(delay_s.strip() or 0),
+                                "message_template": msg.strip(),
+                                "channel": "whatsapp",
+                            }
+                        )
+                else:
+                    steps = [
+                        {
+                            "sequence": 1,
+                            "delay_days": 0,
+                            "message_template": (
+                                "Oi {name}, sentimos sua falta! Volte e use o cupom."
+                            ),
+                            "channel": "whatsapp",
+                        }
+                    ]
+                create_retention_rule(
+                    tenant=tenant,
+                    name=(request.POST.get("name") or "").strip(),
+                    kind=request.POST.get("kind") or FoodRetentionRule.Kind.INACTIVITY,
+                    steps=steps,
+                    inactivity_days=int(request.POST.get("inactivity_days") or 30),
+                    min_order_count=int(request.POST.get("min_order_count") or 0),
+                    min_avg_ticket_cents=int(
+                        request.POST.get("min_avg_ticket_cents") or 0
+                    ),
+                )
+                messages.success(request, "Régua criada.")
+            elif action == "toggle":
+                rule = get_object_or_404(
+                    FoodRetentionRule,
+                    pk=request.POST.get("rule_id"),
+                    tenant=tenant,
+                )
+                rule.is_active = not rule.is_active
+                rule.save(update_fields=["is_active", "updated_at"])
+                messages.success(
+                    request,
+                    f"Régua {'ativada' if rule.is_active else 'pausada'}.",
+                )
+        except (FoodError, ValueError) as exc:
+            messages.error(request, str(exc))
+        return redirect("hub-v4-food-retention")
+
+
+class FoodMarketplaceHubView(View):
+    def get(self, request: HttpRequest):
+        tenant, user, role, redir = require_hub(request)
+        if redir:
+            return redir
+        conns = FoodMarketplaceConnection.objects.filter(tenant=tenant).order_by(
+            "provider", "merchant_ref"
+        )
+        recent = (
+            FoodOrder.objects.filter(
+                tenant=tenant,
+                channel__in=[FoodOrder.Channel.IFOOD, FoodOrder.Channel.AIQFOME],
+            )
+            .select_related("customer")
+            .order_by("-created_at")[:30]
+        )
+        return render(
+            request,
+            "hub_v4/food/marketplace.html",
+            _food_ctx(
+                role,
+                food_section="marketplace",
+                page_title="Marketplace Food",
+                connections=conns,
+                recent_orders=recent,
+                provider_choices=FoodMarketplaceConnection.Provider.choices,
+            ),
+        )
+
+    def post(self, request: HttpRequest):
+        tenant, user, role, redir = _require_writer_hub(request)
+        if redir:
+            return redir
+        action = (request.POST.get("action") or "").strip()
+        try:
+            if action == "upsert":
+                provider = request.POST.get("provider") or "ifood"
+                merchant_ref = (request.POST.get("merchant_ref") or "").strip()
+                existing = FoodMarketplaceConnection.objects.filter(
+                    tenant=tenant,
+                    provider=provider,
+                    merchant_ref=merchant_ref,
+                ).first()
+                settings_blob = dict(existing.settings or {}) if existing else {}
+                token = (request.POST.get("access_token") or "").strip()
+                base_url = (request.POST.get("base_url") or "").strip()
+                if token:
+                    settings_blob["access_token"] = token
+                if base_url:
+                    settings_blob["base_url"] = base_url
+                mode = (request.POST.get("http_mode") or "").strip()
+                if mode in {"stub", "http"}:
+                    settings_blob["http_mode"] = mode
+                upsert_marketplace_connection(
+                    tenant=tenant,
+                    provider=provider,
+                    merchant_ref=merchant_ref,
+                    is_active=(request.POST.get("is_active") or "1") == "1",
+                    settings=settings_blob,
+                )
+                messages.success(request, "Conexão marketplace salva.")
+            elif action == "sync":
+                stats = sync_marketplace_connection(
+                    tenant=tenant, connection_id=request.POST.get("connection_id")
+                )
+                messages.success(
+                    request,
+                    f"Sync {stats['provider']}: "
+                    f"fetched={stats['fetched']} imported={stats['imported']} "
+                    f"skipped={stats['skipped']} errors={len(stats['errors'])}",
+                )
+                if stats["errors"]:
+                    messages.warning(
+                        request, f"Detalhe: {stats['errors'][0].get('message', '')}"
+                    )
+            elif action == "sync_all":
+                from apps.food.operations import sync_all_marketplace_connections
+
+                results = sync_all_marketplace_connections(tenant=tenant)
+                total_imp = sum(r.get("imported", 0) for r in results)
+                messages.success(
+                    request,
+                    f"Sync completo: {len(results)} conexões, {total_imp} importados.",
+                )
+        except FoodError as exc:
+            messages.error(request, str(exc))
+        return redirect("hub-v4-food-marketplace")

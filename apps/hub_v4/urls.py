@@ -71,6 +71,16 @@ urlpatterns = [
         food_hub.FoodIntelligenceView.as_view(),
         name="hub-v4-food-intelligence",
     ),
+    path(
+        "food/regua/",
+        food_hub.FoodRetentionHubView.as_view(),
+        name="hub-v4-food-retention",
+    ),
+    path(
+        "food/marketplace/",
+        food_hub.FoodMarketplaceHubView.as_view(),
+        name="hub-v4-food-marketplace",
+    ),
     path("das/", views.DasListView.as_view(), name="hub-v4-das"),
     path("das/emitir/", views.DasEmitView.as_view(), name="hub-v4-das-emit"),
     path(
