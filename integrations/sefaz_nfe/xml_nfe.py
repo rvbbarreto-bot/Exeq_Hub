@@ -6,6 +6,9 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 from xml.etree import ElementTree as ET
 
+from lxml import etree
+
+from integrations.nfse.xml_safe import UnsafeXmlError, safe_fromstring
 from integrations.sefaz_nfe.access_key import UF_IBGE_CODE, build_access_key
 
 NFE_NS = "http://www.portalfiscal.inf.br/nfe"
@@ -294,13 +297,14 @@ def build_nfe_xml(*, snapshot: dict[str, Any], access_key: str | None = None) ->
 def access_key_from_signed_or_snap(xml: bytes | None, snapshot: dict[str, Any]) -> str:
     if xml:
         try:
-            root = ET.fromstring(xml)
+            root = safe_fromstring(xml)
             for el in root.iter():
-                if el.tag.endswith("infNFe"):
+                tag = el.tag.split("}")[-1] if "}" in el.tag else el.tag
+                if tag == "infNFe":
                     rid = el.get("Id") or ""
                     if rid.startswith("NFe") and len(rid) == 47:
                         return rid[3:]
-        except ET.ParseError:
+        except (etree.XMLSyntaxError, UnsafeXmlError, ValueError):
             pass
     header = snapshot.get("header") or {}
     emit = snapshot.get("emitente") or {}

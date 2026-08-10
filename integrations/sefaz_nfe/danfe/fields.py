@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from xml.etree import ElementTree as ET
+from typing import Any
+
+from integrations.nfse.xml_safe import safe_fromstring
 
 
 def _local(tag: str) -> str:
     return tag.split("}")[-1] if "}" in tag else tag
 
 
-def _text(parent: ET.Element | None, *names: str) -> str:
+def _text(parent: Any | None, *names: str) -> str:
     if parent is None:
         return ""
     want = set(names)
@@ -20,7 +22,7 @@ def _text(parent: ET.Element | None, *names: str) -> str:
     return ""
 
 
-def _find(root: ET.Element, name: str) -> ET.Element | None:
+def _find(root: Any, name: str) -> Any | None:
     for el in root.iter():
         if _local(el.tag) == name:
             return el
@@ -52,7 +54,7 @@ class DanfeFields:
 
 
 def extract_danfe_fields(xml_bytes: bytes, *, cancelled: bool = False) -> DanfeFields:
-    root = ET.fromstring(xml_bytes)
+    root = safe_fromstring(xml_bytes)
     inf = _find(root, "infNFe")
     ide = _find(root, "ide")
     emit = _find(root, "emit")
@@ -66,7 +68,7 @@ def extract_danfe_fields(xml_bytes: bytes, *, cancelled: bool = False) -> DanfeF
         if rid.startswith("NFe"):
             access = rid[3:]
 
-    def addr_block(node: ET.Element | None, ender_name: str) -> tuple[str, str]:
+    def addr_block(node: Any | None, ender_name: str) -> tuple[str, str]:
         if node is None:
             return "", ""
         ender = None

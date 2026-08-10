@@ -6,7 +6,11 @@ Preferência por infProt; não confunde cStat de lote (ex.: 104) com protocolo (
 from __future__ import annotations
 
 from dataclasses import dataclass
-from xml.etree import ElementTree as ET
+from typing import Any
+
+from lxml import etree
+
+from integrations.nfse.xml_safe import UnsafeXmlError, safe_fromstring
 
 # Mapas fiscais usuais retEnviNFe / retConsReciNFe / retConsSitNFe / infProt (Manual MOC).
 _AUTHORIZED = frozenset({"100", "150"})
@@ -36,11 +40,18 @@ def _local(tag: str) -> str:
     return tag.split("}")[-1] if "}" in tag else tag
 
 
-def _child_text(parent: ET.Element, name: str) -> str:
+def _child_text(parent: Any, name: str) -> str:
     for ch in parent:
         if _local(ch.tag) == name and ch.text:
             return ch.text.strip()
     return ""
+
+
+def _parse_xml_root(text: str):
+    try:
+        return safe_fromstring(text)
+    except (etree.XMLSyntaxError, UnsafeXmlError, ValueError):
+        return None
 
 
 def parse_autorizacao_response(body: str | bytes) -> AutorizacaoParse:
@@ -55,9 +66,8 @@ def parse_autorizacao_response(body: str | bytes) -> AutorizacaoParse:
     if not text.strip():
         return AutorizacaoParse()
 
-    try:
-        root = ET.fromstring(text)
-    except ET.ParseError:
+    root = _parse_xml_root(text)
+    if root is None:
         return AutorizacaoParse()
 
     lote_stat = ""
@@ -180,9 +190,8 @@ def parse_evento_response(body: str | bytes) -> AutorizacaoParse:
     text = body.decode("utf-8", errors="replace") if isinstance(body, (bytes, bytearray)) else str(body)
     if not text.strip():
         return AutorizacaoParse()
-    try:
-        root = ET.fromstring(text)
-    except ET.ParseError:
+    root = _parse_xml_root(text)
+    if root is None:
         return AutorizacaoParse()
 
     lote_stat = ""
