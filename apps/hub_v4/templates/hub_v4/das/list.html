@@ -1,0 +1,55 @@
+{% extends "hub_v4/base.html" %}
+{% load hub_v4_tags %}
+
+{% block page_actions %}
+{% if can_write %}
+<a class="btn btn-primary" href="{% url 'hub-v4-das-emit' %}">Emitir guia</a>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+{% if page.object_list %}
+<div class="table-wrap desktop-only">
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Prestador</th>
+        <th>Competência</th>
+        <th>Tipo</th>
+        <th>Status</th>
+        <th class="num">Valor</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for g in page %}
+      <tr>
+        <td>{{ g.provider.legal_name }}</td>
+        <td>{{ g.competencia }}</td>
+        <td>{{ g.get_tipo_guia_display }}</td>
+        <td><span class="badge badge-neutral">{{ g.get_status_display }}</span></td>
+        <td class="num">R$ {{ g.valor_total }}</td>
+        <td><a class="btn btn-ghost btn-sm" href="{% url 'hub-v4-das-detail' g.id %}">Ver</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="mobile-cards">
+  {% for g in page %}
+  <div class="mobile-data-card">
+    <div class="title">{{ g.get_tipo_guia_display }} · {{ g.competencia }}</div>
+    <div class="meta">{{ g.provider.legal_name }}</div>
+    <div class="row">
+      <strong>R$ {{ g.valor_total }}</strong>
+      <span class="badge badge-neutral">{{ g.get_status_display }}</span>
+    </div>
+    <a class="btn btn-ghost btn-sm" style="margin-top:8px;" href="{% url 'hub-v4-das-detail' g.id %}">Ver</a>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+{% url 'hub-v4-das-emit' as emit_url %}
+{% empty_state "Nenhuma guia DAS" "Emita DAS/DARF com certificado A1 do CNPJ." "Emitir guia →" emit_url %}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,69 @@
+{% extends "hub_v4/base.html" %}
+{% load hub_v4_tags %}
+
+{% block page_actions %}
+{% if can_write %}
+<a class="btn btn-primary" href="{% url 'hub-v4-food-order-new' %}">Novo pedido</a>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+{% include "hub_v4/food/_subnav.html" %}
+<form method="get" class="card" style="margin-bottom:12px;padding:12px;display:flex;gap:12px;flex-wrap:wrap;align-items:end;">
+  <label>
+    <span style="color:var(--text-muted);font-size:.8rem;">Status</span>
+    <select name="status">
+      <option value="">Todos</option>
+      {% for val, label in status_choices %}
+      <option value="{{ val }}" {% if status_filter == val %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button class="btn btn-ghost" type="submit">Filtrar</button>
+</form>
+
+{% if page.object_list %}
+<div class="table-wrap desktop-only">
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Cliente</th>
+        <th>Canal</th>
+        <th>Status</th>
+        <th>Pagamento</th>
+        <th class="num">Total</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for o in page %}
+      <tr>
+        <td>{{ o.customer.name }}</td>
+        <td>{{ o.get_channel_display }}</td>
+        <td>{{ o.get_status_display }}</td>
+        <td>{{ o.get_payment_status_display }}</td>
+        <td class="num">{{ o.total_cents|cents_brl }}</td>
+        <td><a class="btn btn-ghost btn-sm" href="{% url 'hub-v4-food-order-detail' o.id %}">Ver</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="mobile-cards">
+  {% for o in page %}
+  <div class="mobile-data-card">
+    <div class="title">{{ o.customer.name }}</div>
+    <div class="row"><strong>{{ o.total_cents|cents_brl }}</strong> · {{ o.get_channel_display }}</div>
+    <div class="meta">{{ o.get_status_display }} · {{ o.get_payment_status_display }}</div>
+    <a class="btn btn-ghost btn-sm" style="margin-top:8px;" href="{% url 'hub-v4-food-order-detail' o.id %}">Ver</a>
+  </div>
+  {% endfor %}
+</div>
+<div class="pager">
+  <span>Página {{ page.number }} / {{ page.paginator.num_pages }}</span>
+</div>
+{% else %}
+{% url 'hub-v4-food-order-new' as new_url %}
+{% empty_state "Nenhum pedido Food" "Crie o primeiro pedido unificado (WhatsApp ou balcão)." "Novo pedido →" new_url %}
+{% endif %}
+{% endblock %}

@@ -537,6 +537,10 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6"/></svg>
           Emissão NFS-e
         </button>
+        <button class="nav-item" data-screen="nfe">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h12l4 4v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><path d="M14 4v4h4"/><path d="M7 13h6M7 17h4"/></svg>
+          Emissão NF-e
+        </button>
         <button class="nav-item" data-screen="das">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21h18"/><path d="M5 21V9l7-5 7 5v12"/><path d="M9 21v-6h6v6"/></svg>
           Guias DAS
@@ -961,6 +965,82 @@
         </div>
       </section>
 
+      <!-- ===================== NF-e produto (modelo 55) ===================== -->
+      <section class="screen" id="screen-nfe">
+        <div class="page-head">
+          <div>
+            <h2>Emissão NF-e</h2>
+            <p>NF-e modelo 55 B2B (sem estoque). SEFAZ-SP pivot · mesmo cert A1 da NFS-e. Stub local por padrão.</p>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" class="btn btn-ghost" id="btn-nfe-product">+ Produto fiscal</button>
+            <button type="button" class="btn btn-primary" id="btn-emitir-nfe" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+              Nova NF-e
+            </button>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:16px;">
+          <div class="card-head"><h3>Pré-condições (T0) + série (T6)</h3><span class="chip">gate + config</span></div>
+          <div class="card-body pad" id="nfe-gate-box">Carregue a tela com sessão ativa…</div>
+        </div>
+
+        <div class="card" style="margin-bottom:16px;">
+          <div class="card-head"><h3>Ops KPIs (30d)</h3><span class="chip">RF-91</span></div>
+          <div class="card-body pad" id="nfe-metrics-box">—</div>
+        </div>
+
+        <div class="card" style="margin-bottom:16px;">
+          <div class="card-head"><h3>Produtos fiscais (T4)</h3><span class="chip">sem estoque</span></div>
+          <div class="card-body">
+            <table>
+              <thead><tr><th>Código</th><th>Descrição</th><th>NCM</th><th class="num">Preço</th><th>CSOSN/CST</th></tr></thead>
+              <tbody id="tbody-nfe-products"><tr><td colspan="5">—</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="tabs" id="tabs-nfe">
+          <div class="tab active">Todas</div>
+        </div>
+
+        <div class="card" style="margin-bottom:12px;">
+          <div class="card-body pad" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
+            <div class="field" style="min-width:220px;flex:1">
+              <label for="nfe-search-q">Busca (nº, chave, dest., doc)</label>
+              <input id="nfe-search-q" type="search" placeholder="Ex.: 123, chave ou nome" autocomplete="off">
+            </div>
+            <div class="field">
+              <label for="nfe-filter-days">Período (emissão)</label>
+              <select id="nfe-filter-days">
+                <option value="7">7 dias</option>
+                <option value="30" selected>30 dias</option>
+                <option value="90">90 dias</option>
+                <option value="all">Todo histórico</option>
+              </select>
+            </div>
+            <button type="button" class="btn btn-ghost" id="btn-nfe-search">Filtrar</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-body">
+            <table>
+              <thead><tr><th>Série/Nº</th><th>Data</th><th>Destinatário</th><th class="num">Valor</th><th>Status</th><th>Chave</th><th></th></tr></thead>
+              <tbody id="tbody-nfe"><tr><td colspan="7">Faça login para carregar NF-e.</td></tr></tbody>
+            </table>
+          </div>
+          <div class="pager">
+            <span id="pager-nfe-label">—</span>
+            <div class="pbtns">
+              <button type="button" class="icon-btn" id="btn-nfe-prev" title="Anterior">‹</button>
+              <button type="button" class="icon-btn" id="btn-nfe-next" title="Próxima">›</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- ===================== DAS ===================== -->
       <section class="screen" id="screen-das">
         <div class="page-head">
@@ -1095,6 +1175,162 @@
       <div class="form-actions">
         <button type="button" class="btn btn-ghost" data-close-modal="modal-nfse-cancel">Fechar</button>
         <button type="submit" class="btn btn-primary">Confirmar cancelamento</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-nfe" class="hub-modal">
+  <div class="hub-modal-card wide">
+    <div class="modal-head">
+      <div>
+        <h3>Nova NF-e (rascunho)</h3>
+        <div class="modal-sub">B2B · multi-item · impostos no Hub · número reservado só no transmitir.</div>
+      </div>
+      <button type="button" class="icon-btn" data-close-modal="modal-nfe" title="Fechar">✕</button>
+    </div>
+    <form id="form-nfe">
+      <div class="hint" id="nfe-modal-series-hint" style="margin-bottom:10px"></div>
+      <div class="form-grid">
+        <div class="field">
+          <label>Emitente</label>
+          <select id="nfe-provider" name="provider_id" required></select>
+        </div>
+        <div class="field">
+          <label>Destinatário</label>
+          <select id="nfe-customer" name="customer_id" required></select>
+        </div>
+        <div class="field">
+          <label>Natureza</label>
+          <input name="nature_operation" value="VENDA" maxlength="60">
+        </div>
+        <div class="field">
+          <label>indIEDest</label>
+          <select name="ind_ie_dest">
+            <option value="9">9 — Não contribuinte</option>
+            <option value="1">1 — Contribuinte ICMS</option>
+            <option value="2">2 — Isento</option>
+          </select>
+        </div>
+      </div>
+      <div class="card-head" style="margin-top:12px;padding:0;"><h3 style="font-size:14px;">Itens</h3></div>
+      <div id="nfe-items-host"></div>
+      <div style="margin:8px 0;">
+        <button type="button" class="btn btn-ghost" id="btn-nfe-add-item">+ Item</button>
+      </div>
+      <div id="nfe-validate-out" class="tax-preview"></div>
+      <div id="nfe-status-line" class="emit-status"></div>
+      <div class="form-actions" style="justify-content:space-between;">
+        <button type="button" class="btn btn-ghost" id="btn-nfe-validate">Validar</button>
+        <div style="display:flex;gap:8px;">
+          <button type="button" class="btn btn-ghost" data-close-modal="modal-nfe">Fechar</button>
+          <button type="button" class="btn btn-primary" id="btn-nfe-emit">Transmitir</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-nfe-confirm" class="hub-modal">
+  <div class="hub-modal-card">
+    <div class="modal-head">
+      <div>
+        <h3>Confirmar transmissão</h3>
+        <div class="modal-sub" id="nfe-confirm-text">Confirma envio à autoridade?</div>
+      </div>
+      <button type="button" class="icon-btn" data-close-modal="modal-nfe-confirm">✕</button>
+    </div>
+    <form id="form-nfe-confirm">
+      <div class="form-actions">
+        <button type="button" class="btn btn-ghost" data-close-modal="modal-nfe-confirm">Voltar</button>
+        <button type="submit" class="btn btn-primary">Confirmar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-nfe-cancel" class="hub-modal">
+  <div class="hub-modal-card">
+    <div class="modal-head">
+      <div>
+        <h3>Cancelar NF-e</h3>
+        <div class="modal-sub" id="nfe-cancel-summary">Justificativa 15–255 caracteres.</div>
+      </div>
+      <button type="button" class="icon-btn" data-close-modal="modal-nfe-cancel">✕</button>
+    </div>
+    <form id="form-nfe-cancel">
+      <div class="field full">
+        <label>Justificativa</label>
+        <textarea name="justificativa" required minlength="15" maxlength="255"></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-ghost" data-close-modal="modal-nfe-cancel">Fechar</button>
+        <button type="submit" class="btn btn-primary">Confirmar cancelamento</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-nfe-cce" class="hub-modal">
+  <div class="hub-modal-card">
+    <div class="modal-head">
+      <div>
+        <h3>Carta de Correção (CCe)</h3>
+        <div class="modal-sub" id="nfe-cce-summary">Texto 15–1000 caracteres (não altera valores/CFOP/chave).</div>
+      </div>
+      <button type="button" class="icon-btn" data-close-modal="modal-nfe-cce">✕</button>
+    </div>
+    <form id="form-nfe-cce">
+      <div class="field full">
+        <label>Correção (xCorrecao)</label>
+        <textarea name="x_correcao" required minlength="15" maxlength="1000"></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-ghost" data-close-modal="modal-nfe-cce">Fechar</button>
+        <button type="submit" class="btn btn-primary">Transmitir CCe</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-nfe-detail" class="hub-modal">
+  <div class="hub-modal-card">
+    <div class="modal-head">
+      <div>
+        <h3>Detalhe NF-e</h3>
+        <div class="modal-sub">Snapshot / chave / ações permitidas.</div>
+      </div>
+      <button type="button" class="icon-btn" data-close-modal="modal-nfe-detail">✕</button>
+    </div>
+    <div class="card-body pad" id="nfe-detail-body"></div>
+    <div class="form-actions">
+      <button type="button" class="btn btn-ghost" data-close-modal="modal-nfe-detail">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<div id="modal-nfe-product" class="hub-modal">
+  <div class="hub-modal-card">
+    <div class="modal-head">
+      <div>
+        <h3>Produto fiscal</h3>
+        <div class="modal-sub">Sem estoque · NCM + CSOSN (SN).</div>
+      </div>
+      <button type="button" class="icon-btn" data-close-modal="modal-nfe-product">✕</button>
+    </div>
+    <form id="form-nfe-product">
+      <div class="form-grid">
+        <div class="field"><label>Código</label><input name="code" required maxlength="60"></div>
+        <div class="field"><label>Descrição</label><input name="description" required maxlength="120"></div>
+        <div class="field"><label>NCM</label><input name="ncm" required maxlength="8" pattern="\d{8}"></div>
+        <div class="field"><label>Unidade</label><input name="unit" value="UN" maxlength="6"></div>
+        <div class="field"><label>Preço (R$)</label><input id="nfe-product-price" name="price_reais" required inputmode="decimal"></div>
+        <div class="field"><label>CSOSN</label><input name="csosn" value="102" maxlength="3"></div>
+        <div class="field"><label>CFOP interno</label><input name="cfop" value="5102" maxlength="4"></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-ghost" data-close-modal="modal-nfe-product">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Salvar</button>
       </div>
     </form>
   </div>
@@ -1481,6 +1717,7 @@
 <script src="/app/js/hub-dashboard.js"></script>
 <script src="/app/js/hub-cadastros.js"></script>
 <script src="/app/js/hub-nfse.js"></script>
+<script src="/app/js/hub-nfe.js"></script>
 <script src="/app/js/hub-charges.js"></script>
 <script src="/app/js/hub-provider.js"></script>
 <script src="/app/js/hub-certificates.js"></script>
@@ -1498,6 +1735,7 @@
     certificados:['Certificados digitais','EXEQ Hub / Configuração / Certificados digitais'],
     cobrancas:['Cobranças','EXEQ Hub / Operação / Cobranças'],
     nfse:['Emissão NFS-e','EXEQ Hub / Operação / Emissão NFS-e'],
+    nfe:['Emissão NF-e','EXEQ Hub / Operação / Emissão NF-e'],
     das:['Guias DAS','EXEQ Hub / Operação / Guias DAS'],
   };
 

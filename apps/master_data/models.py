@@ -62,6 +62,13 @@ class Provider(CadastralEnrichmentMixin, TenantOwnedModel):
     municipal_registration = models.CharField(
         max_length=32, blank=True, default="", verbose_name="Inscrição municipal"
     )
+    state_registration = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        verbose_name="Inscrição estadual (IE)",
+        help_text="Obrigatória para emissão real NF-e (SEFAZ); opcional em stub.",
+    )
     tax_regime = models.CharField(
         max_length=32, choices=TaxRegime.choices, verbose_name="Regime tributário"
     )

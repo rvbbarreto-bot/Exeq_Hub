@@ -1,0 +1,166 @@
+{% extends "hub_v4/base.html" %}
+
+{% block page_actions %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-providers' %}">Voltar</a>
+{% endblock %}
+
+{% block content %}
+{% if usage %}
+<div class="plan-usage-bar">
+  <span>Uso do plano:</span>
+  <strong>{{ usage.label }}</strong> CNPJs ativos
+</div>
+{% endif %}
+
+<div class="card" data-provider-form data-lookup-url="{% url 'hub-v4-provider-lookup' %}">
+  <div id="lookup-banner" class="lookup-banner info" role="status">
+    Informe um CNPJ válido e consulte a Receita para pré-preencher.
+  </div>
+
+  <form method="post" id="provider-form">
+    {% csrf_token %}
+    <input type="hidden" name="data_source" value="{% if form %}{{ form.data_source }}{% elif obj %}{{ obj.data_source }}{% else %}manual{% endif %}">
+    <input type="hidden" name="receita_raw_payload" id="id_receita_raw_payload" value="">
+
+    <div class="form-grid">
+      <div class="field">
+        <label for="id_document">CNPJ *</label>
+        <input class="mono" name="document" id="id_document" required maxlength="18"
+               inputmode="numeric" autocomplete="off"
+               value="{% if form %}{{ form.document }}{% elif obj %}{{ obj.document }}{% endif %}"
+               placeholder="00.000.000/0000-00">
+      </div>
+      <div class="field" style="display:flex;align-items:flex-end;">
+        <button type="button" class="btn btn-ghost" id="btn-lookup" style="width:100%;">Consultar Receita</button>
+      </div>
+
+      <div class="field full">
+        <label for="id_legal_name">Razão social *</label>
+        <input name="legal_name" id="id_legal_name" required
+               value="{% if form %}{{ form.legal_name }}{% elif obj %}{{ obj.legal_name }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_trade_name">Nome fantasia</label>
+        <input name="trade_name" id="id_trade_name"
+               value="{% if form %}{{ form.trade_name }}{% elif obj %}{{ obj.trade_name }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_municipal_registration">Inscrição municipal</label>
+        <input name="municipal_registration" id="id_municipal_registration"
+               value="{% if form %}{{ form.municipal_registration }}{% elif obj %}{{ obj.municipal_registration }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_state_registration">Inscrição estadual (IE)</label>
+        <input name="state_registration" id="id_state_registration"
+               value="{% if form %}{{ form.state_registration }}{% elif obj %}{{ obj.state_registration }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_tax_regime">Regime tributário *</label>
+        <select name="tax_regime" id="id_tax_regime" required>
+          {% for value, label in tax_regimes %}
+          <option value="{{ value }}"
+            {% if form and form.tax_regime == value %}selected
+            {% elif obj and obj.tax_regime == value %}selected
+            {% elif not obj and not form and value == 'simples_nacional' %}selected{% endif %}>
+            {{ label }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="id_is_active">Ativo no plano</label>
+        <select name="is_active" id="id_is_active">
+          <option value="1" {% if form and form.is_active != '0' %}selected{% elif not form and not obj %}selected{% elif obj and obj.is_active %}selected{% endif %}>Sim (ocupa slot do plano)</option>
+          <option value="0" {% if form and form.is_active == '0' %}selected{% elif obj and not obj.is_active %}selected{% endif %}>Não</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="id_situacao_cadastral">Situação cadastral</label>
+        <input name="situacao_cadastral" id="id_situacao_cadastral"
+               value="{% if form %}{{ form.situacao_cadastral }}{% elif obj %}{{ obj.situacao_cadastral }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_data_abertura">Data de abertura</label>
+        <input type="date" name="data_abertura" id="id_data_abertura"
+               value="{% if form %}{{ form.data_abertura }}{% elif obj and obj.data_abertura %}{{ obj.data_abertura|date:'Y-m-d' }}{% endif %}">
+      </div>
+      <div class="field full">
+        <label for="id_cnae_principal">CNAE principal</label>
+        <input name="cnae_principal" id="id_cnae_principal"
+               value="{% if form %}{{ form.cnae_principal }}{% elif obj %}{{ obj.cnae_principal }}{% endif %}">
+      </div>
+      <div class="field full">
+        <label for="id_natureza_juridica">Natureza jurídica</label>
+        <input name="natureza_juridica" id="id_natureza_juridica"
+               value="{% if form %}{{ form.natureza_juridica }}{% elif obj %}{{ obj.natureza_juridica }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_porte">Porte</label>
+        <input name="porte" id="id_porte" value="{% if form %}{{ form.porte }}{% elif obj %}{{ obj.porte }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_whatsapp">WhatsApp</label>
+        <input name="whatsapp" id="id_whatsapp"
+               value="{% if form %}{{ form.whatsapp }}{% elif obj %}{{ obj.whatsapp }}{% endif %}">
+      </div>
+
+      <div class="field full">
+        <label for="id_logradouro">Logradouro</label>
+        <input name="logradouro" id="id_logradouro"
+               value="{% if form %}{{ form.logradouro }}{% elif obj %}{{ obj.address.logradouro }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_numero">Número</label>
+        <input name="numero" id="id_numero" value="{% if form %}{{ form.numero }}{% elif obj %}{{ obj.address.numero }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_complemento">Complemento</label>
+        <input name="complemento" id="id_complemento"
+               value="{% if form %}{{ form.complemento }}{% elif obj %}{{ obj.address.complemento }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_bairro">Bairro</label>
+        <input name="bairro" id="id_bairro" value="{% if form %}{{ form.bairro }}{% elif obj %}{{ obj.address.bairro }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_cep">CEP</label>
+        <input class="mono" name="cep" id="id_cep" value="{% if form %}{{ form.cep }}{% elif obj %}{{ obj.address.cep }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_municipio">Município</label>
+        <input name="municipio" id="id_municipio"
+               value="{% if form %}{{ form.municipio }}{% elif obj %}{{ obj.address.municipio }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_uf">UF</label>
+        <input name="uf" id="id_uf" maxlength="2" value="{% if form %}{{ form.uf }}{% elif obj %}{{ obj.address.uf }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_codigo_municipio_ibge">IBGE</label>
+        <input class="mono" name="codigo_municipio_ibge" id="id_codigo_municipio_ibge"
+               value="{% if form %}{{ form.codigo_municipio_ibge }}{% elif obj %}{{ obj.address.codigo_municipio_ibge }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_telefone_receita">Telefone</label>
+        <input name="telefone_receita" id="id_telefone_receita"
+               value="{% if form %}{{ form.telefone_receita }}{% elif obj %}{{ obj.address.telefone }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_email_receita">E-mail cadastral</label>
+        <input name="email_receita" id="id_email_receita"
+               value="{% if form %}{{ form.email_receita }}{% elif obj %}{{ obj.address.email }}{% endif %}">
+      </div>
+    </div>
+
+    <div class="wizard-nav" style="margin-top:20px;">
+      <a class="btn btn-ghost" href="{% url 'hub-v4-providers' %}">Cancelar</a>
+      <button type="submit" class="btn btn-primary">Salvar empresa</button>
+    </div>
+  </form>
+</div>
+
+{% if obj and obj.receita_raw_payload %}
+{{ obj.receita_raw_payload|json_script:"receita-raw-seed" }}
+{% endif %}
+{% endblock %}

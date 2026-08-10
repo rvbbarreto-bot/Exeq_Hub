@@ -67,6 +67,10 @@ def claim_and_dispatch(message_id: str) -> str:
 def _handle(msg: OutboxMessage) -> None:
     handlers = {
         "nf_issue.authorized": _notify_nf_authorized,
+        "nfe.authorized": _notify_nfe_lifecycle,
+        "nfe.rejected": _notify_nfe_lifecycle,
+        "nfe.cancelled": _notify_nfe_lifecycle,
+        "nfe.poll_exhausted": _notify_nfe_poll_exhausted,
         "charge.paid": _notify_charge_paid,
         "guia_fiscal.available": _notify_guia_available,
         "appointment.pending": _notify_appointment,
@@ -103,20 +107,155 @@ def _notify_appointment(msg: OutboxMessage) -> None:
 
 
 def _notify_nf_authorized(msg: OutboxMessage) -> None:
-    phone = _notify_phone(msg.tenant)
-    if not phone:
-        return
-    from apps.channel.services import enqueue_notification
+    """Ops notify_phone (texto) + solicitante do canal (PDF/XML — Fase 2 WA-ART)."""
+    from apps.channel.models import ChannelSession
+    from apps.channel.services import deliver_nf_artifacts, enqueue_notification
     from apps.issuance.models import NfIssue
 
     issue = NfIssue.objects.filter(tenant=msg.tenant, id=msg.aggregate_id).first()
     ref = (msg.payload or {}).get("focus_ref") or (issue.focus_ref if issue else "")
+
+    session = None
+    if issue is not None:
+        session = (
+            ChannelSession.objects.filter(
+                tenant=msg.tenant,
+                nf_issue=issue,
+                status=ChannelSession.Status.EMITTED,
+            )
+            .order_by("-last_message_at")
+            .first()
+        )
+
+    if session is not None and issue is not None:
+        # WA-ART-01/03: entrega ao solicitante; falha de mídia → retry outbox.
+        deliver_nf_artifacts(
+            tenant=msg.tenant,
+            nf_issue=issue,
+            phone_e164=session.phone_e164,
+            session=session,
+        )
+        ops_phone = _notify_phone(msg.tenant)
+        if ops_phone and ops_phone != session.phone_e164:
+            enqueue_notification(
+                tenant=msg.tenant,
+                phone_e164=ops_phone,
+                event_type=msg.event_type,
+                message_body=f"NFS-e autorizada. Ref: {ref}",
+                nf_issue=issue,
+            )
+        return
+
+    phone = _notify_phone(msg.tenant)
+    if not phone:
+        return
     enqueue_notification(
         tenant=msg.tenant,
         phone_e164=phone,
         event_type=msg.event_type,
         message_body=f"NFS-e autorizada. Ref: {ref}",
         nf_issue=issue,
+    )
+
+
+def _nfe_lifecycle_body(msg: OutboxMessage, inv) -> str:
+    payload = msg.payload or {}
+    key = (payload.get("access_key") or (inv.access_key if inv else "") or "")[:44]
+    series = payload.get("series") if inv is None else inv.series
+    number = payload.get("number") if inv is None else inv.number
+    ref = f"{series}/{number}" if number is not None else (key or str(msg.aggregate_id)[:8])
+    if msg.event_type == "nfe.authorized":
+        return f"NF-e autorizada. {ref}" + (
+            f" chave {key[:10]}…" if len(key) >= 10 else ""
+        )
+    if msg.event_type == "nfe.rejected":
+        code = payload.get("rejection_code") or (inv.rejection_code if inv else "") or "—"
+        return f"NF-e rejeitada. {ref} cStat={code}"
+    if msg.event_type == "nfe.cancelled":
+        return f"NF-e cancelada. {ref}" + (
+            f" chave {key[:10]}…" if len(key) >= 10 else ""
+        )
+    return f"NF-e evento {msg.event_type}: {ref}"
+
+
+def _notify_nfe_lifecycle(msg: OutboxMessage) -> None:
+    """RF-70 texto; RF-72 mídia se sessão; RF-71 e-mail XML+DANFE em authorized."""
+    from apps.channel.models import ChannelSession
+    from apps.channel.services import deliver_nfe_artifacts, enqueue_notification
+    from apps.nfe.models import NfeInvoice
+
+    inv = NfeInvoice.objects.filter(tenant=msg.tenant, id=msg.aggregate_id).first()
+    body = _nfe_lifecycle_body(msg, inv)[:1000]
+
+    session = None
+    if inv is not None and msg.event_type == "nfe.authorized":
+        session = (
+            ChannelSession.objects.filter(
+                tenant=msg.tenant,
+                nfe_invoice=inv,
+                status=ChannelSession.Status.EMITTED,
+            )
+            .order_by("-last_message_at")
+            .first()
+        )
+
+    if session is not None and inv is not None:
+        # RF-72: entrega ao solicitante; falha de mídia → retry outbox.
+        deliver_nfe_artifacts(
+            tenant=msg.tenant,
+            nfe_invoice=inv,
+            phone_e164=session.phone_e164,
+            session=session,
+        )
+        ops_phone = _notify_phone(msg.tenant)
+        if ops_phone and ops_phone != session.phone_e164:
+            enqueue_notification(
+                tenant=msg.tenant,
+                phone_e164=ops_phone,
+                event_type=msg.event_type,
+                message_body=body,
+                nfe_invoice=inv,
+            )
+    else:
+        phone = _notify_phone(msg.tenant)
+        if phone:
+            enqueue_notification(
+                tenant=msg.tenant,
+                phone_e164=phone,
+                event_type=msg.event_type,
+                message_body=body,
+                nfe_invoice=inv,
+            )
+
+    # RF-71: e-mail não desfaz authorize; falha → retry outbox.
+    if inv is not None and msg.event_type == "nfe.authorized":
+        from apps.nfe.email_delivery import deliver_authorized_email
+
+        deliver_authorized_email(
+            invoice=inv,
+            payload=msg.payload if isinstance(msg.payload, dict) else None,
+        )
+
+
+def _notify_nfe_poll_exhausted(msg: OutboxMessage) -> None:
+    """RF-92 — WhatsApp ops quando poll SEFAZ esgota (status failed)."""
+    phone = _notify_phone(msg.tenant)
+    if not phone:
+        return
+    from apps.channel.services import enqueue_notification
+
+    payload = msg.payload or {}
+    ref = payload.get("access_key") or payload.get("number") or str(msg.aggregate_id)[:8]
+    attempts = payload.get("poll_attempts") or "?"
+    max_att = payload.get("max_attempts") or "?"
+    enqueue_notification(
+        tenant=msg.tenant,
+        phone_e164=phone,
+        event_type=msg.event_type,
+        message_body=(
+            f"NF-e poll esgotado. Ref {ref}. "
+            f"Tentativas {attempts}/{max_att}. Verifique SEFAZ/recibo."
+        )[:1000],
     )
 
 

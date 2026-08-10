@@ -219,7 +219,7 @@ Itens já preparados em código/doc; **revalidar antes de escala** (mais de 1 te
 
 | # | Atenção | Evidência / comando | Gate |
 |---|---------|---------------------|------|
-| GL-01 | **Pentest SEC-P1-09** executado (não só escopo) | Briefing `Exeq_Hub_NFSe_Pentest_Briefing_SEC_P1_09.md` §4–§7; relatório + P0 tratados/aceitos | **Bloqueia go-live amplo** |
+| GL-01 | **Pentest SEC-P1-09** | Relatório interno `Exeq_Hub_NFSe_Pentest_Report_SEC_P1_09.md` (2026-07-30); F-01 corrigido; externo opcional sob PO | **Interno feito**; externo se escala alta |
 | GL-02 | Suite segurança NFS-e verde no ambiente alvo | `pytest apps/issuance/tests/test_security_nfse.py integrations/nfse/tests/test_resilience.py integrations/nfse/tests/test_sefin_mtls.py integrations/nfse/tests/test_dps_contract.py -q` | Regressão obrigatória pré-cutover |
 | GL-03 | Resiliência workers (SEC-P2-04) | Time limits Celery ativos; soft limit → `failed`/`SEFIN_TIMEOUT_BUDGET`; ops concurrency baixa sob SEFIN instável (runbook §12.1 item 7) | Confirmar no host de prod |
 | GL-04 | Contrato DPS mínimo + mTLS sem PEM residual | `test_dps_contract` + `test_sefin_mtls_cleans_pem_from_disk` | Manter verde no CI |
@@ -359,6 +359,7 @@ O EXEQ Hub inicia o **emissor próprio Nacional** com **DANFSe interno**, priori
 
 | Versão | Data | Nota |
 |--------|------|------|
+| 1.16 | 2026-07-30 | GL-01 pentest interno + fix Admin IDOR listagem; convênio HTTP ADN com mTLS |
 | 1.15 | 2026-07-30 | **M5 aprovado PO Ricardo** — piloto produção controlada (`agendador-qa`) |
 | 1.14 | 2026-07-30 | §11.2 roteiro PO validar/aprovar M5; evidência com tenant piloto |
 | 1.13 | 2026-07-30 | §11.1 atenções go-live (pentest + suite sec/resiliência/DPS/mTLS) |

@@ -1,0 +1,56 @@
+{% extends "hub_v4/base.html" %}
+
+{% block page_actions %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-das' %}">Voltar</a>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+    <div class="form-grid">
+      <div class="field full">
+        <label for="id_provider_id">Prestador (CNPJ) *</label>
+        <select id="id_provider_id" name="provider_id" required>
+          {% for p in providers %}
+          <option value="{{ p.id }}"
+            {% if form and form.provider_id == p.id|stringformat:"s" %}selected
+            {% elif active_provider_id and p.id|stringformat:"s" == active_provider_id %}selected
+            {% elif not form and not active_provider_id and forloop.first %}selected{% endif %}>
+            {{ p.legal_name }} · {{ p.document }}
+          </option>
+          {% empty %}
+          <option value="">Nenhuma empresa ativa</option>
+          {% endfor %}
+        </select>
+        <p class="hint-line">Certificado A1 do mesmo CNPJ é obrigatório para captura real.</p>
+      </div>
+      <div class="field">
+        <label for="id_tipo_guia">Tipo *</label>
+        <select id="id_tipo_guia" name="tipo_guia" required>
+          {% for code, label in tipos %}
+          <option value="{{ code }}"
+            {% if form and form.tipo_guia == code %}selected
+            {% elif not form and code == 'DAS' %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="id_competencia">Competência (AAAA-MM) *</label>
+        <input id="id_competencia" name="competencia" required pattern="\d{4}-\d{2}"
+               placeholder="2026-07"
+               value="{% if form %}{{ form.competencia }}{% else %}{{ default_competencia }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_versao_atual">Versão</label>
+        <input id="id_versao_atual" name="versao_atual" type="number" min="1" value="{% if form %}{{ form.versao_atual|default:'1' }}{% else %}1{% endif %}">
+      </div>
+    </div>
+    <div class="wizard-nav" style="margin-top:20px;">
+      <a class="btn btn-ghost" href="{% url 'hub-v4-das' %}">Cancelar</a>
+      <button type="submit" class="btn btn-primary">Emitir guia</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

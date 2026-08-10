@@ -1,0 +1,42 @@
+{% extends "hub_v4/base.html" %}
+
+{% block page_actions %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-das' %}">Lista</a>
+<a class="btn btn-primary" href="{% url 'hub-v4-das-emit' %}">Emitir outra</a>
+{% endblock %}
+
+{% block content %}
+<div class="card" style="margin-bottom:12px;">
+  <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center;">
+    <div>
+      <div style="font-family:var(--font-display);font-weight:700;font-size:1.1rem;">
+        {{ guia.get_tipo_guia_display }} · {{ guia.competencia }}
+      </div>
+      <div style="color:var(--text-muted);font-size:.9rem;">
+        {{ guia.provider.legal_name }} · {{ guia.provider.document }}
+      </div>
+    </div>
+    <span class="badge badge-neutral">{{ guia.get_status_display }}</span>
+  </div>
+</div>
+
+<div class="card">
+  <div class="section-label" style="margin-top:0;">Valores</div>
+  <div class="form-grid">
+    <div><span style="color:var(--text-muted);font-size:.8rem;">Principal</span><div><strong>R$ {{ guia.valor_principal }}</strong></div></div>
+    <div><span style="color:var(--text-muted);font-size:.8rem;">Multa</span><div>R$ {{ guia.valor_multa }}</div></div>
+    <div><span style="color:var(--text-muted);font-size:.8rem;">Juros</span><div>R$ {{ guia.valor_juros }}</div></div>
+    <div><span style="color:var(--text-muted);font-size:.8rem;">Total</span><div><strong>R$ {{ guia.valor_total }}</strong></div></div>
+    <div><span style="color:var(--text-muted);font-size:.8rem;">Vencimento</span><div>{{ guia.data_vencimento|date:"d/m/Y"|default:"—" }}</div></div>
+    <div><span style="color:var(--text-muted);font-size:.8rem;">Compliance</span><div>{{ guia.compliance_status }}</div></div>
+    <div class="full">
+      <span style="color:var(--text-muted);font-size:.8rem;">Linha digitável</span>
+      <div class="mono" style="word-break:break-all;">{{ guia.linha_digitavel|default:"—" }}</div>
+    </div>
+    <div class="full">
+      <span style="color:var(--text-muted);font-size:.8rem;">PIX</span>
+      <div class="mono" style="word-break:break-all;font-size:.85rem;">{{ guia.pix_copia_cola|default:"—" }}</div>
+    </div>
+  </div>
+</div>
+{% endblock %}

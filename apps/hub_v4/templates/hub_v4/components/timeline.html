@@ -1,0 +1,9 @@
+<ul class="timeline" aria-label="Timeline fiscal">
+  {% for step in timeline %}
+  <li class="{% if step.done %}done{% endif %} {% if step.current %}current{% endif %}">
+    <div>
+      <strong>{% if step.done %}✓ {% endif %}{{ step.label }}</strong>
+    </div>
+  </li>
+  {% endfor %}
+</ul>

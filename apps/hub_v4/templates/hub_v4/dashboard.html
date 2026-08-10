@@ -1,0 +1,114 @@
+{% extends "hub_v4/base.html" %}
+{% load hub_v4_tags %}
+
+{% block page_heading %}{{ greeting }}{% endblock %}
+
+{% block page_actions %}
+<a class="btn btn-primary" href="{% url 'hub-v4-nfse-wizard' %}">Emitir NFS-e</a>
+{% endblock %}
+
+{% block content %}
+<div class="kpi-grid">
+  {% kpi_card "NFS-e hoje" kpis.nfse_hoje %}
+  {% kpi_card "Em processamento" kpis.processing %}
+  {% kpi_card "Rejeitadas" kpis.rejected %}
+  {% kpi_card "Certificados" kpis.cert_active "ativos" %}
+</div>
+
+<div class="section-label">Uso do plano</div>
+<div class="card plan-usage-card" style="margin-bottom:16px;">
+  <div class="plan-usage-bar" style="margin-bottom:14px;background:transparent;padding:0;">
+    <span style="color:var(--text-muted);">Plano</span>
+    {% if usage.plan_name %}
+    <strong>{{ usage.plan_name }}</strong>
+    <span class="chip chip-accent">{{ usage.plan_code }}</span>
+    {% if usage.subscription_status %}
+    <span class="chip">{{ usage.subscription_status }}</span>
+    {% endif %}
+    {% else %}
+    <strong>Sem assinatura formal</strong>
+    <span class="chip">limites via settings ou ilimitado</span>
+    {% endif %}
+    <a class="link-muted" href="{% url 'hub-v4-preferences' %}" style="margin-left:auto;">Detalhes</a>
+  </div>
+  <div class="plan-meters">
+    {% for row in usage_rows %}
+    <div class="plan-meter {% if row.block.at_limit %}is-limit{% endif %}">
+      <div class="plan-meter-head">
+        <span>{{ row.label }}</span>
+        <strong>{{ row.block.label }}</strong>
+      </div>
+      {% if row.pct is not None %}
+      <div class="plan-meter-track" role="progressbar" aria-valuenow="{{ row.pct }}" aria-valuemin="0" aria-valuemax="100" aria-label="{{ row.label }}">
+        <span class="plan-meter-fill {% if row.block.at_limit %}is-warn{% elif row.pct >= 80 %}is-amber{% endif %}" style="width:{{ row.pct }}%"></span>
+      </div>
+      {% else %}
+      <div class="plan-meter-track plan-meter-track--open" role="presentation">
+        <span class="plan-meter-fill is-open" style="width:12%"></span>
+      </div>
+      {% endif %}
+      <div class="plan-meter-foot">
+        {% if row.block.at_limit %}
+        <span class="chip chip-warn">Limite atingido</span>
+        {% elif row.block.remaining is not None %}
+        <span class="meta-muted">{{ row.block.remaining }} restante(s)</span>
+        {% else %}
+        <span class="meta-muted">Sem teto</span>
+        {% endif %}
+        <a href="{% url row.url_name %}">{{ row.cta }} →</a>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="section-label">Ações pendentes</div>
+{% if pending_actions %}
+<div class="pending-grid">
+  {% for action in pending_actions %}
+    {% pending_action_card action %}
+  {% endfor %}
+</div>
+{% else %}
+<div class="card" style="margin-bottom:16px;color:var(--text-muted);">
+  Nenhuma pendência crítica no momento.
+</div>
+{% endif %}
+
+<div class="section-label">Últimas emissões</div>
+{% if recent_issues %}
+<div class="table-wrap desktop-only">
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Número / ref</th>
+        <th>Tomador</th>
+        <th>Competência</th>
+        <th>Status</th>
+        <th class="num">Valor</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for issue in recent_issues %}
+      <tr>
+        <td>{{ issue.focus_ref|default:issue.id|truncatechars:12 }}</td>
+        <td>{{ issue.customer.name }}</td>
+        <td>{{ issue.competence_date|date:"m/Y" }}</td>
+        <td>{% status_badge issue.status %}</td>
+        <td class="num">{{ issue.amount_cents|cents_brl }}</td>
+        <td><a class="btn btn-ghost btn-sm" href="{% url 'hub-v4-nfse-detail' issue.id %}">Ver</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="mobile-cards mobile-only">
+  {% for issue in recent_issues %}
+  {% include "hub_v4/components/mobile_data_card.html" with title=issue.customer.name subtitle=issue.focus_ref amount=issue.amount_cents|cents_brl badge=issue.get_status_display meta=issue.competence_date|date:"d/m/Y" cta_url=issue.id|stringformat:"s" %}
+  {% endfor %}
+</div>
+{% else %}
+{% empty_state "Nenhuma NFS-e encontrada" "Emita a primeira nota do tenant." "Emitir primeira nota →" "/hub/nfse/emitir/" %}
+{% endif %}
+{% endblock %}

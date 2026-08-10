@@ -1,0 +1,140 @@
+{% extends "hub_v4/base.html" %}
+
+{% block page_actions %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-nfe-list' %}">Voltar</a>
+{% endblock %}
+
+{% block content %}
+<div class="card" style="margin-bottom:12px;">
+  <p class="step-lead" style="margin:0;">
+    Emissão rápida: 1 item fiscal → envio SEFAZ (<code>{{ nfe_http_mode }}</code>).
+    Use produto do catálogo ou preencha item manual (NCM obrigatório).
+  </p>
+</div>
+
+<div class="card">
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+    <div class="form-grid">
+      <div class="field full">
+        <label for="id_provider_id">Emitente (CNPJ) *</label>
+        <select id="id_provider_id" name="provider_id" required>
+          {% for p in providers %}
+          <option value="{{ p.id }}"
+            {% if form and form.provider_id == p.id|stringformat:"s" %}selected
+            {% elif active_provider_id and p.id|stringformat:"s" == active_provider_id %}selected
+            {% elif not form and not active_provider_id and forloop.first %}selected{% endif %}>
+            {{ p.legal_name }} · {{ p.document }}
+          </option>
+          {% empty %}
+          <option value="">Cadastre uma empresa</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field full">
+        <label for="id_customer_id">Destinatário *</label>
+        <select id="id_customer_id" name="customer_id" required>
+          <option value="">Selecione…</option>
+          {% for c in customers %}
+          <option value="{{ c.id }}" {% if form.customer_id == c.id|stringformat:"s" %}selected{% endif %}>
+            {{ c.name }} · {{ c.document }}
+          </option>
+          {% empty %}
+          <option value="" disabled>Cadastre um cliente</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="id_nature_operation">Natureza da operação</label>
+        <input id="id_nature_operation" name="nature_operation" maxlength="60"
+               value="{% if form %}{{ form.nature_operation }}{% else %}VENDA{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_issue_date">Data de emissão</label>
+        <input id="id_issue_date" name="issue_date" type="date"
+               value="{% if form %}{{ form.issue_date }}{% else %}{{ today }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_series">Série</label>
+        <input id="id_series" name="series" type="number" min="1" value="{% if form %}{{ form.series|default:1 }}{% else %}1{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_tp_amb">Ambiente (tpAmb)</label>
+        <select id="id_tp_amb" name="tp_amb">
+          <option value="2" {% if default_tp_amb == '2' %}selected{% endif %}>2 · Homologação</option>
+          <option value="1" {% if default_tp_amb == '1' %}selected{% endif %}>1 · Produção</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="id_ind_ie_dest">IE destinatário</label>
+        <select id="id_ind_ie_dest" name="ind_ie_dest">
+          <option value="9" selected>9 · Não contribuinte</option>
+          <option value="1">1 · Contribuinte ICMS</option>
+          <option value="2">2 · Isento</option>
+        </select>
+      </div>
+
+      <div class="field full">
+        <div class="section-label">Item</div>
+      </div>
+      <div class="field full">
+        <label for="id_product_id">Produto do catálogo (opcional)</label>
+        <select id="id_product_id" name="product_id">
+          <option value="">— preencher item manualmente —</option>
+          {% for p in products %}
+          <option value="{{ p.id }}" {% if form.product_id == p.id|stringformat:"s" %}selected{% endif %}>
+            {{ p.code }} · {{ p.description }} · NCM {{ p.ncm }}
+          </option>
+          {% endfor %}
+        </select>
+        {% if not products %}
+        <p class="hint-line">Sem catálogo — use item manual ou <a href="{% url 'hub-v4-nfe-product-new' %}">cadastre um produto</a>.</p>
+        {% else %}
+        <p class="hint-line"><a href="{% url 'hub-v4-nfe-products' %}">Gerenciar produtos</a></p>
+        {% endif %}
+      </div>
+      <div class="field">
+        <label for="id_quantity">Quantidade *</label>
+        <input id="id_quantity" name="quantity" value="{% if form %}{{ form.quantity }}{% else %}1{% endif %}" required>
+      </div>
+      <div class="field">
+        <label for="id_unit_price">Preço unitário (R$)</label>
+        <input id="id_unit_price" name="unit_price" inputmode="decimal"
+               placeholder="do produto se vazio"
+               value="{% if form %}{{ form.unit_price }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_item_code">Código (manual)</label>
+        <input id="id_item_code" name="item_code" maxlength="60"
+               value="{% if form %}{{ form.item_code }}{% else %}ITEM1{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_item_ncm">NCM (manual, 8 dig.)</label>
+        <input id="id_item_ncm" name="item_ncm" maxlength="8" inputmode="numeric"
+               placeholder="12345678"
+               value="{% if form %}{{ form.item_ncm }}{% endif %}">
+      </div>
+      <div class="field full">
+        <label for="id_item_description">Descrição (manual)</label>
+        <input id="id_item_description" name="item_description" maxlength="120"
+               value="{% if form %}{{ form.item_description }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_csosn">CSOSN</label>
+        <input id="id_csosn" name="csosn" maxlength="3"
+               value="{% if form %}{{ form.csosn }}{% else %}102{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_cfop">CFOP (opcional)</label>
+        <input id="id_cfop" name="cfop" maxlength="4" placeholder="auto se vazio"
+               value="{% if form %}{{ form.cfop }}{% endif %}">
+      </div>
+    </div>
+    <div class="wizard-nav" style="margin-top:20px;">
+      <a class="btn btn-ghost" href="{% url 'hub-v4-nfe-list' %}">Cancelar</a>
+      <button type="submit" class="btn btn-primary">Emitir NF-e</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

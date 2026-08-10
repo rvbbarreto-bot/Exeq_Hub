@@ -1,0 +1,83 @@
+{% extends "hub_v4/base.html" %}
+{% load hub_v4_tags %}
+
+{% block page_actions %}
+{% if can_write %}
+<a class="btn btn-primary" href="{% url 'hub-v4-nfe-emit' %}">Emitir NF-e</a>
+<a class="btn btn-ghost" href="{% url 'hub-v4-nfe-products' %}">Produtos</a>
+{% endif %}
+<span class="badge badge-success">NF-e habilitada</span>
+{% endblock %}
+
+{% block content %}
+<form class="filter-bar" method="get">
+  <div class="field" style="flex:2;">
+    <label for="q">Buscar</label>
+    <input id="q" name="q" type="search" value="{{ q }}" placeholder="Nome, documento, chave, protocolo…">
+  </div>
+  <div class="field">
+    <label for="status">Status</label>
+    <select id="status" name="status">
+      <option value="all" {% if status == 'all' or not status %}selected{% endif %}>Todos</option>
+      <option value="authorized" {% if status == 'authorized' %}selected{% endif %}>Autorizada</option>
+      <option value="rejected" {% if status == 'rejected' %}selected{% endif %}>Rejeitada</option>
+      <option value="processing" {% if status == 'processing' %}selected{% endif %}>Processando</option>
+      <option value="draft" {% if status == 'draft' %}selected{% endif %}>Rascunho</option>
+    </select>
+  </div>
+  <button type="submit" class="btn btn-primary">Aplicar</button>
+</form>
+
+<div class="card" style="margin-bottom:12px;">
+  <p class="step-lead" style="margin:0;">
+    NF-e modelo 55 — ambiente <code>{{ nfe_http_mode }}</code> · tpAmb {{ nfe_tp_amb }}.
+    Emissão simplificada (1 item) disponível no Hub; avançado (CCe/cancelamento) via API.
+  </p>
+</div>
+
+{% if page.object_list %}
+<div class="table-wrap desktop-only">
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Série/Nº</th>
+        <th>Status</th>
+        <th>Cliente</th>
+        <th class="num">Valor</th>
+        <th>Criada</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for inv in page %}
+      <tr>
+        <td>{{ inv.series|default:"—" }} / {{ inv.number|default:"—" }}</td>
+        <td>{% status_badge inv.status %}</td>
+        <td>{% if inv.customer %}{{ inv.customer.name }}{% else %}—{% endif %}</td>
+        <td class="num">{{ inv.total_cents|default:0|cents_brl }}</td>
+        <td>{{ inv.created_at|date:"d/m/Y H:i" }}</td>
+        <td><a class="btn btn-ghost btn-sm" href="{% url 'hub-v4-nfe-detail' inv.id %}">Ver</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="mobile-cards">
+  {% for inv in page %}
+  <div class="mobile-data-card">
+    <div class="title">{{ inv.series|default:"—" }} / {{ inv.number|default:"—" }}</div>
+    <div class="row">
+      <strong>{{ inv.total_cents|default:0|cents_brl }}</strong>
+      {% status_badge inv.status %}
+    </div>
+    <div class="meta">{% if inv.customer %}{{ inv.customer.name }}{% endif %} · {{ inv.created_at|date:"d/m/Y" }}</div>
+    <a class="btn btn-ghost btn-sm" style="margin-top:8px;" href="{% url 'hub-v4-nfe-detail' inv.id %}">Ver</a>
+  </div>
+  {% endfor %}
+</div>
+<div class="pager"><span>Página {{ page.number }} / {{ page.paginator.num_pages }}</span></div>
+{% else %}
+{% url 'hub-v4-nfe-emit' as emit_url %}
+{% empty_state "Nenhuma NF-e ainda" "Emita a primeira nota de produto (modelo 55)." "Emitir NF-e →" emit_url %}
+{% endif %}
+{% endblock %}

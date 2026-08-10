@@ -1,0 +1,137 @@
+{% extends "hub_v4/base.html" %}
+{% load hub_v4_tags %}
+
+{% block page_actions %}
+<form method="get" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;">
+  <label>
+    <span style="color:var(--text-muted);font-size:.8rem;">Lookback (dias)</span>
+    <input name="lookback_days" value="{{ lookback_days }}" style="width:5rem;" />
+  </label>
+  <label>
+    <span style="color:var(--text-muted);font-size:.8rem;">Horizonte</span>
+    <input name="horizon_days" value="{{ horizon_days }}" style="width:5rem;" />
+  </label>
+  <button class="btn btn-ghost" type="submit">Atualizar</button>
+</form>
+{% endblock %}
+
+{% block content %}
+{% include "hub_v4/food/_subnav.html" %}
+
+<div class="card" style="margin-bottom:12px;">
+  <div class="section-label" style="margin-top:0;">Resumo</div>
+  <div class="form-grid">
+    <div><span style="color:var(--text-muted);font-size:.8rem;">SKUs com demanda</span>
+      <div><strong>{{ report.summary.skus_with_demand }}</strong></div></div>
+    <div><span style="color:var(--text-muted);font-size:.8rem;">Sugestões OP</span>
+      <div><strong>{{ report.summary.production_suggestions }}</strong></div></div>
+    <div><span style="color:var(--text-muted);font-size:.8rem;">Sugestões compra</span>
+      <div><strong>{{ report.summary.purchase_suggestions }}</strong></div></div>
+    <div><span style="color:var(--text-muted);font-size:.8rem;">Clientes high-churn</span>
+      <div><strong>{{ report.summary.high_churn_customers }}</strong></div></div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:12px;">
+  <div class="section-label" style="margin-top:0;">Produção sugerida</div>
+  {% if report.production_suggestions %}
+  <table class="data">
+    <thead><tr><th>SKU</th><th class="num">Sugerido</th><th>Fonte</th><th>Motivo / gaps</th></tr></thead>
+    <tbody>
+      {% for row in report.production_suggestions %}
+      <tr>
+        <td class="mono">{{ row.sku }}</td>
+        <td class="num">{{ row.suggested_qty }}</td>
+        <td>{{ row.source|default:"—" }}</td>
+        <td style="font-size:.85rem;color:var(--text-muted);">
+          prev. {{ row.forecast_units|default:"0" }}
+          {% if row.component_shortages %} · faltas: {% for s in row.component_shortages %}{{ s.sku }} {% endfor %}{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="color:var(--text-muted);margin:0;">Sem sugestões no período.</p>
+  {% endif %}
+</div>
+
+<div class="card" style="margin-bottom:12px;">
+  <div class="section-label" style="margin-top:0;">Compras sugeridas</div>
+  {% if report.purchase_suggestions %}
+  <table class="data">
+    <thead><tr><th>SKU</th><th class="num">Sugerido</th><th class="num">Disponível</th><th>Para OP</th></tr></thead>
+    <tbody>
+      {% for row in report.purchase_suggestions %}
+      <tr>
+        <td class="mono">{{ row.sku }}</td>
+        <td class="num">{{ row.suggested_qty }}</td>
+        <td class="num">{{ row.available }}</td>
+        <td class="mono">{{ row.for_production_sku|default:"—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="color:var(--text-muted);margin:0;">Sem sugestões de compra.</p>
+  {% endif %}
+</div>
+
+<div class="card" style="margin-bottom:12px;">
+  <div class="section-label" style="margin-top:0;">Clientes (churn / CLV)</div>
+  {% if report.customer_intelligence %}
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Cliente</th>
+        <th class="num">Churn</th>
+        <th class="num">CLV est.</th>
+        <th class="num">Pedidos</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in report.customer_intelligence %}
+      <tr>
+        <td>{{ c.name }}</td>
+        <td class="num">{{ c.churn_risk_score }}</td>
+        <td class="num">{{ c.clv_cents|cents_brl }}</td>
+        <td class="num">{{ c.order_count }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="color:var(--text-muted);margin:0;">Ainda sem histórico de clientes Food.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="section-label" style="margin-top:0;">Pricing</div>
+  {% if report.pricing_suggestions %}
+  <table class="data">
+    <thead>
+      <tr>
+        <th>SKU</th>
+        <th class="num">Preço atual</th>
+        <th class="num">Sugerido</th>
+        <th class="num">Δ bps</th>
+        <th>Motivo</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in report.pricing_suggestions %}
+      <tr>
+        <td class="mono">{{ p.sku }}</td>
+        <td class="num">{{ p.price_cents|cents_brl }}</td>
+        <td class="num">{{ p.suggested_price_cents|cents_brl }}</td>
+        <td class="num">{{ p.adjust_bps }}</td>
+        <td style="font-size:.85rem;color:var(--text-muted);">{{ p.reason }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="color:var(--text-muted);margin:0;">Sem ajustes de preço sugeridos.</p>
+  {% endif %}
+</div>
+{% endblock %}

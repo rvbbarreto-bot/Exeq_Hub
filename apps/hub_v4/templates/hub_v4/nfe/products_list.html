@@ -1,0 +1,75 @@
+{% extends "hub_v4/base.html" %}
+{% load hub_v4_tags %}
+
+{% block page_actions %}
+{% if can_write %}
+<a class="btn btn-primary" href="{% url 'hub-v4-nfe-product-new' %}">Novo produto</a>
+{% endif %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-nfe-list' %}">NF-e</a>
+{% endblock %}
+
+{% block content %}
+<div class="plan-usage-bar">
+  <span>Catálogo fiscal NF-e:</span>
+  <strong>{{ count }}</strong> produto(s)
+  · <a href="{% url 'hub-v4-nfe-emit' %}">Emitir com produto</a>
+</div>
+
+<form class="filter-bar" method="get">
+  <div class="field" style="flex:2;">
+    <label for="q">Buscar</label>
+    <input id="q" name="q" type="search" value="{{ q }}" placeholder="Código, descrição ou NCM">
+  </div>
+  <button type="submit" class="btn btn-primary">Aplicar</button>
+</form>
+
+{% if page.object_list %}
+<div class="table-wrap desktop-only">
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Código</th>
+        <th>Descrição</th>
+        <th>NCM</th>
+        <th>CFOP int/inter</th>
+        <th class="num">Preço</th>
+        <th>Ativo</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in page %}
+      <tr>
+        <td class="mono">{{ p.code }}</td>
+        <td>{{ p.description|truncatechars:48 }}</td>
+        <td class="mono">{{ p.ncm }}</td>
+        <td>{{ p.cfop_internal }} / {{ p.cfop_interstate }}</td>
+        <td class="num">{{ p.unit_price_cents|cents_brl }}</td>
+        <td>{% if p.is_active %}<span class="chip chip-accent">Sim</span>{% else %}<span class="chip">Não</span>{% endif %}</td>
+        <td style="text-align:right;">
+          {% if can_write %}
+          <a class="btn btn-ghost btn-sm" href="{% url 'hub-v4-nfe-product-edit' p.id %}">Editar</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="mobile-cards">
+  {% for p in page %}
+  <div class="mobile-data-card">
+    <div class="title">{{ p.code }} · {{ p.description|truncatechars:40 }}</div>
+    <div class="meta">NCM {{ p.ncm }} · {{ p.unit_price_cents|cents_brl }}</div>
+    {% if can_write %}
+    <a class="btn btn-ghost btn-sm" style="margin-top:8px;" href="{% url 'hub-v4-nfe-product-edit' p.id %}">Editar</a>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+<div class="pager"><span>Página {{ page.number }} / {{ page.paginator.num_pages }}</span></div>
+{% else %}
+{% url 'hub-v4-nfe-product-new' as new_url %}
+{% empty_state "Nenhum produto fiscal" "Cadastre SKUs com NCM/CFOP para emitir NF-e com mais agilidade." "Novo produto →" new_url %}
+{% endif %}
+{% endblock %}

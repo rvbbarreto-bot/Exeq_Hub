@@ -1,0 +1,94 @@
+{% extends "hub_v4/base.html" %}
+
+{% block page_actions %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-fiscal' %}">Voltar</a>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <form method="post">
+    {% csrf_token %}
+    <div class="form-grid">
+      <div class="field full">
+        <label for="id_name">Nome *</label>
+        <input id="id_name" name="name" required maxlength="128"
+               value="{% if form %}{{ form.name }}{% elif obj %}{{ obj.name }}{% endif %}"
+               placeholder="Simples Nacional · padrão">
+      </div>
+      <div class="field">
+        <label for="id_tax_regime">Regime tributário *</label>
+        <select id="id_tax_regime" name="tax_regime" required>
+          {% for value, label in tax_regimes %}
+          <option value="{{ value }}"
+            {% if form and form.tax_regime == value %}selected
+            {% elif obj and obj.tax_regime == value %}selected
+            {% elif not obj and not form and value == 'simples_nacional' %}selected{% endif %}>
+            {{ label }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="id_status">Status</label>
+        <select id="id_status" name="status">
+          <option value="active" {% if not obj or obj.status == 'active' %}selected{% endif %}>Ativo</option>
+          <option value="inactive" {% if obj and obj.status == 'inactive' %}selected{% endif %}>Inativo</option>
+        </select>
+      </div>
+      <div class="field full">
+        <label for="id_iss_retention_policy">Política de retenção ISS</label>
+        <input id="id_iss_retention_policy" name="iss_retention_policy"
+               value="{% if form %}{{ form.iss_retention_policy }}{% elif obj %}{{ obj.iss_retention_policy }}{% else %}by_rule{% endif %}">
+        <p class="hint-line">Padrão: by_rule (segue a regra municipal publicada).</p>
+      </div>
+
+      <div class="field full">
+        <label style="display:flex;align-items:center;gap:8px;font-weight:600;">
+          <input type="checkbox" name="ensure_rule" value="1" {% if not obj %}checked{% endif %}>
+          Publicar regra municipal (ISS) para este perfil
+        </label>
+        <p class="hint-line">
+          Necessário para emitir NFS-e sem depender do Admin. Use o IBGE do prestador (ex. Atibaia 3504107).
+        </p>
+      </div>
+      <div class="field">
+        <label for="id_ibge_code">IBGE município</label>
+        <input class="mono" id="id_ibge_code" name="ibge_code" maxlength="7"
+               value="{% if form %}{{ form.ibge_code }}{% else %}3504107{% endif %}"
+               placeholder="3504107">
+      </div>
+      <div class="field">
+        <label for="id_municipio_nome">Município</label>
+        <input id="id_municipio_nome" name="municipio_nome"
+               value="{% if form %}{{ form.municipio_nome }}{% else %}Atibaia{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_uf">UF</label>
+        <input id="id_uf" name="uf" maxlength="2"
+               value="{% if form %}{{ form.uf }}{% else %}SP{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_rule_service_code">Código serviço (regra)</label>
+        <input id="id_rule_service_code" name="rule_service_code" list="service-codes"
+               value="{% if form %}{{ form.rule_service_code }}{% else %}17.19{% endif %}"
+               placeholder="17.19">
+        <datalist id="service-codes">
+          {% for s in services %}
+          <option value="{{ s.service_code }}">{{ s.description|truncatechars:40 }}</option>
+          {% endfor %}
+        </datalist>
+      </div>
+      <div class="field">
+        <label for="id_iss_rate">Alíquota ISS (decimal)</label>
+        <input id="id_iss_rate" name="iss_rate"
+               value="{% if form %}{{ form.iss_rate }}{% else %}0.02{% endif %}"
+               placeholder="0.02">
+      </div>
+    </div>
+    <div class="wizard-nav" style="margin-top:20px;">
+      <a class="btn btn-ghost" href="{% url 'hub-v4-fiscal' %}">Cancelar</a>
+      <button type="submit" class="btn btn-primary">Salvar perfil</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

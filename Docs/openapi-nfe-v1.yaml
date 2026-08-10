@@ -1,0 +1,499 @@
+# Fragmento OpenAPI NF-e (modelo 55) — merge em openapi-v4 via apps.ops.openapi_views
+# LLR domínio §8 / DoD #9 — U10 fábrica
+openapi: 3.0.3
+info:
+  title: EXEQ Hub NF-e
+  version: 1.0.0-draft
+tags:
+  - name: nfe
+    description: NF-e modelo 55 B2B (feature flag NFE_ENABLED)
+paths:
+  /nfe/gate/:
+    get:
+      tags: [nfe]
+      summary: Pré-condições T0 (can_create, checks, próximo nº estimado)
+      parameters:
+        - in: query
+          name: provider_id
+          schema: { type: string, format: uuid }
+        - in: query
+          name: series
+          schema: { type: integer, minimum: 1 }
+        - in: query
+          name: tp_amb
+          schema: { type: string, enum: ["1", "2"] }
+      responses:
+        "200":
+          description: Gate payload
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NfeGate" }
+  /nfe/metrics/:
+    get:
+      tags: [nfe]
+      summary: KPIs operacionais NF-e (RF-91)
+      parameters:
+        - in: query
+          name: days
+          schema: { type: integer, minimum: 1, maximum: 366, default: 30 }
+      responses:
+        "200":
+          description: Agregados por tenant (taxa authorize, cStat, filas)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NfeOpsMetrics" }
+  /nfe/config/:
+    get:
+      tags: [nfe]
+      summary: Config série / ambiente (T6)
+      parameters:
+        - in: query
+          name: provider_id
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Config + gate resumido
+    put:
+      tags: [nfe]
+      summary: Upsert NumberSeries (next_number não regride)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NfeConfigSeriesPut" }
+      responses:
+        "200":
+          description: Série salva
+        "400":
+          description: Validação (ex. regressão de contador)
+        "403":
+          description: NFE_ENABLED=false
+  /nfe/config/inutilize:
+    post:
+      tags: [nfe]
+      summary: Inutiliza faixa nNF (InutNFe / U15)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider_id, n_ini, n_fin, x_just]
+              properties:
+                provider_id: { type: string, format: uuid }
+                series: { type: integer, minimum: 1 }
+                tp_amb: { type: string, enum: ["1", "2"] }
+                n_ini: { type: integer, minimum: 1 }
+                n_fin: { type: integer, minimum: 1 }
+                x_just: { type: string, minLength: 15, maxLength: 255 }
+                ano: { type: string }
+      responses:
+        "201":
+          description: Inutilização aceita + config atualizado
+        "400":
+          description: Faixa inválida / rejeição SEFAZ
+  /nfe/products/:
+    get:
+      tags: [nfe]
+      summary: Lista produtos fiscais (sem estoque)
+      responses:
+        "200":
+          description: Página ou lista
+    post:
+      tags: [nfe]
+      summary: Cria produto fiscal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NfeProduct" }
+      responses:
+        "201":
+          description: Criado
+  /nfe/invoices/:
+    get:
+      tags: [nfe]
+      summary: Lista NF-e (filtros status, q, flag, days/date_from/date_to)
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            description: "draft|authorized|rejected|…|processing|pdf_pending|denegada"
+        - in: query
+          name: flag
+          schema:
+            type: string
+            enum: [pdf_pending, denegada]
+        - in: query
+          name: q
+          schema: { type: string }
+        - in: query
+          name: days
+          schema: { type: integer, description: "0 = sem limite; default 30" }
+        - in: query
+          name: date_from
+          schema: { type: string, format: date }
+        - in: query
+          name: date_to
+          schema: { type: string, format: date }
+        - in: query
+          name: page
+          schema: { type: integer }
+        - in: query
+          name: page_size
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Página de invoices
+    post:
+      tags: [nfe]
+      summary: Cria draft (idempotency_key)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NfeDraftCreate" }
+      responses:
+        "201":
+          description: Draft
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NfeInvoice" }
+  /nfe/invoices/{id}/:
+    get:
+      tags: [nfe]
+      summary: Detalhe + allowed_actions + artifacts flags
+      parameters:
+        - $ref: "#/components/parameters/NfeId"
+      responses:
+        "200":
+          description: Invoice
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NfeInvoice" }
+  /nfe/invoices/{id}/items:
+    put:
+      tags: [nfe]
+      summary: Substitui itens (só draft / rejected sem number_consumed)
+      parameters:
+        - $ref: "#/components/parameters/NfeId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NfeItemsReplace" }
+      responses:
+        "200":
+          description: Invoice atualizada
+        "400":
+          description: Imutável / transição inválida
+        "409":
+          description: Conflito de versão
+  /nfe/invoices/{id}/validate:
+    post:
+      tags: [nfe]
+      summary: Valida fiscal (motor goods)
+      parameters:
+        - $ref: "#/components/parameters/NfeId"
+      responses:
+        "200":
+          description: "{ validation, invoice }"
+  /nfe/invoices/{id}/emit:
+    post:
+      tags: [nfe]
+      summary: Emite (202) — stub ou HTTP SEFAZ conforme NFE_HTTP_MODE
+      parameters:
+        - $ref: "#/components/parameters/NfeId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                version: { type: integer }
+      responses:
+        "202":
+          description: Processado (authorized|polling|rejected|failed)
+        "422":
+          description: field_errors
+  /nfe/invoices/{id}/cancel:
+    post:
+      tags: [nfe]
+      summary: Cancela autorizada (evento 110111)
+      parameters:
+        - $ref: "#/components/parameters/NfeId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [justificativa]
+              properties:
+                justificativa: { type: string, minLength: 15, maxLength: 255 }
+      responses:
+        "200":
+          description: Invoice cancelled ou authorized se rejeitada
+  /nfe/invoices/{id}/cce:
+    post:
+      tags: [nfe]
+      summary: Carta de Correção (evento 110110)
+      parameters:
+        - $ref: "#/components/parameters/NfeId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [x_correcao]
+              properties:
+                x_correcao: { type: string, minLength: 15, maxLength: 1000 }
+      responses:
+        "200":
+          description: NF-e authorized + CCe registrada (ou 400 se rejeitada)
+  /nfe/invoices/{id}/resend-email:
+    post:
+      tags: [nfe]
+      summary: Reenvia XML+DANFE por e-mail (RF-71; sem SEFAZ)
+      parameters:
+        - $ref: "#/components/parameters/NfeId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string, format: email }
+      responses:
+        "200":
+          description: Enviado
+        "400":
+          description: Sem destinatário
+        "502":
+          description: Falha backend e-mail
+  /nfe/invoices/{id}/retry-pdf:
+    post:
+      tags: [nfe]
+      summary: Regenera DANFE se xml ok / pdf_pending (RF-64)
+      parameters:
+        - $ref: "#/components/parameters/NfeId"
+      responses:
+        "200":
+          description: Invoice + pdf_retry_ok
+        "400":
+          description: Status inválido
+  /nfe/invoices/{id}/discard:
+    post:
+      tags: [nfe]
+      summary: Descarta draft puro
+      parameters:
+        - $ref: "#/components/parameters/NfeId"
+      responses:
+        "204":
+          description: Removido
+  /nfe/invoices/{id}/clone:
+    post:
+      tags: [nfe]
+      summary: Clona rejected/failed com nNF consumido
+      parameters:
+        - $ref: "#/components/parameters/NfeId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [idempotency_key]
+              properties:
+                idempotency_key: { type: string }
+      responses:
+        "201":
+          description: Novo draft
+  /nfe/invoices/{id}/events:
+    get:
+      tags: [nfe]
+      summary: Timeline de eventos (metadata sanitizada)
+      parameters:
+        - $ref: "#/components/parameters/NfeId"
+      responses:
+        "200":
+          description: "{ invoice_id, events[] }"
+  /nfe/invoices/{id}/attempts:
+    get:
+      tags: [nfe]
+      summary: Tentativas SEFAZ redacted (RF-44)
+      parameters:
+        - $ref: "#/components/parameters/NfeId"
+      responses:
+        "200":
+          description: "{ invoice_id, attempts[] }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NfeAttempts" }
+  /nfe/invoices/{id}/artifacts/xml:
+    get:
+      tags: [nfe]
+      summary: Download XML autorizado (attachment)
+      parameters:
+        - $ref: "#/components/parameters/NfeId"
+      responses:
+        "200":
+          description: application/xml
+        "404":
+          description: Indisponível
+  /nfe/invoices/{id}/artifacts/pdf:
+    get:
+      tags: [nfe]
+      summary: Download DANFE PDF
+      parameters:
+        - $ref: "#/components/parameters/NfeId"
+      responses:
+        "200":
+          description: application/pdf
+  /nfe/invoices/{id}/artifacts/cce:
+    get:
+      tags: [nfe]
+      summary: Download XML da última CCe
+      parameters:
+        - $ref: "#/components/parameters/NfeId"
+      responses:
+        "200":
+          description: application/xml
+        "404":
+          description: Indisponível
+components:
+  parameters:
+    NfeId:
+      in: path
+      name: id
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    NfeGate:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        can_create: { type: boolean }
+        checks:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              ok: { type: boolean }
+              label: { type: string }
+              must: { type: boolean }
+        http_mode: { type: string }
+        pivot_uf: { type: string }
+        supported_ufs:
+          type: array
+          items: { type: string }
+        series: { type: integer }
+        tp_amb: { type: string }
+        next_number_estimated: { type: integer, nullable: true }
+        provider_id: { type: string, format: uuid, nullable: true }
+    NfeOpsMetrics:
+      type: object
+      properties:
+        days: { type: integer }
+        since: { type: string, format: date-time }
+        total: { type: integer }
+        by_status:
+          type: object
+          additionalProperties: { type: integer }
+        authorize_rate: { type: number, nullable: true }
+        rejected_by_cstat:
+          type: object
+          additionalProperties: { type: integer }
+        poll_exhausted: { type: integer }
+        polling_queue: { type: integer }
+        pdf_pending: { type: integer }
+    NfeConfigSeriesPut:
+      type: object
+      required: [provider_id]
+      properties:
+        provider_id: { type: string, format: uuid }
+        series: { type: integer, minimum: 1 }
+        tp_amb: { type: string, enum: ["1", "2"] }
+        next_number: { type: integer, minimum: 1 }
+        is_active: { type: boolean }
+    NfeProduct:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        description: { type: string }
+        ncm: { type: string }
+        unit: { type: string }
+        unit_price_cents: { type: integer }
+        cfop_internal: { type: string }
+        cfop_interstate: { type: string }
+        csosn: { type: string }
+        icms_cst: { type: string }
+    NfeDraftCreate:
+      type: object
+      required: [idempotency_key, provider_id, customer_id]
+      properties:
+        idempotency_key: { type: string }
+        provider_id: { type: string, format: uuid }
+        customer_id: { type: string, format: uuid }
+        nature_operation: { type: string }
+        series: { type: integer }
+        tp_amb: { type: string, enum: ["1", "2"] }
+        ind_ie_dest: { type: string, enum: ["1", "2", "9"] }
+        issue_date: { type: string, format: date }
+    NfeItemsReplace:
+      type: object
+      properties:
+        version: { type: integer }
+        items:
+          type: array
+          items: { type: object }
+    NfeInvoice:
+      type: object
+      description: Documento NF-e + allowed_actions derivados no servidor
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string }
+        version: { type: integer }
+        series: { type: integer }
+        number: { type: integer, nullable: true }
+        access_key: { type: string }
+        protocol: { type: string }
+        number_consumed: { type: boolean }
+        total_cents: { type: integer }
+        allowed_actions:
+          type: array
+          items: { type: string }
+        flags:
+          type: object
+          properties:
+            denegada: { type: boolean }
+            pdf_pending: { type: boolean }
+        artifacts:
+          type: object
+          properties:
+            xml_authorized: { type: boolean }
+            danfe_pdf: { type: boolean }
+            xml_cce: { type: boolean }
+    NfeAttempts:
+      type: object
+      properties:
+        invoice_id: { type: string, format: uuid }
+        attempts:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string, format: uuid }
+              stage: { type: string, enum: [emit, poll, cancel, cce, inut] }
+              result_status: { type: string }
+              c_stat: { type: string }
+              x_motivo: { type: string }
+              http_status: { type: integer, nullable: true }
+              duration_ms: { type: integer, nullable: true }
+              correlation_id: { type: string, format: uuid, nullable: true }
+              created_at: { type: string, format: date-time }

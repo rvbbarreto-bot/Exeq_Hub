@@ -70,8 +70,16 @@ def _celery_eager(settings):
     settings.SEFIN_HTTP_MODE = "stub"
     settings.PAYMENT_HTTP_MODE = "stub"
     settings.EVOLUTION_HTTP_MODE = "stub"
+    settings.WHATSAPP_PROVIDER = "evolution"
+    settings.META_WHATSAPP_HTTP_MODE = "stub"
+    settings.EVOLUTION_WEBHOOK_TOKEN = "test-webhook-token"
+    settings.EVOLUTION_WEBHOOK_ALLOW_LEGACY = True
+    settings.CHANNEL_AI_MODE = "stub"
     settings.CADASTRO_HTTP_MODE = "stub"
     settings.RECEITA_HTTP_MODE = "stub"
+    settings.NFE_ENABLED = False
+    settings.NFE_HTTP_MODE = "stub"
+    settings.NFE_HTTP_DRY_RUN = False
     # Lab CI: stub SEFIN em homolog precisa de semente (produção restrita real ≠ Atibaia).
     settings.SEFIN_ENVIRONMENT = "homolog"
     settings.NFSE_CONVENIO_MODE = "stub"

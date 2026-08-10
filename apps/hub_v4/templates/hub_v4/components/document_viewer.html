@@ -1,0 +1,21 @@
+{% load hub_v4_tags %}
+<div class="document-viewer">
+  <div class="doc-toolbar">
+    <div>
+      <div class="doc-viewer-title">{{ title }}</div>
+      <div class="hint-line">
+        Checksum {{ artifact.checksum_sha256|truncatechars:20 }}
+        {% if artifact.stored_file %}
+        · {{ artifact.stored_file.size_bytes|default:0 }} bytes
+        {% endif %}
+      </div>
+    </div>
+    <a class="btn btn-primary btn-sm"
+       href="{% url 'hub-v4-nfse-doc-download' issue.id kind %}">
+      Baixar {{ kind|upper }}
+    </a>
+  </div>
+  <div class="doc-preview-hint">
+    Download seguro por tenant · mesmo armazenamento do Admin (sem alterar storage).
+  </div>
+</div>

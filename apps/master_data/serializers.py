@@ -26,6 +26,7 @@ class ProviderSerializer(serializers.ModelSerializer):
             "legal_name",
             "trade_name",
             "municipal_registration",
+            "state_registration",
             "tax_regime",
             "address",
             "is_active",

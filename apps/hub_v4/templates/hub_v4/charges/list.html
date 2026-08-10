@@ -1,0 +1,58 @@
+{% extends "hub_v4/base.html" %}
+{% load hub_v4_tags %}
+
+{% block page_actions %}
+{% if can_write %}
+<a class="btn btn-primary" href="{% url 'hub-v4-charge-new' %}">Nova cobrança</a>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+{% if page.object_list %}
+<div class="table-wrap desktop-only">
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Tomador</th>
+        <th>Descrição</th>
+        <th>Vencimento</th>
+        <th>Status</th>
+        <th class="num">Valor</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in page %}
+      <tr>
+        <td>{{ c.customer.name }}</td>
+        <td>{{ c.description|default:"—"|truncatechars:40 }}</td>
+        <td>{{ c.due_date|date:"d/m/Y"|default:"—" }}</td>
+        <td>{% status_badge c.status %}</td>
+        <td class="num">{{ c.amount_cents|cents_brl }}</td>
+        <td><a class="btn btn-ghost btn-sm" href="{% url 'hub-v4-charge-detail' c.id %}">Ver</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="mobile-cards">
+  {% for c in page %}
+  <div class="mobile-data-card">
+    <div class="title">{{ c.customer.name }}</div>
+    <div class="row">
+      <strong>{{ c.amount_cents|cents_brl }}</strong>
+      {% status_badge c.status %}
+    </div>
+    <div class="meta">Venc. {{ c.due_date|date:"d/m/Y"|default:"—" }}</div>
+    <a class="btn btn-ghost btn-sm" style="margin-top:8px;" href="{% url 'hub-v4-charge-detail' c.id %}">Ver</a>
+  </div>
+  {% endfor %}
+</div>
+<div class="pager">
+  <span>Página {{ page.number }} / {{ page.paginator.num_pages }}</span>
+</div>
+{% else %}
+{% url 'hub-v4-charge-new' as new_url %}
+{% empty_state "Nenhuma cobrança" "Emita a primeira cobrança (boleto/PIX via gateway do tenant)." "Nova cobrança →" new_url %}
+{% endif %}
+{% endblock %}

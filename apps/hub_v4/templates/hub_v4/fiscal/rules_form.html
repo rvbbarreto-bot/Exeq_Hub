@@ -1,0 +1,70 @@
+{% extends "hub_v4/base.html" %}
+
+{% block page_actions %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-tax-rules' %}">Voltar</a>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <p style="color:var(--text-muted);margin-top:0;">
+    Publica regra no catálogo fiscal do tenant (cópia versionada se já houver catalogo published).
+    Use o mesmo código de serviço do catálogo ao emitir.
+  </p>
+  {% if not profiles %}
+  <p class="field-error">
+    Crie um <a href="{% url 'hub-v4-fiscal-new' %}">perfil fiscal</a> antes da regra.
+  </p>
+  {% else %}
+  <form method="post" class="form-grid">
+    {% csrf_token %}
+    <div class="field full">
+      <label for="id_fiscal_profile_id">Perfil fiscal *</label>
+      <select id="id_fiscal_profile_id" name="fiscal_profile_id" required>
+        <option value="">Selecione…</option>
+        {% for p in profiles %}
+        <option value="{{ p.id }}"
+          {% if form and form.fiscal_profile_id == p.id|stringformat:"s" %}selected{% endif %}>
+          {{ p.name }} · {{ p.tax_regime }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="id_ibge_code">IBGE *</label>
+      <input class="mono" id="id_ibge_code" name="ibge_code" maxlength="7" required
+             value="{% if form %}{{ form.ibge_code }}{% else %}3504107{% endif %}">
+    </div>
+    <div class="field">
+      <label for="id_municipio_nome">Município *</label>
+      <input id="id_municipio_nome" name="municipio_nome" required
+             value="{% if form %}{{ form.municipio_nome }}{% else %}Atibaia{% endif %}">
+    </div>
+    <div class="field">
+      <label for="id_uf">UF *</label>
+      <input id="id_uf" name="uf" maxlength="2" required
+             value="{% if form %}{{ form.uf }}{% else %}SP{% endif %}">
+    </div>
+    <div class="field">
+      <label for="id_service_code">Código serviço *</label>
+      <input id="id_service_code" name="service_code" list="svc-codes" required
+             value="{% if form %}{{ form.service_code }}{% else %}17.19{% endif %}"
+             placeholder="17.19">
+      <datalist id="svc-codes">
+        {% for s in services %}
+        <option value="{{ s.service_code }}">{{ s.description|truncatechars:48 }}</option>
+        {% endfor %}
+      </datalist>
+    </div>
+    <div class="field">
+      <label for="id_iss_rate">Alíquota ISS (decimal)</label>
+      <input id="id_iss_rate" name="iss_rate"
+             value="{% if form %}{{ form.iss_rate }}{% else %}0.02{% endif %}">
+    </div>
+    <div class="field full wizard-nav" style="margin-top:8px;justify-content:flex-end;">
+      <a class="btn btn-ghost" href="{% url 'hub-v4-tax-rules' %}">Cancelar</a>
+      <button type="submit" class="btn btn-primary">Publicar regra</button>
+    </div>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

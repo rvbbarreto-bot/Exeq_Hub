@@ -1,0 +1,48 @@
+{% extends "hub_v4/base.html" %}
+
+{% block page_actions %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-services' %}">Voltar</a>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <form method="post">
+    {% csrf_token %}
+    <div class="form-grid">
+      <div class="field">
+        <label for="id_service_code">Código *</label>
+        <input class="mono" id="id_service_code" name="service_code" required maxlength="32"
+               value="{% if form %}{{ form.service_code }}{% elif obj %}{{ obj.service_code }}{% endif %}"
+               placeholder="17.19">
+      </div>
+      <div class="field">
+        <label for="id_lc116_item">LC 116</label>
+        <input class="mono" id="id_lc116_item" name="lc116_item" maxlength="16"
+               value="{% if form %}{{ form.lc116_item }}{% elif obj %}{{ obj.lc116_item }}{% endif %}"
+               placeholder="17.19">
+      </div>
+      <div class="field full">
+        <label for="id_description">Descrição *</label>
+        <textarea id="id_description" name="description" rows="4" required>{% if form %}{{ form.description }}{% elif obj %}{{ obj.description }}{% endif %}</textarea>
+      </div>
+      <div class="field">
+        <label for="id_codigo_tributacao_nacional_iss">cTribNac (ISS nacional)</label>
+        <input class="mono" id="id_codigo_tributacao_nacional_iss" name="codigo_tributacao_nacional_iss" maxlength="16"
+               value="{% if form %}{{ form.codigo_tributacao_nacional_iss }}{% elif obj %}{{ obj.codigo_tributacao_nacional_iss }}{% endif %}"
+               placeholder="171901">
+      </div>
+      <div class="field">
+        <label for="id_is_active">Ativo</label>
+        <select id="id_is_active" name="is_active">
+          <option value="1" {% if not obj or obj.is_active %}selected{% endif %}>Sim</option>
+          <option value="0" {% if obj and not obj.is_active %}selected{% endif %}>Não</option>
+        </select>
+      </div>
+    </div>
+    <div class="wizard-nav" style="margin-top:20px;">
+      <a class="btn btn-ghost" href="{% url 'hub-v4-services' %}">Cancelar</a>
+      <button type="submit" class="btn btn-primary">Salvar serviço</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

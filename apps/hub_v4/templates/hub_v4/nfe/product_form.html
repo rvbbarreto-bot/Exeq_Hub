@@ -1,0 +1,108 @@
+{% extends "hub_v4/base.html" %}
+
+{% block page_actions %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-nfe-products' %}">Voltar</a>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <form method="post">
+    {% csrf_token %}
+    <div class="form-grid">
+      <div class="field">
+        <label for="id_code">Código *</label>
+        <input class="mono" id="id_code" name="code" required maxlength="60"
+               value="{% if form %}{{ form.code }}{% elif obj %}{{ obj.code }}{% endif %}"
+               placeholder="SKU-001">
+      </div>
+      <div class="field">
+        <label for="id_ncm">NCM * (8 dig.)</label>
+        <input class="mono" id="id_ncm" name="ncm" required maxlength="8" inputmode="numeric"
+               value="{% if form %}{{ form.ncm }}{% elif obj %}{{ obj.ncm }}{% endif %}"
+               placeholder="12345678">
+      </div>
+      <div class="field full">
+        <label for="id_description">Descrição *</label>
+        <input id="id_description" name="description" required maxlength="120"
+               value="{% if form %}{{ form.description }}{% elif obj %}{{ obj.description }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_unit_price">Preço unitário (R$)</label>
+        <input id="id_unit_price" name="unit_price" inputmode="decimal"
+               value="{% if form %}{{ form.unit_price }}{% else %}{{ unit_price_display }}{% endif %}"
+               placeholder="0,00">
+      </div>
+      <div class="field">
+        <label for="id_unit">Unidade</label>
+        <input id="id_unit" name="unit" maxlength="6"
+               value="{% if form %}{{ form.unit }}{% elif obj %}{{ obj.unit }}{% else %}UN{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_origin">Origem (0–8)</label>
+        <input id="id_origin" name="origin" maxlength="1"
+               value="{% if form %}{{ form.origin }}{% elif obj %}{{ obj.origin }}{% else %}0{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_cfop_internal">CFOP interno</label>
+        <input class="mono" id="id_cfop_internal" name="cfop_internal" maxlength="4"
+               value="{% if form %}{{ form.cfop_internal }}{% elif obj %}{{ obj.cfop_internal }}{% else %}5102{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_cfop_interstate">CFOP interestadual</label>
+        <input class="mono" id="id_cfop_interstate" name="cfop_interstate" maxlength="4"
+               value="{% if form %}{{ form.cfop_interstate }}{% elif obj %}{{ obj.cfop_interstate }}{% else %}6102{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_csosn">CSOSN (Simples)</label>
+        <input class="mono" id="id_csosn" name="csosn" maxlength="3"
+               value="{% if form %}{{ form.csosn }}{% elif obj %}{{ obj.csosn }}{% else %}102{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_icms_cst">CST ICMS</label>
+        <input class="mono" id="id_icms_cst" name="icms_cst" maxlength="3"
+               value="{% if form %}{{ form.icms_cst }}{% elif obj %}{{ obj.icms_cst }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_icms_rate">Alíquota ICMS (%)</label>
+        <input id="id_icms_rate" name="icms_rate" inputmode="decimal"
+               value="{% if form %}{{ form.icms_rate }}{% else %}{{ icms_rate_display }}{% endif %}"
+               placeholder="0">
+      </div>
+      <div class="field">
+        <label for="id_pis_cst">CST PIS</label>
+        <input class="mono" id="id_pis_cst" name="pis_cst" maxlength="2"
+               value="{% if form %}{{ form.pis_cst }}{% elif obj %}{{ obj.pis_cst }}{% else %}07{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_pis_rate">Alíquota PIS (%)</label>
+        <input id="id_pis_rate" name="pis_rate" inputmode="decimal"
+               value="{% if form %}{{ form.pis_rate }}{% else %}{{ pis_rate_display }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_cofins_cst">CST COFINS</label>
+        <input class="mono" id="id_cofins_cst" name="cofins_cst" maxlength="2"
+               value="{% if form %}{{ form.cofins_cst }}{% elif obj %}{{ obj.cofins_cst }}{% else %}07{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_cofins_rate">Alíquota COFINS (%)</label>
+        <input id="id_cofins_rate" name="cofins_rate" inputmode="decimal"
+               value="{% if form %}{{ form.cofins_rate }}{% else %}{{ cofins_rate_display }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_is_active">Ativo</label>
+        <select id="id_is_active" name="is_active">
+          <option value="1" {% if not obj or obj.is_active %}selected{% elif form and form.is_active != '0' %}selected{% endif %}>Sim</option>
+          <option value="0" {% if obj and not obj.is_active %}selected{% elif form and form.is_active == '0' %}selected{% endif %}>Não</option>
+        </select>
+      </div>
+    </div>
+    <p class="hint-line" style="margin-top:12px;">
+      Desativar remove o item do seletor de emissão; notas já emitidas não são afetadas.
+    </p>
+    <div class="wizard-nav" style="margin-top:20px;">
+      <a class="btn btn-ghost" href="{% url 'hub-v4-nfe-products' %}">Cancelar</a>
+      <button type="submit" class="btn btn-primary">Salvar produto</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

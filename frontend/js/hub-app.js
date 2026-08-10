@@ -104,6 +104,9 @@
     if (active.id === "screen-nfse" && global.HubNfse) {
       await HubNfse.loadList();
     }
+    if (active.id === "screen-nfe" && global.HubNfe) {
+      await HubNfe.loadScreen();
+    }
     if (active.id === "screen-cobrancas" && global.HubCharges) {
       await HubCharges.loadList();
       if (HubCharges.loadPresets) await HubCharges.loadPresets();
@@ -168,6 +171,7 @@
     refreshSessionChrome();
     if (global.HubDashboard) HubDashboard.bind();
     if (global.HubNfse) HubNfse.bind();
+    if (global.HubNfe) HubNfe.bind();
     if (global.HubCharges) HubCharges.bind();
     if (global.HubProvider) HubProvider.bind();
     if (global.HubCertificates) HubCertificates.bind();

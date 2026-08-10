@@ -1,0 +1,50 @@
+{% extends "hub_v4/base.html" %}
+{% load hub_v4_tags %}
+
+{% block page_actions %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-charges' %}">Lista</a>
+<a class="btn btn-primary" href="{% url 'hub-v4-charge-new' %}">Nova cobrança</a>
+{% endblock %}
+
+{% block content %}
+<div class="card" style="margin-bottom:12px;">
+  <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center;">
+    <div>
+      <div style="font-family:var(--font-display);font-weight:700;font-size:1.1rem;">
+        {{ charge.customer.name }}
+      </div>
+      <div style="color:var(--text-muted);font-size:.9rem;">
+        {{ charge.description|default:"—" }} · {{ charge.get_charge_kind_display }}
+        {% if charge.installment_number %}
+        · Parcela {{ charge.installment_number }}/{{ charge.installment_count }}
+        {% endif %}
+      </div>
+    </div>
+    {% status_badge charge.status %}
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:12px;">
+  <div class="section-label" style="margin-top:0;">Resumo</div>
+  <div class="form-grid">
+    <div><span style="color:var(--text-muted);font-size:.8rem;">Valor</span><div><strong>{{ charge.amount_cents|cents_brl }}</strong></div></div>
+    <div><span style="color:var(--text-muted);font-size:.8rem;">Vencimento</span><div>{{ charge.due_date|date:"d/m/Y" }}</div></div>
+    <div><span style="color:var(--text-muted);font-size:.8rem;">Gateway ref</span><div class="mono">{{ charge.gateway_ref|default:"—" }}</div></div>
+    <div><span style="color:var(--text-muted);font-size:.8rem;">Código controle</span><div class="mono">{{ charge.seu_numero|default:"—" }}</div></div>
+    <div class="full">
+      <span style="color:var(--text-muted);font-size:.8rem;">Linha digitável</span>
+      <div class="mono" style="word-break:break-all;">{{ charge.digitable_line|default:"—" }}</div>
+    </div>
+    <div class="full">
+      <span style="color:var(--text-muted);font-size:.8rem;">PIX copia e cola</span>
+      <div class="mono" style="word-break:break-all;font-size:.85rem;">{{ charge.pix_copy_paste|default:"—" }}</div>
+    </div>
+    {% if charge.payment_url %}
+    <div class="full">
+      <span style="color:var(--text-muted);font-size:.8rem;">URL boleto</span>
+      <div><a href="{{ charge.payment_url }}" rel="noopener" target="_blank">{{ charge.payment_url }}</a></div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

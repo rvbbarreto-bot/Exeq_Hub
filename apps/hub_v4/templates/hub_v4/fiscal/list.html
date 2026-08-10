@@ -1,0 +1,54 @@
+{% extends "hub_v4/base.html" %}
+{% load hub_v4_tags %}
+
+{% block page_actions %}
+{% if can_write %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-tax-rules' %}">Regras ISS</a>
+<a class="btn btn-primary" href="{% url 'hub-v4-fiscal-new' %}">Novo perfil</a>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<form class="filter-bar" method="get">
+  <div class="field" style="flex:2;">
+    <label for="q">Buscar perfil</label>
+    <input id="q" name="q" type="search" value="{{ q }}" placeholder="Nome ou regime">
+  </div>
+  <button type="submit" class="btn btn-primary">Aplicar</button>
+</form>
+
+{% if page.object_list %}
+<div class="table-wrap desktop-only">
+  <table class="data">
+    <thead>
+      <tr><th>Nome</th><th>Regime</th><th>Status</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for p in page %}
+      <tr>
+        <td><strong>{{ p.name }}</strong></td>
+        <td>{{ p.get_tax_regime_display|default:p.tax_regime }}</td>
+        <td>{{ p.status }}</td>
+        <td style="text-align:right;">
+          {% if can_write %}
+          <a class="btn btn-ghost btn-sm" href="{% url 'hub-v4-fiscal-edit' p.id %}">Editar</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="mobile-cards">
+  {% for p in page %}
+  <div class="mobile-data-card">
+    <div class="title">{{ p.name }}</div>
+    <div class="meta">{{ p.tax_regime }} · {{ p.status }}</div>
+  </div>
+  {% endfor %}
+</div>
+<div class="pager"><span>Página {{ page.number }} / {{ page.paginator.num_pages }}</span></div>
+{% else %}
+{% empty_state "Nenhum perfil fiscal" "Crie o perfil (ex.: Simples Nacional) e opcionalmente a regra municipal para emitir." "Novo perfil" "/hub/fiscal/novo/" %}
+{% endif %}
+{% endblock %}

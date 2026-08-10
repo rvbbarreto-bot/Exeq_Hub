@@ -252,6 +252,18 @@ class NfIssueAdmin(admin.ModelAdmin):
     date_hierarchy = "created_at"
     ordering = ("-created_at",)
 
+    def get_queryset(self, request):
+        from apps.accounts.models import TenantMembership
+
+        qs = super().get_queryset(request)
+        # SEC-P1-09 / GL-01: isolamento Admin por membership (exceto superuser).
+        if not request.user.is_superuser:
+            tenant_ids = TenantMembership.objects.filter(user=request.user).values_list(
+                "tenant_id", flat=True
+            )
+            qs = qs.filter(tenant_id__in=tenant_ids)
+        return qs
+
     fieldsets = (
         (
             "Emissão (QA)",
@@ -660,8 +672,10 @@ class NfArtifactAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         from django.db.models import Prefetch
 
+        from apps.accounts.models import TenantMembership
+
         # Uma linha por emissão: PDF + XML juntos na coluna Downloads.
-        return (
+        qs = (
             super()
             .get_queryset(request)
             .select_related("nf_issue", "tenant")
@@ -674,6 +688,13 @@ class NfArtifactAdmin(admin.ModelAdmin):
             .order_by("nf_issue_id", "kind")
             .distinct("nf_issue_id")
         )
+        # SEC-P1-09 / GL-01: staff não-superuser só vê tenants da membership (IDOR Admin).
+        if not request.user.is_superuser:
+            tenant_ids = TenantMembership.objects.filter(user=request.user).values_list(
+                "tenant_id", flat=True
+            )
+            qs = qs.filter(tenant_id__in=tenant_ids)
+        return qs
 
     def get_urls(self):
         urls = super().get_urls()

@@ -265,86 +265,26 @@ def process_queued_issue(issue: NfIssue) -> NfIssue:
     )
 
     if route.kind == "sefin":
+        from django.conf import settings as dj_settings
+
+        from apps.accounts.certificates import load_primary_pfx_material
+        from apps.accounts.exceptions import CertificateNotUsableError
         from integrations.nfse.convenio import (
             MunicipioNaoAderenteError,
             assert_municipio_aderente_nacional,
         )
 
-        try:
-            from django.conf import settings as dj_settings
-
-            sefin_env = getattr(dj_settings, "SEFIN_ENVIRONMENT", None)
-            assert_municipio_aderente_nacional(
-                issue.ibge_code,
-                environment=sefin_env,
-            )
-        except MunicipioNaoAderenteError as exc:
-            issue.rejection_code = MunicipioNaoAderenteError.code
-            issue.focus_status_raw = {
-                "provider": "sefin",
-                "action": "preflight",
-                "detail": str(exc),
-                "sefin_environment": getattr(dj_settings, "SEFIN_ENVIRONMENT", None),
-                "sefin_http_mode": getattr(dj_settings, "SEFIN_HTTP_MODE", None),
-            }
-            issue.save(
-                update_fields=["rejection_code", "focus_status_raw", "updated_at"]
-            )
-            transition(
-                issue,
-                to_status=NfIssue.Status.REJECTED,
-                actor="worker",
-                metadata={"code": issue.rejection_code, "ex": "EX-PRE-01"},
-            )
-            return issue
-
-    if route.kind == "focus":
-        nfse_body = build_focus_body(issue, layout=route.layout)
-        emit_payload = {
-            "issue_id": str(issue.id),
-            "ref": str(issue.id),
-            "amount_cents": issue.amount_cents,
-            "ibge_code": issue.ibge_code,
-            "competence_date": issue.competence_date.isoformat(),
-            "resolved_params": issue.resolved_params or {},
-            "layout": route.layout,
-            "nfse": nfse_body,
-        }
-    elif route.kind == "sefin":
-        from django.conf import settings as dj_settings
-
-        from apps.accounts.exceptions import CertificateNotUsableError
-        from integrations.nfse.dps import to_sefin_dps_dict, build_dps_xml_from_dict
-        from integrations.nfse.xmldsig import sign_dps_xml
-
-        tp_amb = 1 if (getattr(dj_settings, "SEFIN_ENVIRONMENT", "homolog") or "").lower() in {
-            "prod",
-            "production",
-            "producao",
-            "produção",
-        } else 2
-        dps_dict = to_sefin_dps_dict(issue, tp_amb=tp_amb)
-        unsigned_xml = build_dps_xml_from_dict(dps_dict)
-        nfse_body = {
-            "provider": "sefin",
-            "layout": route.layout,
-            "tp_amb": tp_amb,
-            "dps": dps_dict,
-            "dps_id": (dps_dict.get("infDPS") or {}).get("Id"),
-        }
-        emit_payload = {
-            "issue_id": str(issue.id),
-            "ref": str(issue.id),
-            "amount_cents": issue.amount_cents,
-            "ibge_code": issue.ibge_code,
-            "competence_date": issue.competence_date.isoformat(),
-            "resolved_params": issue.resolved_params or {},
-            "layout": route.layout,
-            "nfse": nfse_body,
-        }
-        if (getattr(dj_settings, "SEFIN_HTTP_MODE", "stub") or "stub").lower() == "http":
-            from apps.accounts.certificates import load_primary_pfx_material
-
+        sefin_env = getattr(dj_settings, "SEFIN_ENVIRONMENT", None)
+        convenio_mode = (
+            getattr(dj_settings, "NFSE_CONVENIO_MODE", "stub") or "stub"
+        ).lower()
+        sefin_http = (
+            getattr(dj_settings, "SEFIN_HTTP_MODE", "stub") or "stub"
+        ).lower() == "http"
+        pfx_bytes: bytes | None = None
+        pfx_password = ""
+        # ADN convenio HTTP exige mTLS (496 sem cert); carregar A1 antes do gate.
+        if convenio_mode == "http" or sefin_http:
             try:
                 pfx_bytes, pfx_password = load_primary_pfx_material(
                     tenant=issue.tenant,
@@ -375,6 +315,114 @@ def process_queued_issue(issue: NfIssue) -> NfIssue:
                     str(exc)[:200],
                 )
                 return issue
+
+        try:
+            assert_municipio_aderente_nacional(
+                issue.ibge_code,
+                environment=sefin_env,
+                pfx_bytes=pfx_bytes,
+                pfx_password=pfx_password,
+            )
+        except MunicipioNaoAderenteError as exc:
+            issue.rejection_code = MunicipioNaoAderenteError.code
+            issue.focus_status_raw = {
+                "provider": "sefin",
+                "action": "preflight",
+                "detail": str(exc),
+                "sefin_environment": sefin_env,
+                "sefin_http_mode": getattr(dj_settings, "SEFIN_HTTP_MODE", None),
+                "nfse_convenio_mode": convenio_mode,
+            }
+            issue.save(
+                update_fields=["rejection_code", "focus_status_raw", "updated_at"]
+            )
+            transition(
+                issue,
+                to_status=NfIssue.Status.REJECTED,
+                actor="worker",
+                metadata={"code": issue.rejection_code, "ex": "EX-PRE-01"},
+            )
+            return issue
+
+    if route.kind == "focus":
+        nfse_body = build_focus_body(issue, layout=route.layout)
+        emit_payload = {
+            "issue_id": str(issue.id),
+            "ref": str(issue.id),
+            "amount_cents": issue.amount_cents,
+            "ibge_code": issue.ibge_code,
+            "competence_date": issue.competence_date.isoformat(),
+            "resolved_params": issue.resolved_params or {},
+            "layout": route.layout,
+            "nfse": nfse_body,
+        }
+    elif route.kind == "sefin":
+        from django.conf import settings as dj_settings
+
+        from integrations.nfse.dps import to_sefin_dps_dict, build_dps_xml_from_dict
+        from integrations.nfse.xmldsig import sign_dps_xml
+
+        tp_amb = 1 if (getattr(dj_settings, "SEFIN_ENVIRONMENT", "homolog") or "").lower() in {
+            "prod",
+            "production",
+            "producao",
+            "produção",
+        } else 2
+        dps_dict = to_sefin_dps_dict(issue, tp_amb=tp_amb)
+        unsigned_xml = build_dps_xml_from_dict(dps_dict)
+        nfse_body = {
+            "provider": "sefin",
+            "layout": route.layout,
+            "tp_amb": tp_amb,
+            "dps": dps_dict,
+            "dps_id": (dps_dict.get("infDPS") or {}).get("Id"),
+        }
+        emit_payload = {
+            "issue_id": str(issue.id),
+            "ref": str(issue.id),
+            "amount_cents": issue.amount_cents,
+            "ibge_code": issue.ibge_code,
+            "competence_date": issue.competence_date.isoformat(),
+            "resolved_params": issue.resolved_params or {},
+            "layout": route.layout,
+            "nfse": nfse_body,
+        }
+        if (getattr(dj_settings, "SEFIN_HTTP_MODE", "stub") or "stub").lower() == "http":
+            # A1 já carregado no preflight (pfx_bytes); reutilizar se no mesmo frame.
+            if pfx_bytes is None:
+                from apps.accounts.certificates import load_primary_pfx_material
+                from apps.accounts.exceptions import CertificateNotUsableError
+
+                try:
+                    pfx_bytes, pfx_password = load_primary_pfx_material(
+                        tenant=issue.tenant,
+                        cnpj=getattr(issue.provider, "document", "") or "",
+                        purpose="nfse",
+                    )
+                except CertificateNotUsableError as exc:
+                    issue.rejection_code = "CERT_NOT_USABLE"
+                    issue.focus_status_raw = {
+                        "provider": "sefin",
+                        "action": "preflight",
+                        "detail": str(exc),
+                        "ex": "EX-PRE-02",
+                    }
+                    issue.save(
+                        update_fields=["rejection_code", "focus_status_raw", "updated_at"]
+                    )
+                    transition(
+                        issue,
+                        to_status=NfIssue.Status.FAILED,
+                        actor="worker",
+                        metadata={"code": issue.rejection_code, "ex": "EX-PRE-02"},
+                    )
+                    logger.warning(
+                        "EX-PRE-02 cert blocked tenant=%s issue=%s detail=%s",
+                        issue.tenant_id,
+                        issue.id,
+                        str(exc)[:200],
+                    )
+                    return issue
             signed_xml = sign_dps_xml(
                 dps_xml=unsigned_xml,
                 pfx_bytes=pfx_bytes,

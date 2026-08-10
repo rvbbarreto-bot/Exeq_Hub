@@ -1,0 +1,80 @@
+{% extends "hub_v4/base.html" %}
+
+{% block page_actions %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-users' %}">Voltar</a>
+{% endblock %}
+
+{% block content %}
+{% if usage %}
+<div class="plan-usage-bar">
+  <span>Usuários no plano:</span>
+  <strong>{{ usage.users.label }}</strong>
+</div>
+{% endif %}
+
+<div class="card">
+  <form method="post">
+    {% csrf_token %}
+    <div class="form-grid">
+      <div class="field full">
+        <label for="id_email">E-mail *</label>
+        <input id="id_email" name="email" type="email" required
+               {% if obj %}readonly class="is-readonly"{% endif %}
+               value="{% if form %}{{ form.email }}{% elif obj %}{{ obj.user.email }}{% endif %}"
+               autocomplete="off"
+               placeholder="usuario@escritorio.com.br">
+        {% if obj %}<p class="hint-line">O e-mail não pode ser alterado após o vínculo.</p>{% endif %}
+      </div>
+      <div class="field">
+        <label for="id_name">Nome *</label>
+        <input id="id_name" name="name" required maxlength="255"
+               value="{% if form %}{{ form.name }}{% elif obj %}{{ obj.user.name }}{% endif %}"
+               placeholder="Nome completo">
+      </div>
+      <div class="field">
+        <label for="id_role_code">Papel *</label>
+        <select id="id_role_code" name="role_code" required>
+          {% for r in roles %}
+          <option value="{{ r.code }}"
+            {% if form and form.role_code == r.code %}selected
+            {% elif obj and obj.role.code == r.code %}selected
+            {% elif not obj and not form and r.code == 'operator' %}selected{% endif %}>
+            {{ r.name }} ({{ r.code }})
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="id_password">{% if obj %}Nova senha (opcional){% else %}Senha inicial{% endif %}</label>
+        <input id="id_password" name="password" type="password" autocomplete="new-password"
+               {% if not obj %}minlength="8"{% endif %}
+               placeholder="{% if obj %}Deixe em branco para manter{% else %}opcional — geramos e enviamos por e-mail{% endif %}">
+        {% if not obj %}
+        <p class="hint-line">Se vazio, uma senha temporária é gerada automaticamente.</p>
+        {% endif %}
+      </div>
+      <div class="field">
+        <label for="id_is_active">Ativo no plano</label>
+        <select id="id_is_active" name="is_active">
+          <option value="1" {% if not obj or obj.is_active %}selected{% elif form and form.is_active != '0' %}selected{% endif %}>Sim</option>
+          <option value="0" {% if obj and not obj.is_active %}selected{% elif form and form.is_active == '0' %}selected{% endif %}>Não</option>
+        </select>
+      </div>
+      {% if not obj %}
+      <div class="field full">
+        <label for="id_send_invite_email">E-mail de convite</label>
+        <select id="id_send_invite_email" name="send_invite_email">
+          <option value="1" selected>Enviar com link do Hub + senha (se gerada)</option>
+          <option value="0">Não enviar — só criar vínculo</option>
+        </select>
+        <p class="hint-line">Em lab, com <code>EMAIL_BACKEND=console</code>, a mensagem aparece no log do servidor.</p>
+      </div>
+      {% endif %}
+    </div>
+    <div class="wizard-nav" style="margin-top:20px;">
+      <a class="btn btn-ghost" href="{% url 'hub-v4-users' %}">Cancelar</a>
+      <button type="submit" class="btn btn-primary">{% if obj %}Salvar{% else %}Convidar{% endif %}</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -43,10 +43,13 @@ INSTALLED_APPS = [
     "apps.fiscal",
     "apps.ops",
     "apps.issuance",
+    "apps.nfe",
     "apps.billing",
     "apps.das",
     "apps.channel",
     "apps.scheduling",
+    "apps.food",
+    "apps.hub_v4",
 ]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -73,6 +76,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "apps.hub_v4.nav_flags.hub_nav_flags",
             ],
         },
     },
@@ -80,16 +84,30 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": env("POSTGRES_DB", "exeq_hub"),
-        "USER": env("POSTGRES_USER", "exeq"),
-        "PASSWORD": env("POSTGRES_PASSWORD", "exeq"),
-        "HOST": env("POSTGRES_HOST", "127.0.0.1"),
-        "PORT": env("POSTGRES_PORT", "5433"),
+if env("EXEQ_TEST_SQLITE", "").lower() in {"1", "true", "yes"}:
+    # Lab offline: pytest sem Postgres/docker (não usar em prod)
+    _sqlite = BASE_DIR / ".storage" / "pytest_exeq.sqlite3"
+    _sqlite.parent.mkdir(parents=True, exist_ok=True)
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": str(_sqlite),
+        }
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": env("POSTGRES_DB", "exeq_hub"),
+            "USER": env("POSTGRES_USER", "exeq"),
+            "PASSWORD": env("POSTGRES_PASSWORD", "exeq"),
+            "HOST": env("POSTGRES_HOST", "127.0.0.1"),
+            "PORT": env("POSTGRES_PORT", "5433"),
+            "OPTIONS": {
+                "connect_timeout": int(env("POSTGRES_CONNECT_TIMEOUT", "5") or "5"),
+            },
+        }
+    }
 
 AUTH_USER_MODEL = "accounts.User"
 
@@ -119,8 +137,10 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_THROTTLE_RATES": {
         "webhook_gateway": env("WEBHOOK_GATEWAY_THROTTLE", "60/min"),
+        "webhook_evolution": env("WEBHOOK_EVOLUTION_THROTTLE", "120/min"),
         "cadastral_lookup": env("CADASTRO_LOOKUP_THROTTLE", "30/min"),
         "nf_issue_write": env("NF_ISSUE_WRITE_THROTTLE", "30/min"),
+        "nfe_write": env("NFE_WRITE_THROTTLE", "30/min"),
     },
 }
 
@@ -145,6 +165,33 @@ CELERY_BEAT_SCHEDULE = {
         "task": "accounts.scan_expiring_certificates",
         "schedule": float(env("CERT_SCAN_INTERVAL_SECONDS", "86400") or "86400"),
         "kwargs": {"alert_days": int(env("CERT_ALERT_DAYS", "30") or "30")},
+    },
+    # Canal WhatsApp (WA-FLX-07): expira sessões de conversa paradas
+    "channel-expire-stale-sessions": {
+        "task": "channel.expire_stale_sessions",
+        "schedule": float(env("CHANNEL_EXPIRE_INTERVAL_SECONDS", "600") or "600"),
+    },
+    # RF-64: retry DANFE para NF-e authorized com pdf_pending
+    "nfe-retry-pending-danfe": {
+        "task": "nfe.retry_pending_danfe",
+        "schedule": float(env("NFE_PDF_RETRY_INTERVAL_SECONDS", "900") or "900"),
+        "kwargs": {"limit": int(env("NFE_PDF_RETRY_BATCH_LIMIT", "50") or "50")},
+    },
+    # RF-46: reengata poll/submitting órfãos (worker caiu)
+    "nfe-reconcile-stale": {
+        "task": "nfe.reconcile_stale",
+        "schedule": float(env("NFE_RECONCILE_INTERVAL_SECONDS", "120") or "120"),
+        "kwargs": {"limit": int(env("NFE_RECONCILE_BATCH_LIMIT", "50") or "50")},
+    },
+    # Food V1.1: enroll + disparos de régua de retenção
+    "food-process-retention-tick": {
+        "task": "food.process_retention_tick",
+        "schedule": float(env("FOOD_RETENTION_INTERVAL_SECONDS", "3600") or "3600"),
+    },
+    # Food marketplace: poll HTTP/stub de pedidos
+    "food-sync-marketplace-orders": {
+        "task": "food.sync_marketplace_orders",
+        "schedule": float(env("FOOD_MARKETPLACE_SYNC_INTERVAL_SECONDS", "120") or "120"),
     },
 }
 NF_SYNC_PROCESSING = env("NF_SYNC_PROCESSING", "false").lower() == "true"
@@ -191,6 +238,14 @@ ALLOW_ENV_INTER_CREDENTIALS_FALLBACK = (
 )
 PAYMENT_HTTP_MODE = env("PAYMENT_HTTP_MODE", "stub")  # stub | http
 PAYMENT_DEFAULT_PROVIDER = env("PAYMENT_DEFAULT_PROVIDER", "inter")  # inter|asaas|c6
+# Food marketplace (iFood / aiqfome) — stub | http
+MARKETPLACE_HTTP_MODE = env("MARKETPLACE_HTTP_MODE", "stub")
+MARKETPLACE_HTTP_TIMEOUT = float(env("MARKETPLACE_HTTP_TIMEOUT", "15") or "15")
+MARKETPLACE_ORDERS_PATH = env("MARKETPLACE_ORDERS_PATH", "/orders") or "/orders"
+IFOOD_API_BASE_URL = env("IFOOD_API_BASE_URL", "")
+IFOOD_API_TOKEN = env("IFOOD_API_TOKEN", "")
+AIQFOME_API_BASE_URL = env("AIQFOME_API_BASE_URL", "")
+AIQFOME_API_TOKEN = env("AIQFOME_API_TOKEN", "")
 ASAAS_API_TOKEN = env("ASAAS_API_TOKEN", "")
 ASAAS_API_BASE_URL = env(
     "ASAAS_API_BASE_URL",
@@ -278,6 +333,24 @@ NFSE_PROCESS_HARD_TIME_LIMIT = int(env("NFSE_PROCESS_HARD_TIME_LIMIT", "0") or "
 NFSE_POLL_SOFT_TIME_LIMIT = int(env("NFSE_POLL_SOFT_TIME_LIMIT", "0") or "0") or None
 NFSE_POLL_HARD_TIME_LIMIT = int(env("NFSE_POLL_HARD_TIME_LIMIT", "0") or "0") or None
 DANFSE_LAYOUT_VERSION = env("DANFSE_LAYOUT_VERSION", "nt008-v1.02")
+
+# NF-e produto (ADR-NFE-001) — default off; lab: NFE_ENABLED=true + NFE_HTTP_MODE=stub
+NFE_ENABLED = (env("NFE_ENABLED", "false") or "false").lower() in ("1", "true", "yes")
+NFE_HTTP_MODE = env("NFE_HTTP_MODE", "stub")  # stub | http (SEFAZ-SP)
+NFE_HTTP_DRY_RUN = (env("NFE_HTTP_DRY_RUN", "false") or "false").lower() in ("1", "true", "yes")
+NFE_HTTP_TIMEOUT = int(env("NFE_HTTP_TIMEOUT", "60") or "60")
+NFE_DEFAULT_TP_AMB = env("NFE_DEFAULT_TP_AMB", "2")  # 2 homolog | 1 produção
+NFE_LAYOUT_VERSION = env("NFE_LAYOUT_VERSION", "pl009-stub")
+NFE_PIVOT_UF = env("NFE_PIVOT_UF", "SP")
+# I5: reconciliação polling → authorized|rejected|failed
+NFE_POLL_COUNTDOWN = int(env("NFE_POLL_COUNTDOWN", "15") or "15")
+NFE_POLL_MAX_ATTEMPTS = int(env("NFE_POLL_MAX_ATTEMPTS", "12") or "12")
+NFE_SYNC_POLL = (env("NFE_SYNC_POLL", "false") or "false").lower() in ("1", "true", "yes")
+# RF-46: invoice em polling/submitting sem task ativa há N segundos → reconcilia
+NFE_RECONCILE_STALE_SECONDS = int(env("NFE_RECONCILE_STALE_SECONDS", "120") or "120")
+# RF-41: path opcional para XSD oficial (vazio = só preflight estrutural)
+NFE_XSD_PATH = env("NFE_XSD_PATH", "")
+
 FOCUS_HTTP_MODE = env("FOCUS_HTTP_MODE", "stub")  # stub | http
 FOCUS_API_BASE_URL = env(
     "FOCUS_API_BASE_URL",
@@ -328,4 +401,47 @@ EVOLUTION_HTTP_MODE = env("EVOLUTION_HTTP_MODE", "stub")  # stub | http
 EVOLUTION_API_BASE_URL = env("EVOLUTION_API_BASE_URL", "")
 EVOLUTION_API_KEY = env("EVOLUTION_API_KEY", "")
 EVOLUTION_INSTANCE = env("EVOLUTION_INSTANCE", "")
+# Fase 3 (WA-SEC): token do webhook Evolution (header X-Exeq-Webhook-Token ou apikey).
+# Vazio = rejeita todos os POSTs (fail-closed).
+EVOLUTION_WEBHOOK_TOKEN = env("EVOLUTION_WEBHOOK_TOKEN", "")
+# Lab: aceita payload simplificado {tenant_slug, phone_e164, message_id, text}.
+# Produção: false — só payload nativo com tenant via settings.evolution_instance.
+EVOLUTION_WEBHOOK_ALLOW_LEGACY = (
+    env("EVOLUTION_WEBHOOK_ALLOW_LEGACY", "true").lower() == "true"
+)
+# Provedor WhatsApp global: evolution (não oficial) | meta (Cloud API oficial).
+# Override por tenant: tenant.settings["whatsapp_provider"].
+WHATSAPP_PROVIDER = env("WHATSAPP_PROVIDER", "evolution")
+# Canal WhatsApp: TTL da sessão de conversa (WA-FLX-07)
+CHANNEL_SESSION_TTL_MINUTES = int(env("CHANNEL_SESSION_TTL_MINUTES", "30") or "30")
+# WA-IA: stub (heurística lab) | off (só fluxo guiado) | http (LLM futuro)
+CHANNEL_AI_MODE = env("CHANNEL_AI_MODE", "stub")
+META_WHATSAPP_HTTP_MODE = env("META_WHATSAPP_HTTP_MODE", "stub")  # stub | http
+META_WHATSAPP_TOKEN = env("META_WHATSAPP_TOKEN", "")
+META_WHATSAPP_PHONE_NUMBER_ID = env("META_WHATSAPP_PHONE_NUMBER_ID", "")
+META_GRAPH_API_VERSION = env("META_GRAPH_API_VERSION", "v23.0")
 RLS_SUBJECT_ROLE = env("RLS_SUBJECT_ROLE", "exeq_app")
+
+# Admin Django = clássico (sem Unfold). UI operacional do cliente = Hub V4 em /hub/.
+
+# E-mail (convites Hub, NF-e RF-71). Lab default: console.
+EMAIL_BACKEND = env(
+    "EMAIL_BACKEND",
+    "django.core.mail.backends.console.EmailBackend",
+)
+EMAIL_HOST = env("EMAIL_HOST", "localhost")
+EMAIL_PORT = int(env("EMAIL_PORT", "25") or "25")
+EMAIL_HOST_USER = env("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = (env("EMAIL_USE_TLS", "false") or "false").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+EMAIL_USE_SSL = (env("EMAIL_USE_SSL", "false") or "false").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "EXEQ Hub <noreply@exeq.local>")
+SERVER_EMAIL = env("SERVER_EMAIL", DEFAULT_FROM_EMAIL)
