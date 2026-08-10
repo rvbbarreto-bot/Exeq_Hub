@@ -1,0 +1,13 @@
+# Gitleaks — secrets scan (CI: .github/workflows/security.yml)
+# FP: idempotency_key / fixtures em testes disparam generic-api-key.
+
+title = "Exeq Hub"
+
+[allowlist]
+description = "Test fixtures and migrations — not production secrets"
+paths = [
+  '''(^|/)tests?/''',
+  '''(^|/)migrations/''',
+  '''\.pytest_cache/''',
+  '''Docs/.*\.xml$''',
+]
