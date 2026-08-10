@@ -3,9 +3,9 @@
 | Campo | Valor |
 |-------|-------|
 | Documento | Exeq_Hub_v3 — Database Design & ERD |
-| Versão | **3.1.1** |
-| Status | **Aprovado para kickoff de desenvolvimento (schema MVP + Agendador)** |
-| Data | 2026-07-19 (amend Agendador 2026-07-28) |
+| Versão | **3.1.2** |
+| Status | **Aprovado para kickoff de desenvolvimento (schema MVP + Agendador + Food)** |
+| Data | 2026-07-19 (amend Agendador 2026-07-28; amend Food 2026-08-09) |
 | Substitui | Exeq_Hub_v3.0 (outline conceitual) |
 | Hierarquia | Documento 3 do Contrato de Desenvolvimento |
 | Stack alvo | PostgreSQL 16 + Django 5.x ORM |
@@ -19,7 +19,8 @@ Este documento é a **única referência oficial de banco** para criar models, m
 
 - **Pode** iniciar Sprint 0 / `accounts` / `master_data` / `fiscal` / `issuance` / `billing` / `das` com base neste DER.
 - **Pode** (amend **v3.1.1**, ADR-SCHED-001 aprovado pelo PO em 2026-07-28) criar o domínio **SCHEDULING / EXEQ Agendador** (§12A).
-- **Não pode** criar tabelas de CRM, Car Wash ou outros módulos fora da seção 15 / §12A (fora de escopo).
+- **Pode** (amend **v3.1.2**, ADR-FOOD-001 aprovado pelo PO em 2026-08-09) criar o domínio **FOOD / EXEQ Hub Food** (§12B).
+- **Não pode** criar tabelas de CRM, Car Wash ou outros módulos fora da seção 15 / §12A / §12B (fora de escopo).
 - Conflito com v1 funcional → **parar** e escalar (Contrato). Este v3.1 alinha-se à especificação Django de domínio (fábrica) e aos princípios do v2/Contrato.
 
 ### Relação com outros documentos
@@ -108,7 +109,7 @@ Nomes **oficiais no banco/ORM** (coluna esquerda). Sinônimos do v3.0 e da spec 
 
 **ADR-DB-001 — Nomenclatura:** manter `NfIssue` / `GuiaFiscal` (não renomear para Invoice/DAS genérico) para preservar rastreabilidade com regras do v1 e testes de referência. O termo “Invoice” do v3.0 é **alias documental**, não nome de tabela.
 
-**ADR-DB-002 — Escopo:** CRM e Car Wash **fora do schema**. **SCHEDULING** entrou no schema via **ADR-SCHED-001** (PO 2026-07-28) — ver §12A.
+**ADR-DB-002 — Escopo:** CRM e Car Wash **fora do schema**. **SCHEDULING** entrou via **ADR-SCHED-001** (PO 2026-07-28) — §12A. **FOOD** entrou via **ADR-FOOD-001** (PO 2026-08-09) — §12B.
 
 ---
 
@@ -941,6 +942,135 @@ Gerado na transição para `completed` (idempotente por appointment).
 
 ---
 
+## 12B. FOOD — EXEQ Hub Food (amend v3.1.2 / ADR-FOOD-001)
+
+Produto: **EXEQ Hub Food** (comercial V1 → industrial Fases 2–3). App Django: `food`.  
+Mesmo Postgres / `tenant_id`. Sprint 1 = fundação + Order Service unificado (sem API pública, sem webhook bancário real).
+
+**Princípios:** (1) um `FoodOrder` multi-canal; (2) pagamento Pix preparável (`payment_status` + `pix_txid`); (3) estoque = saldo físico (sem reserva fabril — Fase 3).
+
+### 12B.1 `food_customers`
+
+Cliente comercial telefone-first (não é o tomador fiscal `master_data.Customer`).
+
+| Campo | Tipo / notas |
+|-------|----------------|
+| tenant_id | FK Tenant PROTECT |
+| name | CharField |
+| phone_e164 | CharField blank; **UNIQUE** `(tenant_id, phone_e164)` quando phone ≠ `''` |
+| email / document | opcional |
+| fiscal_customer_id | FK Customer SET_NULL null — bridge fiscal futuro |
+| is_active | bool |
+| last_order_at | timestamptz null |
+| order_count | int >= 0 |
+| total_spent_cents / avg_ticket_cents | bigint >= 0 |
+
+**Índices:** `(tenant_id, is_active)`, `(tenant_id, last_order_at)`.
+
+### 12B.2 `food_products`
+
+| Campo | Notas |
+|-------|--------|
+| sku | **UNIQUE** `(tenant_id, sku)` |
+| name / category / unit | |
+| price_cents / cost_cents | >= 0 |
+| is_active | bool |
+
+### 12B.3 `food_orders` (Order Service)
+
+| Campo | Notas |
+|-------|--------|
+| customer_id | FK FoodCustomer PROTECT |
+| channel | `whatsapp\|counter\|other` |
+| status | `draft\|pending_payment\|confirmed\|preparing\|ready\|fulfilled\|cancelled` |
+| payment_status | `unpaid\|awaiting_pix\|paid\|failed\|refunded` |
+| subtotal / discount / total | cents; discount <= subtotal |
+| idempotency_key | **UNIQUE** `(tenant_id, idempotency_key)` |
+| pix_txid / paid_at / channel_ref / notes | |
+| charge_id | FK billing.Charge SET_NULL null — intent Pix/boleto (Sprint 2) |
+
+**Índices:** status, channel, payment_status, created_at por tenant.
+
+### 12B.4 `food_order_lines`
+
+Snapshot `sku`, `name`, `unit_price_cents`, `quantity` Decimal, `line_total_cents`.  
+`product_id` SET_NULL. quantity > 0.
+
+### 12B.5 `food_stock_balances`
+
+OneToOne com product. `quantity`, `min_quantity` Decimal.  
+V1 = físico; **sem** campo reservado (Fase 3).
+
+### 12B.6 `food_stock_movements`
+
+`movement_type` `in\|out\|adjust`, quantity > 0, `balance_after`, `order_id` null, `reason`.
+
+**Fora desta seção (sprints futuras):** régua retenção, cupom, Marketplace iFood, BOM/PCP, NFC-e Food.
+
+**Sprint 2 (API + Hub + Pix):**  
+- `POST/GET /api/v1/food/orders/`, `POST …/orders/{id}/pix/`  
+- Hub `/hub/food/pedidos/`  
+- Webhook gateway existente confirma `Charge` → `sync_food_order_on_charge_paid`
+
+### 12B.7 V1.1 — Campanha, cupom e régua de retenção
+
+| Tabela | Notas |
+|--------|--------|
+| food_campaigns | name, code UNIQUE tenant, is_active, starts_at/ends_at |
+| food_coupons | code UNIQUE tenant; percent_bps ou amount_cents; max_redemptions; campanha SET_NULL |
+| food_coupon_redemptions | OneToOne order; coupon; customer; campaign; discount_cents — trilha campanha→cupom→pedido |
+| food_retention_rules | kind inactivity\|vip\|high_ticket\|custom; critérios parametrizáveis; is_active |
+| food_retention_steps | sequence UNIQUE por rule; delay_days; message_template; channel; coupon opcional |
+| food_retention_enrollments | status active\|completed\|stopped; next_sequence; next_fire_at; UNIQUE active (tenant, rule, customer) |
+| food_retention_dispatches | idempotency_key UNIQUE tenant; enrollment+step; status sent\|skipped\|failed |
+
+Pedido (`food_orders`): FK `coupon` SET_NULL. Na compra paga: redeem cupom + **stop** enrollments ativas (`stop_reason=purchase`).  
+Job: `food.process_retention_tick` / `POST /api/v1/food/retention-rules/tick/`.  
+Dashboard: `GET /api/v1/food/dashboard`.
+
+### 12B.8 Fase 2 — Compras, delivery, marketplace
+
+| Tabela | Notas |
+|--------|--------|
+| food_suppliers | name, document, phone, email, is_active |
+| food_purchases | supplier; status draft\|ordered\|received\|cancelled; idempotency; total_cents |
+| food_purchase_lines | product, quantity, unit_cost; **receive** → stock IN |
+| food_delivery_routes | name, service_date, driver_name, status open\|in_progress\|closed |
+| food_delivery_stops | OneToOne order; route+sequence; pending→out→delivered/failed; delivered → order.fulfilled |
+| food_marketplace_connections | provider ifood\|aiqfome; merchant_ref UNIQUE tenant |
+
+`food_orders` (amend): channel +`ifood`/`aiqfome`; `fulfillment_mode` pickup\|delivery\|counter; `delivery_address`; FK marketplace_connection.  
+Import: `POST /api/v1/food/marketplace/import` → **mesmo** FoodOrder (não cria entidade paralela). Integração HTTP iFood/aiqfome **fora** (stub ingress).
+
+### 12B.9 Fase 3 — Indústria (BOM / OP / capacidade / reserva)
+
+| Tabela / campo | Notas |
+|----------------|--------|
+| food_stock_balances.reserved_quantity | Físico `quantity`; disponível = quantity − reserved |
+| food_boms | product acabado; expected_yield_bps; 1 BOM active/produto |
+| food_bom_components | quantity_per_unit + scrap_bps |
+| food_capacity_slots | service_date + starts/ends; capacity_units / booked_units |
+| food_production_orders | planned→in_progress→done; start consome insumos; complete entra acabado c/ perda/rendimento |
+
+API: `/food/boms/`, `/food/capacity-slots/`, `/food/production-orders/` (+ start/complete), `/food/mrp`.
+
+### 12B.10 Fase 4 — Inteligência (heurísticas, sem persistence obrigatória)
+
+Serviços em `apps/food/intelligence.py` (sem tabelas novas nesta versão):
+
+| Endpoint / função | Conteúdo |
+|-------------------|----------|
+| `GET /api/v1/food/intelligence` | Pacote full: demand, production/purchase, customers, pricing, summary |
+| `?section=demand` | Previsão demanda (média diária + tendência metade/metade × horizon) |
+| `?section=suggestions` | Sugestão OP (MRP+demanda) e compra de insumos |
+| `?section=customers` | churn_risk_score, repurchase_propensity_score, clv_cents |
+| `?section=pricing` | adjust_bps / suggested_price_cents (não aplica sozinho) |
+
+Query: `lookback_days` (default 28), `horizon_days` (default 7).  
+**Não** é modelo black-box: regras documentadas e testáveis.
+
+---
+
 ## 13. Matriz de exclusão (soft vs hard)
 
 | Entidade | Política |
@@ -950,6 +1080,8 @@ Gerado na transição para `completed` (idempotente por appointment).
 | Membership | `is_active=False` |
 | Provider / Customer / Service (fiscal) | `is_active=False` |
 | Professional / Service (scheduling) | `is_active=False` |
+| FoodCustomer / FoodProduct | `is_active=False` |
+| FoodOrder | Soft via status; sem hard delete de negócio |
 | Appointment / CommissionRule | Soft via status / is_active; sem hard delete de negócio na operação |
 | Tax catalogs published | Nunca delete; só `superseded` |
 | NfIssue / Events / Artifacts | Sem hard delete de negócio |

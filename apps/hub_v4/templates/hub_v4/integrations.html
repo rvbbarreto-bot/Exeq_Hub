@@ -1,0 +1,35 @@
+{% extends "hub_v4/base.html" %}
+
+{% block content %}
+<div class="card">
+  <div class="section-label" style="margin-top:0;">Integrações do tenant</div>
+  <p style="color:var(--text-muted);">
+    Status das integrações ativas. Ajustes sensíveis (credenciais bancárias, secrets)
+    são feitos pela plataforma EXEQ sob demanda do contrato.
+  </p>
+  <table class="data">
+    <tbody>
+      <tr>
+        <td><strong>Provedor de cobrança</strong></td>
+        <td>{{ payment_provider|upper }}</td>
+        <td><span class="chip">Contrato</span></td>
+      </tr>
+      <tr>
+        <td><strong>NFS-e</strong></td>
+        <td>Emissor próprio / rotas do tenant</td>
+        <td><a class="btn btn-ghost btn-sm" href="{% url 'hub-v4-nfse-list' %}">Operar NFS-e</a></td>
+      </tr>
+      <tr>
+        <td><strong>Empresas (CNPJ)</strong></td>
+        <td>{% if usage %}{{ usage.label }} no plano{% else %}—{% endif %}</td>
+        <td><a class="btn btn-ghost btn-sm" href="{% url 'hub-v4-providers' %}">Gerenciar</a></td>
+      </tr>
+      <tr>
+        <td><strong>Certificados A1</strong></td>
+        <td>Vínculo por CNPJ</td>
+        <td><a class="btn btn-ghost btn-sm" href="{% url 'hub-v4-certificates' %}">Ver certificados</a></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+{% endblock %}

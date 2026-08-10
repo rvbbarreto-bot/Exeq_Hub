@@ -1,0 +1,7 @@
+{% load hub_v4_tags %}
+<div class="pending-card card tone-{{ action.tone }}">
+  <div style="font-weight:700;">{{ action.title }}</div>
+  <a class="cta" href="{% url action.url_name %}{% if action.url_query %}?{{ action.url_query }}{% endif %}">
+    {{ action.cta }} →
+  </a>
+</div>

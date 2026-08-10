@@ -1,0 +1,6 @@
+<nav class="card" style="margin-bottom:12px;padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+  <a class="btn btn-sm {% if food_section == 'orders' %}btn-primary{% else %}btn-ghost{% endif %}" href="{% url 'hub-v4-food-orders' %}">Pedidos</a>
+  <a class="btn btn-sm {% if food_section == 'purchases' %}btn-primary{% else %}btn-ghost{% endif %}" href="{% url 'hub-v4-food-purchases' %}">Compras</a>
+  <a class="btn btn-sm {% if food_section == 'production' %}btn-primary{% else %}btn-ghost{% endif %}" href="{% url 'hub-v4-food-production' %}">Produção</a>
+  <a class="btn btn-sm {% if food_section == 'intelligence' %}btn-primary{% else %}btn-ghost{% endif %}" href="{% url 'hub-v4-food-intelligence' %}">Inteligência</a>
+</nav>

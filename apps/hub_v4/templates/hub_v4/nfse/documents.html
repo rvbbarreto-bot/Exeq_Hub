@@ -1,0 +1,79 @@
+{% extends "hub_v4/base.html" %}
+{% load hub_v4_tags %}
+
+{% block page_actions %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-nfse-detail' issue.id %}">Voltar ao detalhe</a>
+{% endblock %}
+
+{% block content %}
+<div class="doc-header card" style="margin-bottom:12px;">
+  <div>
+    <div style="font-family:var(--font-display);font-weight:700;">Documentos Técnicos</div>
+    <div class="hint-line" style="margin:0;">
+      {{ issue.customer.name }} · ref {{ issue.focus_ref|default:issue.id }}
+    </div>
+    <div style="margin-top:6px;">{% status_badge issue.status %}</div>
+  </div>
+  <div class="doc-quick-actions">
+    {% if docs.pdf %}
+    <a class="btn btn-primary btn-sm" href="{% url 'hub-v4-nfse-doc-download' issue.id 'pdf' %}">Baixar PDF</a>
+    {% endif %}
+    {% if docs.xml %}
+    <a class="btn btn-ghost btn-sm" href="{% url 'hub-v4-nfse-doc-download' issue.id 'xml' %}">Baixar XML</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card" data-tab-group>
+  <div class="tabs" role="tablist" aria-label="Documentos técnicos">
+    <button type="button" class="{% if active_tab == 'pdf' %}is-active{% endif %}" data-tab="pdf" role="tab">PDF</button>
+    <button type="button" class="{% if active_tab == 'xml' %}is-active{% endif %}" data-tab="xml" role="tab">XML</button>
+    <button type="button" class="{% if active_tab == 'json' %}is-active{% endif %}" data-tab="json" role="tab">Payload JSON</button>
+    <button type="button" class="{% if active_tab == 'headers' %}is-active{% endif %}" data-tab="headers" role="tab">Headers</button>
+    <button type="button" class="{% if active_tab == 'logs' %}is-active{% endif %}" data-tab="logs" role="tab">Logs</button>
+  </div>
+
+  <div data-tab-panel="pdf" {% if active_tab != 'pdf' %}hidden{% endif %} id="pdf">
+    {% if by_kind.pdf %}
+    {% include "hub_v4/components/document_viewer.html" with title="DANFSe (PDF)" kind="pdf" artifact=by_kind.pdf %}
+    {% else %}
+    <div class="doc-empty">
+      <p>PDF ainda não disponível.</p>
+      <p class="hint-line">Após autorização, o DANFSe é gerado automaticamente.</p>
+    </div>
+    {% endif %}
+  </div>
+
+  <div data-tab-panel="xml" {% if active_tab != 'xml' %}hidden{% endif %} id="xml">
+    {% if by_kind.xml %}
+    {% include "hub_v4/components/document_viewer.html" with title="XML da NFS-e" kind="xml" artifact=by_kind.xml %}
+    {% else %}
+    <div class="doc-empty"><p>XML ainda não disponível.</p></div>
+    {% endif %}
+  </div>
+
+  <div data-tab-panel="json" {% if active_tab != 'json' %}hidden{% endif %} id="json">
+    <div class="doc-toolbar">
+      <span class="hint-line">Payload interno / status bruto</span>
+      <button type="button" class="btn btn-ghost btn-sm" data-copy="#payload-pre">Copiar JSON</button>
+    </div>
+    <pre class="pre-json" id="payload-pre">{{ payload_json }}</pre>
+  </div>
+
+  <div data-tab-panel="headers" {% if active_tab != 'headers' %}hidden{% endif %} id="headers">
+    <div class="doc-toolbar">
+      <span class="hint-line">Headers de transporte</span>
+      <button type="button" class="btn btn-ghost btn-sm" data-copy="#headers-pre">Copiar JSON</button>
+    </div>
+    <pre class="pre-json" id="headers-pre">{{ headers_json }}</pre>
+  </div>
+
+  <div data-tab-panel="logs" {% if active_tab != 'logs' %}hidden{% endif %} id="logs">
+    <pre class="pre-json">status={{ issue.status }}
+rejection={{ issue.rejection_code|default:"—" }}
+correlation={{ issue.correlation_id }}
+focus_ref={{ issue.focus_ref|default:"—" }}
+payload_hash={{ issue.payload_hash|default:"—" }}</pre>
+  </div>
+</div>
+{% endblock %}

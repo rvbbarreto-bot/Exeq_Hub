@@ -1,0 +1,55 @@
+{% extends "hub_v4/base.html" %}
+
+{% block page_actions %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-food-purchases' %}">Lista</a>
+{% endblock %}
+
+{% block content %}
+{% include "hub_v4/food/_subnav.html" %}
+
+<form method="post" class="card">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="create" />
+  <input type="hidden" name="idempotency_key" value="{{ form.idempotency_key|default:idempotency_key }}" />
+  <div class="form-grid">
+    <label class="full">
+      <span>Fornecedor</span>
+      <select name="supplier_id" required>
+        <option value="">Selecione…</option>
+        <option value="__new__">+ Novo fornecedor</option>
+        {% for s in suppliers %}
+        <option value="{{ s.id }}" {% if form.supplier_id == s.id|stringformat:"s" %}selected{% endif %}>{{ s.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      <span>Novo fornecedor (nome)</span>
+      <input name="supplier_name" value="{{ form.supplier_name }}" placeholder="Atacado XYZ" />
+    </label>
+    <label>
+      <span>CNPJ/CPF</span>
+      <input name="supplier_document" value="{{ form.supplier_document }}" placeholder="somente dígitos" />
+    </label>
+    <label class="full">
+      <span>Produto / insumo</span>
+      <select name="product_id" required>
+        <option value="">Selecione…</option>
+        {% for p in products %}
+        <option value="{{ p.id }}" {% if form.product_id == p.id|stringformat:"s" %}selected{% endif %}>{{ p.sku }} — {{ p.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      <span>Quantidade</span>
+      <input name="quantity" value="{{ form.quantity|default:'1' }}" required />
+    </label>
+    <label>
+      <span>Custo unitário (centavos ou R$)</span>
+      <input name="unit_cost" value="{{ form.unit_cost|default:'0' }}" placeholder="700 ou 7,00" />
+    </label>
+  </div>
+  <div style="margin-top:16px;">
+    <button class="btn btn-primary" type="submit">Registrar compra</button>
+  </div>
+</form>
+{% endblock %}

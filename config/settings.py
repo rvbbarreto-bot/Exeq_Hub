@@ -48,6 +48,8 @@ INSTALLED_APPS = [
     "apps.das",
     "apps.channel",
     "apps.scheduling",
+    "apps.food",
+    "apps.hub_v4",
 ]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -74,6 +76,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "apps.hub_v4.nav_flags.hub_nav_flags",
             ],
         },
     },
@@ -179,6 +182,11 @@ CELERY_BEAT_SCHEDULE = {
         "task": "nfe.reconcile_stale",
         "schedule": float(env("NFE_RECONCILE_INTERVAL_SECONDS", "120") or "120"),
         "kwargs": {"limit": int(env("NFE_RECONCILE_BATCH_LIMIT", "50") or "50")},
+    },
+    # Food V1.1: enroll + disparos de régua de retenção
+    "food-process-retention-tick": {
+        "task": "food.process_retention_tick",
+        "schedule": float(env("FOOD_RETENTION_INTERVAL_SECONDS", "3600") or "3600"),
     },
 }
 NF_SYNC_PROCESSING = env("NF_SYNC_PROCESSING", "false").lower() == "true"
@@ -400,3 +408,27 @@ META_WHATSAPP_TOKEN = env("META_WHATSAPP_TOKEN", "")
 META_WHATSAPP_PHONE_NUMBER_ID = env("META_WHATSAPP_PHONE_NUMBER_ID", "")
 META_GRAPH_API_VERSION = env("META_GRAPH_API_VERSION", "v23.0")
 RLS_SUBJECT_ROLE = env("RLS_SUBJECT_ROLE", "exeq_app")
+
+# Admin Django = clássico (sem Unfold). UI operacional do cliente = Hub V4 em /hub/.
+
+# E-mail (convites Hub, NF-e RF-71). Lab default: console.
+EMAIL_BACKEND = env(
+    "EMAIL_BACKEND",
+    "django.core.mail.backends.console.EmailBackend",
+)
+EMAIL_HOST = env("EMAIL_HOST", "localhost")
+EMAIL_PORT = int(env("EMAIL_PORT", "25") or "25")
+EMAIL_HOST_USER = env("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = (env("EMAIL_USE_TLS", "false") or "false").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+EMAIL_USE_SSL = (env("EMAIL_USE_SSL", "false") or "false").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "EXEQ Hub <noreply@exeq.local>")
+SERVER_EMAIL = env("SERVER_EMAIL", DEFAULT_FROM_EMAIL)

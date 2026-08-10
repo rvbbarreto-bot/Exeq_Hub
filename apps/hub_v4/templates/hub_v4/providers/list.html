@@ -1,0 +1,97 @@
+{% extends "hub_v4/base.html" %}
+{% load hub_v4_tags %}
+
+{% block page_actions %}
+{% if can_add %}
+<a class="btn btn-primary" href="{% url 'hub-v4-provider-new' %}">Nova empresa</a>
+{% elif can_write and usage.at_limit %}
+<span class="chip chip-warn" title="Limite do plano">Plano {{ usage.label }} CNPJs</span>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="plan-usage-bar">
+  <span>CNPJs emitentes no plano:</span>
+  <strong>{{ usage.label }}</strong>
+  {% if usage.plan_name %}
+  <span class="chip chip-accent">{{ usage.plan_name }}</span>
+  {% endif %}
+  {% if usage.at_limit %}
+  <span class="chip chip-warn">Limite atingido</span>
+  {% elif not usage.unlimited %}
+  <span class="chip">{{ usage.remaining }} disponível(is)</span>
+  {% else %}
+  <span class="chip">Sem teto configurado</span>
+  {% endif %}
+</div>
+
+<form class="filter-bar" method="get">
+  <div class="field" style="flex:2;">
+    <label for="q">Buscar empresa</label>
+    <input id="q" name="q" type="search" value="{{ q }}" placeholder="Razão social ou CNPJ">
+  </div>
+  <button type="submit" class="btn btn-primary">Aplicar</button>
+</form>
+
+{% if page.object_list %}
+<div class="table-wrap desktop-only">
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Empresa</th>
+        <th>CNPJ</th>
+        <th>UF</th>
+        <th>Status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in page %}
+      <tr class="{% if active_provider and active_provider.id == p.id %}is-active-row{% endif %}">
+        <td>
+          <strong>{{ p.legal_name }}</strong>
+          {% if p.trade_name %}<div class="meta-muted">{{ p.trade_name }}</div>{% endif %}
+        </td>
+        <td class="num" style="text-align:left;">{{ p.document }}</td>
+        <td>{{ p.address.uf|default:"—" }}</td>
+        <td>
+          {% if p.is_active %}{% status_badge "active" %}{% else %}<span class="chip">Inativo</span>{% endif %}
+          {% if active_provider and active_provider.id == p.id %}<span class="chip chip-accent">Ativa</span>{% endif %}
+        </td>
+        <td style="text-align:right;white-space:nowrap;">
+          {% if p.is_active and can_write %}
+          <form method="post" action="{% url 'hub-v4-set-active-company' %}" style="display:inline;">
+            {% csrf_token %}
+            <input type="hidden" name="provider_id" value="{{ p.id }}">
+            <input type="hidden" name="next" value="{{ request.path }}">
+            <button type="submit" class="btn btn-ghost btn-sm">Usar</button>
+          </form>
+          {% endif %}
+          {% if can_write %}
+          <a class="btn btn-ghost btn-sm" href="{% url 'hub-v4-provider-edit' p.id %}">Editar</a>
+          <a class="btn btn-ghost btn-sm" href="{% url 'hub-v4-certificates' %}?empresa={{ p.id }}#upload-a1">A1</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="mobile-cards">
+  {% for p in page %}
+  <div class="mobile-data-card">
+    <div class="title">{{ p.legal_name }}</div>
+    <div class="meta">{{ p.document }} · {{ p.address.uf|default:"" }}</div>
+    {% if can_write %}
+    <div style="margin-top:8px;">
+      <a class="btn btn-ghost btn-sm" href="{% url 'hub-v4-provider-edit' p.id %}">Editar</a>
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+<div class="pager"><span>Página {{ page.number }} / {{ page.paginator.num_pages }}</span></div>
+{% else %}
+{% empty_state "Nenhuma empresa" "Cadastre o primeiro CNPJ emitente da contabilidade ou do cliente." "Nova empresa" "/hub/empresas/nova/" %}
+{% endif %}
+{% endblock %}

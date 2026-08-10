@@ -1,0 +1,265 @@
+{% extends "hub_v4/base.html" %}
+{% load hub_v4_tags %}
+
+{% block content %}
+<div
+  data-wizard
+  data-lookup-url="{% url 'hub-v4-nfse-lookup' %}"
+>
+  {{ customers_data|json_script:"hub-customers-data" }}
+  {{ services_data|json_script:"hub-services-data" }}
+  {{ profiles_data|json_script:"hub-profiles-data" }}
+  <div class="wizard-steps" role="tablist" aria-label="Etapas da emissão">
+    <button type="button" class="step is-active" data-wizard-step aria-current="step">1 · Tomador</button>
+    <button type="button" class="step" data-wizard-step>2 · Serviço</button>
+    <button type="button" class="step" data-wizard-step>3 · Tributação</button>
+    <button type="button" class="step" data-wizard-step>4 · Revisão</button>
+  </div>
+
+  <div class="field-error" id="wizard-step-error" role="alert" hidden></div>
+
+  <form id="form-nfse-wizard" method="post" class="card" novalidate>
+    {% csrf_token %}
+    <input type="hidden" name="confirm_emit" value="0">
+    <input type="hidden" name="wizard_action" value="emit" id="wizard_action">
+    <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+    <input type="hidden" name="draft_id" value="{{ draft_id }}" id="draft_id">
+
+    {% if draft %}
+    <div class="plan-usage-bar" style="margin-bottom:14px;">
+      <span class="chip chip-accent">Rascunho</span>
+      <span style="color:var(--text-muted);">Retome a emissão — alterar campos e salvar de novo ou emitir.</span>
+      <a class="link-muted" href="{% url 'hub-v4-nfse-list' %}?status=draft" style="margin-left:auto;">Ver rascunhos</a>
+    </div>
+    {% endif %}
+
+    {# —— Etapa 1 · Tomador (spec §10) —— #}
+    <div class="wizard-pane is-active" data-wizard-pane data-step="0">
+      <p class="step-lead">Informe o documento ou escolha um tomador já cadastrado.</p>
+      <div class="form-grid">
+        <div class="field">
+          <label for="lookup_doc">CPF/CNPJ</label>
+          <input id="lookup_doc" name="lookup_document" inputmode="numeric" autocomplete="off"
+                 placeholder="Somente dígitos" aria-describedby="lookup-help">
+        </div>
+        <div class="field" style="display:flex;align-items:flex-end;">
+          <button type="button" class="btn btn-ghost" id="btn-lookup-doc" style="width:100%;">
+            Buscar
+          </button>
+        </div>
+        <div class="field full">
+          <p class="lookup-ok" id="lookup-feedback" hidden>✓ Tomador encontrado</p>
+          <p class="field-error" id="lookup-error" hidden></p>
+          <p id="lookup-help" class="hint-line">CNPJ consulta cadastro/Receita. CPF: preencha manualmente (LGPD).</p>
+        </div>
+        <div class="field full">
+          <label for="id_customer_id">Tomador cadastrado *</label>
+          <select id="id_customer_id" name="customer_id" required data-validate="required">
+            <option value="">Selecione…</option>
+            {% for c in customers %}
+            <option value="{{ c.id }}"
+              data-name="{{ c.name }}"
+              data-document="{{ c.document }}"
+              data-email="{{ c.email }}"
+              data-phone="{% if c.address.telefone %}{{ c.address.telefone }}{% endif %}"
+              {% if selected_customer_id and c.id|stringformat:"s" == selected_customer_id %}selected{% endif %}>
+              {{ c.name }} · {{ c.document }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="id_customer_name">Nome</label>
+          <input id="id_customer_name" type="text" readonly class="is-readonly" tabindex="-1" placeholder="—">
+        </div>
+        <div class="field">
+          <label for="id_customer_email">E-mail</label>
+          <input id="id_customer_email" type="email" readonly class="is-readonly" tabindex="-1" placeholder="—">
+        </div>
+        <div class="field full">
+          <label for="id_customer_phone">Telefone</label>
+          <input id="id_customer_phone" type="text" readonly class="is-readonly" tabindex="-1" placeholder="—">
+        </div>
+      </div>
+      <div class="wizard-nav">
+        <span></span>
+        <button type="button" class="btn btn-primary" data-wizard-next>Continuar</button>
+      </div>
+    </div>
+
+    {# —— Etapa 2 · Serviço —— #}
+    <div class="wizard-pane" data-wizard-pane data-step="1">
+      <p class="step-lead">Serviço, competência e valor da nota.</p>
+      <div class="form-grid">
+        <div class="field full">
+          <label for="id_service_id">Serviço (catálogo) *</label>
+          <select id="id_service_id" name="service_id" required data-validate="required"
+                  class="field-service-select">
+            <option value="">Selecione…</option>
+            {% for s in services %}
+            <option value="{{ s.id }}"
+              data-lc116="{{ s.lc116_item|default:s.service_code }}"
+              data-code="{{ s.service_code }}"
+              data-description="{{ s.description }}"
+              {% if selected_service_id and s.id|stringformat:"s" == selected_service_id %}selected{% endif %}>
+              {{ s.service_code }} · {{ s.description|truncatechars:80 }}
+            </option>
+            {% empty %}
+            <option value="" disabled>Nenhum serviço cadastrado no tenant</option>
+            {% endfor %}
+          </select>
+          {% if not services %}
+          <p class="field-error" role="status">
+            Catálogo vazio.
+            <a href="{% url 'hub-v4-services' %}">Gerenciar serviços</a>
+            ou materialize a lista nacional no Hub.
+          </p>
+          {% else %}
+          <p class="hint-line">{{ services|length }} serviço(s) disponível(is). <a href="{% url 'hub-v4-service-new' %}">Novo serviço</a></p>
+          {% endif %}
+        </div>
+        <div class="field full">
+          <label for="id_lc116">Código LC116</label>
+          <input id="id_lc116" type="text" readonly class="is-readonly field-lc116"
+                 placeholder="Preenchido pelo serviço" title="Código LC 116 do serviço selecionado">
+        </div>
+        <div class="field full">
+          <label for="id_service_desc">Descrição</label>
+          <textarea id="id_service_desc" rows="5" readonly class="is-readonly field-service-desc"
+                    placeholder="Descrição completa do serviço selecionado"></textarea>
+        </div>
+        <div class="field">
+          <label for="id_competence_date">Competência *</label>
+          <input id="id_competence_date" name="competence_date" type="date"
+                 value="{{ draft_competence|default:today }}" required data-validate="required">
+        </div>
+        <div class="field">
+          <label for="id_amount">Valor (R$) *</label>
+          <input id="id_amount" name="amount" inputmode="decimal" placeholder="0,00"
+                 value="{{ draft_amount }}" required data-validate="amount">
+        </div>
+      </div>
+      <div class="wizard-nav">
+        <button type="button" class="btn btn-ghost" data-wizard-prev>Voltar</button>
+        <button type="button" class="btn btn-primary" data-wizard-next>Continuar</button>
+      </div>
+    </div>
+
+    {# —— Etapa 3 · Tributação (condicional) —— #}
+    <div class="wizard-pane" data-wizard-pane data-step="2">
+      <p class="step-lead">Campos conforme o perfil fiscal — nunca todos ao mesmo tempo.</p>
+      <div class="form-grid">
+        <div class="field full">
+          <label for="id_provider_id">Emitir como (empresa / CNPJ) *</label>
+          <select id="id_provider_id" name="provider_id" required data-validate="required">
+            {% for p in providers %}
+            <option value="{{ p.id }}" {% if active_provider_id and p.id|stringformat:"s" == active_provider_id %}selected{% elif not active_provider_id and forloop.first %}selected{% endif %}>
+              {{ p.legal_name }} · {{ p.document }}
+            </option>
+            {% empty %}
+            <option value="">Nenhuma empresa ativa</option>
+            {% endfor %}
+          </select>
+          {% if not providers %}
+          <p class="field-error" role="status">
+            Cadastre um CNPJ em <a href="{% url 'hub-v4-providers' %}">Empresas</a> antes de emitir.
+          </p>
+          {% else %}
+          <p class="hint-line">O certificado A1 deve ser do mesmo CNPJ selecionado.</p>
+          {% endif %}
+        </div>
+        <div class="field full">
+          <label for="id_fiscal_profile_id">Perfil fiscal</label>
+          <select id="id_fiscal_profile_id" name="fiscal_profile_id" data-tax-profile>
+            <option value="" data-is-simples="true">Automático (primeiro do tenant)</option>
+            {% for fp in profiles %}
+            <option value="{{ fp.id }}"
+              data-regime="{{ fp.tax_regime }}"
+              data-is-simples="{% if fp.tax_regime == 'simples_nacional' %}true{% else %}false{% endif %}"
+              data-retention="{{ fp.iss_retention_policy }}"
+              {% if selected_profile_id and fp.id|stringformat:"s" == selected_profile_id %}selected{% endif %}>
+              {{ fp.name }} · {{ fp.tax_regime }}
+            </option>
+            {% endfor %}
+          </select>
+          {% if not profiles %}
+          <p class="field-error" role="status">
+            Nenhum perfil.
+            <a href="{% url 'hub-v4-fiscal-new' %}">Criar perfil fiscal</a>
+            (com regra municipal) para emitir.
+          </p>
+          {% else %}
+          <p class="hint-line"><a href="{% url 'hub-v4-fiscal' %}">Gerenciar perfis</a></p>
+          {% endif %}
+        </div>
+        <div class="field">
+          <label for="id_ibge">IBGE município</label>
+          <input id="id_ibge" name="ibge_code" maxlength="7" placeholder="3504107"
+                 value="{{ draft_ibge }}"
+                 aria-describedby="ibge-help">
+          <p id="ibge-help" class="hint-line">Município específico pode exigir campos extras no motor fiscal.</p>
+        </div>
+      </div>
+
+      <div class="tax-panel is-visible" id="tax-panel-simples" data-tax-panel="simples">
+        <div class="tax-panel-title">Simples Nacional — ISS</div>
+        <p class="hint-line">Cálculo de ISS é resolvido pelas regras do perfil (não edite alíquota aqui).</p>
+      </div>
+
+      <div class="tax-panel" id="tax-panel-normal" data-tax-panel="normal" hidden>
+        <div class="tax-panel-title">Regime normal — IBS + CBS</div>
+        <p class="hint-line">IBS e CBS entram via motor fiscal/RTC no emit. A UI não reabre cadastro de alíquotas.</p>
+      </div>
+
+      <div class="tax-panel" id="tax-panel-retencao" data-tax-panel="retencao" hidden>
+        <div class="tax-panel-title">ISS retido</div>
+        <div class="field">
+          <label for="id_iss_retido_hint">Política de retenção (perfil)</label>
+          <input id="id_iss_retido_hint" type="text" readonly class="is-readonly" value="">
+        </div>
+      </div>
+
+      <div class="wizard-nav">
+        <button type="button" class="btn btn-ghost" data-wizard-prev>Voltar</button>
+        <button type="button" class="btn btn-primary" data-wizard-next>Revisar</button>
+      </div>
+    </div>
+
+    {# —— Etapa 4 · Revisão —— #}
+    <div class="wizard-pane" data-wizard-pane data-step="3">
+      <div class="section-label" style="margin-top:0;">Revisão</div>
+      <div class="review-grid" aria-live="polite">
+        <div class="review-item"><span>Tomador</span><strong data-review="tomador">—</strong></div>
+        <div class="review-item"><span>Serviço</span><strong data-review="servico">—</strong></div>
+        <div class="review-item"><span>Tributação</span><strong data-review="tributacao">—</strong></div>
+        <div class="review-item"><span>Valor</span><strong data-review="valor">—</strong></div>
+        <div class="review-item"><span>Competência</span><strong data-review="competencia">—</strong></div>
+      </div>
+      <div class="wizard-nav">
+        <button type="button" class="btn btn-ghost" data-wizard-prev>Voltar</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button type="button" class="btn btn-ghost" data-save-draft>
+            Salvar rascunho
+          </button>
+          <button type="submit" class="btn btn-primary">Emitir NFS-e</button>
+        </div>
+      </div>
+    </div>
+  </form>
+</div>
+
+<div class="modal-backdrop" id="modal-confirm-emit" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+  <div class="modal">
+    <h3 id="confirm-title">Emitir NFS-e?</h3>
+    <p class="hint-line">Esta operação enviará a nota para autorização.</p>
+    <p style="margin:0;"><strong>Tomador:</strong> <span data-sum-tomador>—</span></p>
+    <p style="margin:4px 0;"><strong>Valor:</strong> <span data-sum-amount>—</span></p>
+    <p style="margin:0 0 4px;"><strong>Competência:</strong> <span data-sum-comp>—</span></p>
+    <p style="margin:0;"><strong>Serviço:</strong> <span data-sum-servico>—</span></p>
+    <div class="actions">
+      <button type="button" class="btn btn-ghost" data-modal-cancel>Cancelar</button>
+      <button type="button" class="btn btn-primary" data-modal-confirm>Emitir</button>
+    </div>
+  </div>
+</div>
+{% endblock %}

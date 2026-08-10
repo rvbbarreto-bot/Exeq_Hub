@@ -1,0 +1,156 @@
+{% extends "hub_v4/base.html" %}
+{% load hub_v4_tags %}
+
+{% block page_actions %}
+{% if docs.pdf %}
+<a class="btn btn-primary" href="{% url 'hub-v4-nfe-doc-download' invoice.id 'pdf' %}">Baixar DANFE</a>
+{% endif %}
+{% if docs.xml %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-nfe-doc-download' invoice.id 'xml' %}">Baixar XML</a>
+{% endif %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-nfe-list' %}">Lista</a>
+{% if can_write %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-nfe-emit' %}">Emitir outra</a>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="card" style="margin-bottom:12px;">
+  <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center;">
+    <div>
+      <div style="font-family:var(--font-display);font-weight:700;font-size:1.1rem;">
+        Série {{ invoice.series }} · nº {{ invoice.number|default:"—" }}
+      </div>
+      <div style="color:var(--text-muted);font-size:.9rem;">
+        {{ invoice.provider.legal_name }} → {% if invoice.customer %}{{ invoice.customer.name }}{% else %}—{% endif %}
+        · {{ invoice.nature_operation }}
+      </div>
+    </div>
+    {% status_badge invoice.status %}
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:12px;">
+  <div class="section-label" style="margin-top:0;">Resumo</div>
+  <div class="form-grid">
+    <div><span style="color:var(--text-muted);font-size:.8rem;">Valor</span><div><strong>{{ invoice.total_cents|default:0|cents_brl }}</strong></div></div>
+    <div><span style="color:var(--text-muted);font-size:.8rem;">Emissão</span><div>{{ invoice.issue_date|date:"d/m/Y" }}</div></div>
+    <div><span style="color:var(--text-muted);font-size:.8rem;">tpAmb</span><div>{{ invoice.tp_amb }}</div></div>
+    <div><span style="color:var(--text-muted);font-size:.8rem;">Protocolo</span><div class="mono">{{ invoice.protocol|default:"—" }}</div></div>
+    <div class="full">
+      <span style="color:var(--text-muted);font-size:.8rem;">Chave de acesso</span>
+      <div class="mono" style="word-break:break-all;">{{ invoice.access_key|default:"—" }}</div>
+    </div>
+    {% if invoice.rejection_code or invoice.rejection_message %}
+    <div class="full">
+      <span style="color:var(--text-muted);font-size:.8rem;">Rejeição / aviso</span>
+      <div>{{ invoice.rejection_code }} {{ invoice.rejection_message }}</div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:12px;">
+  <div class="section-label" style="margin-top:0;">Documentos</div>
+  <div class="doc-quick-actions">
+    {% if docs.xml %}
+    <a class="btn btn-ghost btn-sm" href="{% url 'hub-v4-nfe-doc-download' invoice.id 'xml' %}">XML autorizado</a>
+    {% else %}
+    <span class="chip">XML indisponível</span>
+    {% endif %}
+    {% if docs.pdf %}
+    <a class="btn btn-ghost btn-sm" href="{% url 'hub-v4-nfe-doc-download' invoice.id 'pdf' %}">DANFE PDF</a>
+    {% else %}
+    <span class="chip">DANFE indisponível</span>
+    {% endif %}
+    {% if docs.cce %}
+    <a class="btn btn-ghost btn-sm" href="{% url 'hub-v4-nfe-doc-download' invoice.id 'cce' %}">XML CC-e</a>
+    {% endif %}
+    {% if docs.xml_cancel %}
+    <a class="btn btn-ghost btn-sm" href="{% url 'hub-v4-nfe-doc-download' invoice.id 'xml-cancel' %}">XML cancelamento</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:12px;">
+  <div class="section-label" style="margin-top:0;">Itens</div>
+  {% if items %}
+  <table class="data">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Código</th>
+        <th>Descrição</th>
+        <th>NCM</th>
+        <th>CFOP</th>
+        <th class="num">Qtde</th>
+        <th class="num">Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for it in items %}
+      <tr>
+        <td>{{ it.line_number }}</td>
+        <td class="mono">{{ it.code }}</td>
+        <td>{{ it.description }}</td>
+        <td class="mono">{{ it.ncm }}</td>
+        <td>{{ it.cfop }}</td>
+        <td class="num">{{ it.quantity }}</td>
+        <td class="num">{{ it.total_cents|cents_brl }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="hint-line">Sem itens.</p>
+  {% endif %}
+</div>
+
+{% if can_cce %}
+<div class="card" style="margin-bottom:12px;">
+  <div class="section-label" style="margin-top:0;">Carta de Correção (CC-e)</div>
+  <p class="hint-line">Texto entre 15 e 1000 caracteres. A NF-e permanece autorizada.</p>
+  <form method="post" action="{% url 'hub-v4-nfe-cce' invoice.id %}">
+    {% csrf_token %}
+    <div class="field full">
+      <label for="id_x_correcao">Correção *</label>
+      <textarea id="id_x_correcao" name="x_correcao" rows="3" required minlength="15" maxlength="1000"
+                placeholder="Descreva a correção autorizada pela legislação…"></textarea>
+    </div>
+    <div class="wizard-nav" style="margin-top:12px;justify-content:flex-end;">
+      <button type="submit" class="btn btn-primary">Emitir CC-e</button>
+    </div>
+  </form>
+</div>
+{% endif %}
+
+{% if can_cancel %}
+<div class="card" style="margin-bottom:12px;border-color:var(--danger);">
+  <div class="section-label" style="margin-top:0;color:var(--danger);">Cancelar NF-e</div>
+  <p class="hint-line">Justificativa entre 15 e 255 caracteres. Ação irreversível na SEFAZ.</p>
+  <form method="post" action="{% url 'hub-v4-nfe-cancel' invoice.id %}"
+        onsubmit="return confirm('Confirma o cancelamento desta NF-e?');">
+    {% csrf_token %}
+    <div class="field full">
+      <label for="id_justificativa">Justificativa *</label>
+      <textarea id="id_justificativa" name="justificativa" rows="2" required minlength="15" maxlength="255"
+                placeholder="Motivo do cancelamento (mín. 15 caracteres)…"></textarea>
+    </div>
+    <div class="wizard-nav" style="margin-top:12px;justify-content:flex-end;">
+      <button type="submit" class="btn btn-danger">Cancelar NF-e</button>
+    </div>
+  </form>
+</div>
+{% endif %}
+
+{% if actions %}
+<div class="card">
+  <div class="section-label" style="margin-top:0;">Ações permitidas (domínio)</div>
+  <div class="chip-row">
+    {% for a in actions %}
+    <span class="chip">{{ a }}</span>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

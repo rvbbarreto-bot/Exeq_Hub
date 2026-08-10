@@ -1,0 +1,95 @@
+{% extends "hub_v4/base.html" %}
+
+{% block page_actions %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-customers' %}">Voltar</a>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <form method="post" id="customer-form">
+    {% csrf_token %}
+    <input type="hidden" name="data_source" value="{% if form %}{{ form.data_source }}{% elif obj %}{{ obj.data_source }}{% else %}manual{% endif %}">
+    <input type="hidden" name="receita_raw_payload" value="">
+
+    <div class="form-grid">
+      <div class="field">
+        <label for="id_document_type">Tipo *</label>
+        <select name="document_type" id="id_document_type" required>
+          <option value="cnpj" {% if form and form.document_type == 'cnpj' %}selected{% elif obj and obj.document_type == 'cnpj' %}selected{% elif not obj and not form %}selected{% endif %}>CNPJ</option>
+          <option value="cpf" {% if form and form.document_type == 'cpf' %}selected{% elif obj and obj.document_type == 'cpf' %}selected{% endif %}>CPF</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="id_document">Documento *</label>
+        <input class="mono" name="document" id="id_document" required maxlength="18"
+               inputmode="numeric" autocomplete="off"
+               value="{% if form %}{{ form.document }}{% elif obj %}{{ obj.document }}{% endif %}"
+               placeholder="CPF ou CNPJ">
+      </div>
+      <div class="field full">
+        <label for="id_name">Nome *</label>
+        <input name="name" id="id_name" required
+               value="{% if form %}{{ form.name }}{% elif obj %}{{ obj.name }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_email">E-mail</label>
+        <input type="email" name="email" id="id_email"
+               value="{% if form %}{{ form.email }}{% elif obj %}{{ obj.email }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_is_active">Ativo</label>
+        <select name="is_active" id="id_is_active">
+          <option value="1" {% if form and form.is_active != '0' %}selected{% elif not form and not obj %}selected{% elif obj and obj.is_active %}selected{% endif %}>Sim</option>
+          <option value="0" {% if form and form.is_active == '0' %}selected{% elif obj and not obj.is_active %}selected{% endif %}>Não</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="id_whatsapp">WhatsApp</label>
+        <input name="whatsapp" id="id_whatsapp"
+               value="{% if form %}{{ form.whatsapp }}{% elif obj %}{{ obj.whatsapp }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_telefone">Telefone</label>
+        <input name="telefone" id="id_telefone"
+               value="{% if form %}{{ form.telefone }}{% elif obj %}{{ obj.address.telefone }}{% endif %}">
+      </div>
+      <div class="field full">
+        <label for="id_logradouro">Logradouro</label>
+        <input name="logradouro" id="id_logradouro"
+               value="{% if form %}{{ form.logradouro }}{% elif obj %}{{ obj.address.logradouro }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_numero">Número</label>
+        <input name="numero" id="id_numero" value="{% if form %}{{ form.numero }}{% elif obj %}{{ obj.address.numero }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_bairro">Bairro</label>
+        <input name="bairro" id="id_bairro" value="{% if form %}{{ form.bairro }}{% elif obj %}{{ obj.address.bairro }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_cep">CEP</label>
+        <input class="mono" name="cep" id="id_cep" value="{% if form %}{{ form.cep }}{% elif obj %}{{ obj.address.cep }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_municipio">Município</label>
+        <input name="municipio" id="id_municipio"
+               value="{% if form %}{{ form.municipio }}{% elif obj %}{{ obj.address.municipio }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_uf">UF</label>
+        <input name="uf" id="id_uf" maxlength="2" value="{% if form %}{{ form.uf }}{% elif obj %}{{ obj.address.uf }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_codigo_municipio_ibge">IBGE</label>
+        <input class="mono" name="codigo_municipio_ibge" id="id_codigo_municipio_ibge"
+               value="{% if form %}{{ form.codigo_municipio_ibge }}{% elif obj %}{{ obj.address.codigo_municipio_ibge }}{% endif %}">
+      </div>
+    </div>
+
+    <div class="wizard-nav" style="margin-top:20px;">
+      <a class="btn btn-ghost" href="{% url 'hub-v4-customers' %}">Cancelar</a>
+      <button type="submit" class="btn btn-primary">Salvar tomador</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

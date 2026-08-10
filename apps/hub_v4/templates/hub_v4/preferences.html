@@ -1,0 +1,87 @@
+{% extends "hub_v4/base.html" %}
+
+{% block content %}
+<div class="card">
+  <div class="section-label" style="margin-top:0;">Preferências</div>
+  <div class="form-grid">
+    <div>
+      <div style="color:var(--text-muted);font-size:.8rem;">Usuário</div>
+      <div><strong>{{ user.name }}</strong><br>{{ user.email }}</div>
+    </div>
+    <div>
+      <div style="color:var(--text-muted);font-size:.8rem;">Escritório / tenant</div>
+      <div><strong>{{ tenant.legal_name }}</strong><br>{{ tenant.slug }} · {{ tenant.document }}</div>
+    </div>
+    <div class="full">
+      <div style="color:var(--text-muted);font-size:.8rem;">Tema</div>
+      <div><strong>EXEQ Ledger</strong> (tema oficial V4)</div>
+    </div>
+    <div class="full">
+      <div style="color:var(--text-muted);font-size:.8rem;">Papel</div>
+      <div>{{ role_code }}</div>
+    </div>
+    <div class="full">
+      <div style="color:var(--text-muted);font-size:.8rem;">Plano comercial</div>
+      <div>
+        {% if usage.plan_name %}
+        <strong>{{ usage.plan_name }}</strong>
+        <span class="chip">{{ usage.plan_code }}</span>
+        {% if usage.subscription_status %}
+        · {{ usage.subscription_status }}
+        {% endif %}
+        {% else %}
+        <span>Sem assinatura formal</span>
+        {% if usage.source == "settings_override" or usage.source == "settings" %}
+        · limite via settings
+        {% endif %}
+        {% endif %}
+      </div>
+    </div>
+    <div class="full">
+      <div style="color:var(--text-muted);font-size:.8rem;">CNPJs emitentes (uso do plano)</div>
+      <div>
+        {% if usage %}
+        <strong>{{ usage.label }}</strong>
+        {% if usage.at_limit %} · limite atingido{% endif %}
+        · <a href="{% url 'hub-v4-providers' %}">Gerenciar empresas</a>
+        {% else %}
+        —
+        {% endif %}
+      </div>
+    </div>
+    {% if usage.users %}
+    <div class="full">
+      <div style="color:var(--text-muted);font-size:.8rem;">Usuários ativos</div>
+      <div>
+        <strong>{{ usage.users.label }}</strong>
+        {% if usage.users.at_limit %} · limite atingido{% endif %}
+        · <a href="{% url 'hub-v4-users' %}">Gerenciar usuários</a>
+      </div>
+    </div>
+    {% endif %}
+    {% if usage.nf_month %}
+    <div class="full">
+      <div style="color:var(--text-muted);font-size:.8rem;">NFS-e neste mês</div>
+      <div><strong>{{ usage.nf_month.label }}</strong>{% if usage.nf_month.at_limit %} · limite atingido{% endif %}</div>
+    </div>
+    {% endif %}
+    <div class="full">
+      <div style="color:var(--text-muted);font-size:.8rem;">NF-e (produto · modelo 55)</div>
+      <div>
+        {% if nfe_enabled_nav %}
+        <strong>Habilitada</strong> neste tenant ·
+        <a href="{% url 'hub-v4-nfe-list' %}">Abrir NF-e</a>
+        {% elif nfe_product_enabled %}
+        Módulo global ligado; este tenant ainda sem <code>nfe_enabled</code> nas configurações.
+        {% else %}
+        Módulo global desligado (<code>NFE_ENABLED=false</code>).
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <p style="margin-top:16px;color:var(--text-muted);font-size:.9rem;">
+    Operação do escritório: <a href="{% url 'hub-v4-dashboard' %}">Hub</a>.
+    Cadastros de empresas e tomadores ficam neste Hub — sem depender do Admin da plataforma.
+  </p>
+</div>
+{% endblock %}

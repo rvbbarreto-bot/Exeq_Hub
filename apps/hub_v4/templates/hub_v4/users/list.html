@@ -1,0 +1,68 @@
+{% extends "hub_v4/base.html" %}
+{% load hub_v4_tags %}
+
+{% block page_actions %}
+{% if can_add %}
+<a class="btn btn-primary" href="{% url 'hub-v4-user-invite' %}">Convidar</a>
+{% elif can_admin and usage.users.at_limit %}
+<span class="chip chip-warn">Plano {{ usage.users.label }} usuários</span>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="plan-usage-bar">
+  <span>Usuários ativos no plano:</span>
+  <strong>{{ usage.users.label }}</strong>
+  {% if usage.plan_name %}<span class="chip chip-accent">{{ usage.plan_name }}</span>{% endif %}
+  {% if usage.users.at_limit %}<span class="chip chip-warn">Limite atingido</span>{% endif %}
+</div>
+
+<form class="filter-bar" method="get">
+  <div class="field" style="flex:2;">
+    <label for="q">Buscar</label>
+    <input id="q" name="q" type="search" value="{{ q }}" placeholder="Nome, e-mail ou papel">
+  </div>
+  <button type="submit" class="btn btn-primary">Aplicar</button>
+</form>
+
+{% if page.object_list %}
+<div class="table-wrap desktop-only">
+  <table class="data">
+    <thead>
+      <tr><th>Nome</th><th>E-mail</th><th>Papel</th><th>Status</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for m in page %}
+      <tr>
+        <td><strong>{{ m.user.name }}</strong></td>
+        <td>{{ m.user.email }}</td>
+        <td><span class="chip">{{ m.role.code }}</span></td>
+        <td>{% if m.is_active %}{% status_badge "active" %}{% else %}<span class="chip">Inativo</span>{% endif %}</td>
+        <td style="text-align:right;">
+          {% if can_admin %}
+          <a class="btn btn-ghost btn-sm" href="{% url 'hub-v4-user-edit' m.id %}">Editar</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="mobile-cards">
+  {% for m in page %}
+  <div class="mobile-data-card">
+    <div class="title">{{ m.user.name }}</div>
+    <div class="meta">{{ m.user.email }} · {{ m.role.code }}</div>
+    {% if can_admin %}
+    <div style="margin-top:8px;">
+      <a class="btn btn-ghost btn-sm" href="{% url 'hub-v4-user-edit' m.id %}">Editar</a>
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+<div class="pager"><span>Página {{ page.number }} / {{ page.paginator.num_pages }}</span></div>
+{% else %}
+{% empty_state "Nenhum usuário" "Convide operadores e contadores do escritório." "Convidar" "/hub/usuarios/convidar/" %}
+{% endif %}
+{% endblock %}

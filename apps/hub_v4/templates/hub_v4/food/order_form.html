@@ -1,0 +1,73 @@
+{% extends "hub_v4/base.html" %}
+
+{% block page_actions %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-food-orders' %}">Lista</a>
+{% endblock %}
+
+{% block content %}
+{% include "hub_v4/food/_subnav.html" %}
+<form method="post" class="card">
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ form.idempotency_key|default:idempotency_key }}" />
+  <div class="form-grid">
+    <label class="full">
+      <span>Cliente</span>
+      <select name="customer_id" required>
+        <option value="">Selecione…</option>
+        <option value="__new__">+ Novo cliente (campos abaixo)</option>
+        {% for c in customers %}
+        <option value="{{ c.id }}" {% if form.customer_id == c.id|stringformat:"s" %}selected{% endif %}>{{ c.name }} — {{ c.phone_e164|default:c.document }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      <span>Novo nome</span>
+      <input name="new_customer_name" value="{{ form.new_customer_name }}" placeholder="Maria" />
+    </label>
+    <label>
+      <span>Novo telefone</span>
+      <input name="new_customer_phone" value="{{ form.new_customer_phone }}" placeholder="+55119…" />
+    </label>
+    <label>
+      <span>CPF/CNPJ (Pix)</span>
+      <input name="new_customer_document" value="{{ form.new_customer_document }}" placeholder="somente dígitos" />
+    </label>
+    <label>
+      <span>Produto</span>
+      <select name="product_id" required>
+        <option value="">Selecione…</option>
+        {% for p in products %}
+        <option value="{{ p.id }}">{{ p.sku }} — {{ p.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      <span>Quantidade</span>
+      <input name="quantity" value="{{ form.quantity|default:'1' }}" required />
+    </label>
+    <label>
+      <span>Canal</span>
+      <select name="channel">
+        {% for val, label in channels %}
+        <option value="{{ val }}" {% if form.channel == val %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="full">
+      <span>Observações</span>
+      <textarea name="notes" rows="2">{{ form.notes }}</textarea>
+    </label>
+    <label>
+      <input type="checkbox" name="await_pix" value="1" {% if form.await_pix != "0" %}checked{% endif %} />
+      Aguardar Pix (não confirma pago na hora)
+    </label>
+    <label>
+      <input type="checkbox" name="request_pix" value="1" {% if form.request_pix == "1" %}checked{% endif %} />
+      Emitir cobrança/Pix no gateway agora
+    </label>
+  </div>
+  <div style="margin-top:16px;">
+    <button class="btn btn-primary" type="submit">Criar pedido</button>
+  </div>
+</form>
+{% endblock %}

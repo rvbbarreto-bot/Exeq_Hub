@@ -7,8 +7,9 @@ Repositório: https://github.com/rvbbarreto-bot/Exeq_Hub
 | Contrato | `EXEQ Hub - Contrato de Desenvolvimento da Plataforma.docx` | Ativo |
 | v1 Domínio | `Exeq_Hub_v1_Business_Domain_Functional_Specification.md` | **1.1.0 promovido** |
 | v2 Arquitetura | `Exeq_Hub_v2_Platform_Architecture_Engineering_Guide.md` | **2.1.0 expandido** |
-| v3 DER | `Exeq_Hub_v3.1_Database_Design_ERD.md` (+ `.docx`) | **3.1.1** (amend SCHEDULING / Agendador) |
+| v3 DER | `Exeq_Hub_v3.1_Database_Design_ERD.md` (+ `.docx`) | **3.1.2** (amend SCHEDULING + FOOD) |
 | ADR Agendamento | `ADR_SCHED_001_Agendamento_Exeq_Hub.md` | **Aprovado** (PO 2026-07-28) |
+| ADR Hub Food V1 | `ADR_FOOD_001_Exeq_Hub_Food_V1.md` | **Aprovado + GO Sprint 1** (PO 2026-08-09) |
 | Estudo split Agendador | `Exeq_Agendador_Split_Payment_Estudo_Arquitetura.md` | Estudo (sem implementação PSP) |
 | NFS-e integração | `Exeq_Hub_NFSe_Emission_Architecture_Reference.md` | **1.1.0** (addendum emissor próprio; Focus histórico) |
 | ADR emissor próprio Nacional | `ADR_NFSE_001_Emissor_Proprio_Nacional.md` | **Aprovado** (PO 2026-07-29 — SEFIN/ADN + DANFSe) |
@@ -38,6 +39,8 @@ Repositório: https://github.com/rvbbarreto-bot/Exeq_Hub
 | U20–U22 sprint pré-G-EMIT | `Exeq_Hub_NFe_U20_U22_Sprint.md` | RF-44 attempts · gate · catalog · Hub KPIs |
 | U23 G-EMIT prep | `Exeq_Hub_NFe_U23_G_EMIT_Prep.md` | OpenAPI attempts · checklist CLI · CCe/inut log |
 | U24 ops lista + retry PDF | `Exeq_Hub_NFe_U24_Ops_List_Retry_PDF.md` | filtros pdf_pending/denegada · POST retry-pdf |
+| Manual de telas (PO) | `Exeq_Hub_Manual_Telas_PO.md` + `.html` | Uso do Hub `/app/` · mocks · fluxos · checklist demo |
+| Hub V4 UX Ledger | `Exeq_Hub_V4_UX_QA.md` | Shell `/hub/` · Unfold · wizard NFS-e · DoD QA |
 | U6 config/gate/discard/clone | `Exeq_Hub_NFe_U6_Config_Gate.md` | T0/T6 API + FSM operator paths (stub) |
 | U7 outbox NF-e RF-70 | `Exeq_Hub_NFe_U7_Outbox.md` | `nfe.authorized` / rejected / cancelled |
 | U8 lista + timeline | `Exeq_Hub_NFe_U8_Lista_Timeline.md` | Filtros T1 + `GET …/events` |

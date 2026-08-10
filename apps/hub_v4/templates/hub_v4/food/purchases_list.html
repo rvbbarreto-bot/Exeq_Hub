@@ -1,0 +1,71 @@
+{% extends "hub_v4/base.html" %}
+{% load hub_v4_tags %}
+
+{% block page_actions %}
+{% if can_write %}
+<a class="btn btn-primary" href="{% url 'hub-v4-food-purchase-new' %}">Nova compra</a>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+{% include "hub_v4/food/_subnav.html" %}
+
+{% if page.object_list %}
+<div class="table-wrap desktop-only">
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Fornecedor</th>
+        <th>Status</th>
+        <th class="num">Total</th>
+        <th>Criada</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in page %}
+      <tr>
+        <td>{{ p.supplier.name }}</td>
+        <td>{{ p.get_status_display }}</td>
+        <td class="num">{{ p.total_cents|cents_brl }}</td>
+        <td>{{ p.created_at|date:"d/m/Y H:i" }}</td>
+        <td>
+          {% if can_write and p.status != "received" and p.status != "cancelled" %}
+          <form method="post" style="display:inline;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="receive" />
+            <input type="hidden" name="purchase_id" value="{{ p.id }}" />
+            <button class="btn btn-ghost btn-sm" type="submit">Receber</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="mobile-cards">
+  {% for p in page %}
+  <div class="mobile-data-card">
+    <div class="title">{{ p.supplier.name }}</div>
+    <div class="row"><strong>{{ p.total_cents|cents_brl }}</strong> · {{ p.get_status_display }}</div>
+    <div class="meta">{{ p.created_at|date:"d/m/Y H:i" }}</div>
+    {% if can_write and p.status != "received" and p.status != "cancelled" %}
+    <form method="post" style="margin-top:8px;">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="receive" />
+      <input type="hidden" name="purchase_id" value="{{ p.id }}" />
+      <button class="btn btn-ghost btn-sm" type="submit">Receber estoque</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+<div class="pager">
+  <span>Página {{ page.number }} / {{ page.paginator.num_pages }}</span>
+</div>
+{% else %}
+{% url 'hub-v4-food-purchase-new' as new_url %}
+{% empty_state "Nenhuma compra" "Registre compras de insumos e receba no estoque." "Nova compra →" new_url %}
+{% endif %}
+{% endblock %}

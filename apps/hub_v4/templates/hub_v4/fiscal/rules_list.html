@@ -1,0 +1,70 @@
+{% extends "hub_v4/base.html" %}
+{% load hub_v4_tags %}
+
+{% block page_actions %}
+{% if can_write %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-fiscal' %}">Perfis</a>
+<a class="btn btn-primary" href="{% url 'hub-v4-tax-rule-new' %}">Nova regra</a>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="plan-usage-bar">
+  {% if published %}
+  <span>Catálogo publicado</span>
+  <strong>v{{ published.version }}</strong>
+  <span class="chip">{{ count }} regra(s)</span>
+  {% else %}
+  <span>Nenhum catálogo publicado neste tenant.</span>
+  <span class="chip chip-warn">Publique a 1ª regra para emitir NFS-e</span>
+  {% endif %}
+</div>
+
+<form class="filter-bar" method="get">
+  <div class="field" style="flex:2;">
+    <label for="q">Buscar regra</label>
+    <input id="q" name="q" type="search" value="{{ q }}" placeholder="IBGE, município, serviço ou perfil">
+  </div>
+  <button type="submit" class="btn btn-primary">Aplicar</button>
+</form>
+
+{% if page.object_list %}
+<div class="table-wrap desktop-only">
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Perfil</th>
+        <th>IBGE</th>
+        <th>Município</th>
+        <th>Serviço</th>
+        <th>Regime</th>
+        <th>ISS</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in page %}
+      <tr>
+        <td>{{ r.fiscal_profile.name }}</td>
+        <td class="mono">{{ r.ibge_code }}</td>
+        <td>{{ r.municipio_nome }} / {{ r.uf }}</td>
+        <td class="mono">{{ r.service_code }}</td>
+        <td>{{ r.tax_regime }}</td>
+        <td class="num">{{ r.iss_rate }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="mobile-cards">
+  {% for r in page %}
+  <div class="mobile-data-card">
+    <div class="title">{{ r.service_code }} · {{ r.municipio_nome }}</div>
+    <div class="meta">{{ r.fiscal_profile.name }} · IBGE {{ r.ibge_code }} · ISS {{ r.iss_rate }}</div>
+  </div>
+  {% endfor %}
+</div>
+<div class="pager"><span>Página {{ page.number }} / {{ page.paginator.num_pages }}</span></div>
+{% else %}
+{% empty_state "Nenhuma regra municipal" "A emissão NFS-e precisa de regra perfil × IBGE × código de serviço no catálogo publicado." "Nova regra" "/hub/fiscal/regras/nova/" %}
+{% endif %}
+{% endblock %}

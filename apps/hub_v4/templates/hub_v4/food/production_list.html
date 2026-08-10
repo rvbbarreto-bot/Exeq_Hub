@@ -1,0 +1,113 @@
+{% extends "hub_v4/base.html" %}
+
+{% block page_actions %}
+{% if can_write %}
+<span style="color:var(--text-muted);font-size:.85rem;">Crie OP abaixo (requer ficha técnica ativa).</span>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+{% include "hub_v4/food/_subnav.html" %}
+
+{% if can_write %}
+<form method="post" class="card" style="margin-bottom:12px;">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="create" />
+  <input type="hidden" name="idempotency_key" value="hub-op-{{ page.number }}-form" id="op-idem" />
+  <div class="form-grid">
+    <label class="full">
+      <span>Produto acabado</span>
+      <select name="product_id" required>
+        <option value="">Selecione…</option>
+        {% for p in products %}
+        <option value="{{ p.id }}">{{ p.sku }} — {{ p.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      <span>Qtd planejada</span>
+      <input name="quantity" value="1" required />
+    </label>
+  </div>
+  <div style="margin-top:12px;">
+    <button class="btn btn-primary" type="submit">Criar OP</button>
+  </div>
+</form>
+<script>
+  document.getElementById("op-idem").value = "hub-op-" + crypto.randomUUID();
+</script>
+{% endif %}
+
+{% if page.object_list %}
+<div class="table-wrap desktop-only">
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Produto</th>
+        <th>Qtd</th>
+        <th>Status</th>
+        <th>Criada</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for op in page %}
+      <tr>
+        <td>{{ op.product.sku }} — {{ op.product.name }}</td>
+        <td>{{ op.quantity_planned }}</td>
+        <td>{{ op.get_status_display }}</td>
+        <td>{{ op.created_at|date:"d/m/Y H:i" }}</td>
+        <td style="white-space:nowrap;">
+          {% if can_write and op.status == "planned" %}
+          <form method="post" style="display:inline;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="start" />
+            <input type="hidden" name="production_id" value="{{ op.id }}" />
+            <button class="btn btn-ghost btn-sm" type="submit">Iniciar</button>
+          </form>
+          {% elif can_write and op.status == "in_progress" %}
+          <form method="post" style="display:inline;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="complete" />
+            <input type="hidden" name="production_id" value="{{ op.id }}" />
+            <button class="btn btn-ghost btn-sm" type="submit">Concluir</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="mobile-cards">
+  {% for op in page %}
+  <div class="mobile-data-card">
+    <div class="title">{{ op.product.name }}</div>
+    <div class="row">Qtd {{ op.quantity_planned }} · {{ op.get_status_display }}</div>
+    {% if can_write and op.status == "planned" %}
+    <form method="post" style="margin-top:8px;">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="start" />
+      <input type="hidden" name="production_id" value="{{ op.id }}" />
+      <button class="btn btn-ghost btn-sm" type="submit">Iniciar</button>
+    </form>
+    {% elif can_write and op.status == "in_progress" %}
+    <form method="post" style="margin-top:8px;">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="complete" />
+      <input type="hidden" name="production_id" value="{{ op.id }}" />
+      <button class="btn btn-ghost btn-sm" type="submit">Concluir</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+<div class="pager">
+  <span>Página {{ page.number }} / {{ page.paginator.num_pages }}</span>
+</div>
+{% else %}
+<div class="card" style="padding:20px;color:var(--text-muted);">
+  Nenhuma ordem de produção. Cadastre ficha técnica (BOM) no admin e crie a OP aqui.
+</div>
+{% endif %}
+{% endblock %}

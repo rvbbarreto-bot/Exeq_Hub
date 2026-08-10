@@ -1,0 +1,79 @@
+{% extends "hub_v4/base.html" %}
+
+{% block page_actions %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-charges' %}">Voltar</a>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+    <div class="form-grid">
+      <div class="field full">
+        <label for="id_customer_id">Tomador *</label>
+        <select id="id_customer_id" name="customer_id" required>
+          <option value="">Selecione…</option>
+          {% for c in customers %}
+          <option value="{{ c.id }}" {% if form.customer_id == c.id|stringformat:"s" %}selected{% endif %}>
+            {{ c.name }} · {{ c.document }}
+          </option>
+          {% empty %}
+          <option value="" disabled>Cadastre um cliente em Clientes</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="id_amount">Valor (R$) *</label>
+        <input id="id_amount" name="amount" required inputmode="decimal"
+               placeholder="mín. 2,50"
+               value="{% if form %}{{ form.amount }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_due_date">Vencimento *</label>
+        <input id="id_due_date" name="due_date" type="date" required
+               value="{% if form %}{{ form.due_date }}{% else %}{{ default_due }}{% endif %}">
+      </div>
+      <div class="field full">
+        <label for="id_description">Descrição</label>
+        <textarea id="id_description" name="description" rows="2"
+                  placeholder="Referência no boleto">{% if form %}{{ form.description }}{% endif %}</textarea>
+      </div>
+      <div class="field">
+        <label for="id_charge_kind">Tipo</label>
+        <select id="id_charge_kind" name="charge_kind">
+          {% for code, label in kinds %}
+          <option value="{{ code }}"
+            {% if form and form.charge_kind == code %}selected
+            {% elif not form and code == 'simple' %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="id_installment_count">Parcelas (parcelado)</label>
+        <input id="id_installment_count" name="installment_count" type="number" min="2" max="60"
+               placeholder="ex.: 3"
+               value="{% if form %}{{ form.installment_count }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_recurrence_end_date">Fim da recorrência</label>
+        <input id="id_recurrence_end_date" name="recurrence_end_date" type="date"
+               value="{% if form %}{{ form.recurrence_end_date }}{% endif %}">
+      </div>
+      <div class="field">
+        <label for="id_seu_numero">Código de controle</label>
+        <input id="id_seu_numero" name="seu_numero" maxlength="15"
+               value="{% if form %}{{ form.seu_numero }}{% endif %}"
+               placeholder="opcional · máx. 15">
+      </div>
+    </div>
+    <p class="hint-line" style="margin-top:12px;">
+      Multa/mora/agenda vêm do preset do provedor de cobrança do tenant. Gateway em stub no lab.
+    </p>
+    <div class="wizard-nav" style="margin-top:20px;">
+      <a class="btn btn-ghost" href="{% url 'hub-v4-charges' %}">Cancelar</a>
+      <button type="submit" class="btn btn-primary">Emitir cobrança</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

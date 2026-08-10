@@ -1,0 +1,114 @@
+{% extends "hub_v4/base.html" %}
+{% load hub_v4_tags %}
+
+{% block page_actions %}
+<a class="btn btn-primary" href="{% url 'hub-v4-nfse-wizard' %}">Emitir NFS-e</a>
+{% endblock %}
+
+{% block content %}
+<form class="filter-bar is-collapsible" data-filter-bar method="get" action="{% url 'hub-v4-nfse-list' %}">
+  <div class="field" style="flex:2;">
+    <label for="q">Buscar</label>
+    <input id="q" name="q" type="search" value="{{ q }}" placeholder="Tomador, ref, serviço…" aria-label="Buscar NFS-e">
+  </div>
+  <div class="field filter-extra">
+    <label for="status">Status</label>
+    <select id="status" name="status">
+      <option value="all" {% if status == 'all' %}selected{% endif %}>Todos</option>
+      <option value="authorized" {% if status == 'authorized' %}selected{% endif %}>Autorizadas</option>
+      <option value="processing" {% if status == 'processing' %}selected{% endif %}>Processando</option>
+      <option value="rejected" {% if status == 'rejected' %}selected{% endif %}>Rejeitadas</option>
+      <option value="cancelled" {% if status == 'cancelled' %}selected{% endif %}>Canceladas</option>
+      <option value="draft" {% if status == 'draft' %}selected{% endif %}>Rascunho</option>
+    </select>
+  </div>
+  <button type="button" class="btn btn-ghost mobile-only" data-filter-toggle aria-label="Filtros">Filtros</button>
+  <button type="submit" class="btn btn-primary">Aplicar</button>
+</form>
+
+{% if chips %}
+<div class="chip-row" aria-label="Filtros ativos">
+  {% for c in chips %}<span class="chip">{{ c.label }}</span>{% endfor %}
+  <a class="chip" href="{% url 'hub-v4-nfse-list' %}">Limpar</a>
+</div>
+{% endif %}
+
+{% if page.object_list %}
+<div class="table-wrap desktop-only">
+  <table class="data stack-on-mobile">
+    <thead>
+      <tr>
+        <th>Número</th>
+        <th>Tomador</th>
+        <th>Competência</th>
+        <th>Status</th>
+        <th class="num">Valor</th>
+        <th>Ações</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for issue in page %}
+      <tr>
+        <td>{{ issue.focus_ref|default:"—" }}</td>
+        <td>{{ issue.customer.name }}</td>
+        <td>{{ issue.competence_date|date:"m/Y" }}</td>
+        <td>{% status_badge issue.status %}</td>
+        <td class="num">{{ issue.amount_cents|cents_brl }}</td>
+        <td>
+          <details class="row-menu">
+            <summary aria-label="Ações da nota">⋮</summary>
+            <div class="menu" role="menu">
+              <a href="{% url 'hub-v4-nfse-detail' issue.id %}">Visualizar</a>
+              {% if issue.status == "draft" %}
+              <a href="{% url 'hub-v4-nfse-wizard' %}?draft={{ issue.id }}">Continuar rascunho</a>
+              {% endif %}
+              <a href="{% url 'hub-v4-nfse-documents' issue.id %}">Ver documentos</a>
+              {% if issue.has_pdf %}
+              <a href="{% url 'hub-v4-nfse-doc-download' issue.id 'pdf' %}">Baixar PDF</a>
+              {% endif %}
+              {% if issue.has_xml %}
+              <a href="{% url 'hub-v4-nfse-doc-download' issue.id 'xml' %}">Baixar XML</a>
+              {% endif %}
+            </div>
+          </details>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="mobile-cards">
+  {% for issue in page %}
+  <div class="mobile-data-card">
+    <div class="title">NFS-e {{ issue.focus_ref|default:issue.id|truncatechars:10 }}</div>
+    <div class="meta">{{ issue.customer.name }}</div>
+    <div class="row">
+      <strong>{{ issue.amount_cents|cents_brl }}</strong>
+      {% status_badge issue.status %}
+    </div>
+    <div class="meta">{{ issue.competence_date|date:"d/m/Y" }}</div>
+    <a class="btn btn-ghost btn-sm" style="margin-top:8px;" href="{% url 'hub-v4-nfse-detail' issue.id %}">Ver detalhes</a>
+    {% if issue.status == "draft" %}
+    <a class="btn btn-primary btn-sm" style="margin-top:8px;" href="{% url 'hub-v4-nfse-wizard' %}?draft={{ issue.id }}">Continuar rascunho</a>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+<div class="pager">
+  <span>Página {{ page.number }} de {{ page.paginator.num_pages }}</span>
+  <div>
+    {% if page.has_previous %}
+    <a class="btn btn-ghost btn-sm" href="?page={{ page.previous_page_number }}&status={{ status }}&q={{ q }}">Anterior</a>
+    {% endif %}
+    {% if page.has_next %}
+    <a class="btn btn-ghost btn-sm" href="?page={{ page.next_page_number }}&status={{ status }}&q={{ q }}">Próxima</a>
+    {% endif %}
+  </div>
+</div>
+{% else %}
+{% url 'hub-v4-nfse-wizard' as emit_url %}
+{% empty_state "Nenhuma NFS-e encontrada" "Ajuste os filtros ou emita a primeira nota." "Emitir primeira nota →" emit_url %}
+{% endif %}
+{% endblock %}

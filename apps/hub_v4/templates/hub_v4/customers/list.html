@@ -1,0 +1,58 @@
+{% extends "hub_v4/base.html" %}
+{% load hub_v4_tags %}
+
+{% block page_actions %}
+{% if can_write %}
+<a class="btn btn-primary" href="{% url 'hub-v4-customer-new' %}">Novo tomador</a>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<form class="filter-bar" method="get">
+  <div class="field" style="flex:2;">
+    <label for="q">Buscar cliente</label>
+    <input id="q" name="q" type="search" value="{{ q }}" placeholder="Nome ou documento">
+  </div>
+  <button type="submit" class="btn btn-primary">Aplicar</button>
+</form>
+
+{% if page.object_list %}
+<div class="table-wrap desktop-only">
+  <table class="data">
+    <thead>
+      <tr><th>Nome</th><th>Documento</th><th>UF</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for c in page %}
+      <tr>
+        <td>{{ c.name }}</td>
+        <td class="num" style="text-align:left;">{{ c.document }}</td>
+        <td>{{ c.address.uf|default:"—" }}</td>
+        <td style="text-align:right;">
+          {% if can_write %}
+          <a class="btn btn-ghost btn-sm" href="{% url 'hub-v4-customer-edit' c.id %}">Editar</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="mobile-cards">
+  {% for c in page %}
+  <div class="mobile-data-card">
+    <div class="title">{{ c.name }}</div>
+    <div class="meta">{{ c.document }} · {{ c.address.uf|default:"" }}</div>
+    {% if can_write %}
+    <div style="margin-top:8px;">
+      <a class="btn btn-ghost btn-sm" href="{% url 'hub-v4-customer-edit' c.id %}">Editar</a>
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+<div class="pager"><span>Página {{ page.number }} / {{ page.paginator.num_pages }}</span></div>
+{% else %}
+{% empty_state "Nenhum cliente" "Cadastre tomadores (destinatários da nota) neste Hub." "Novo tomador" "/hub/clientes/novo/" %}
+{% endif %}
+{% endblock %}

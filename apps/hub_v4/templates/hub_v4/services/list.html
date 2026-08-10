@@ -1,0 +1,63 @@
+{% extends "hub_v4/base.html" %}
+{% load hub_v4_tags %}
+
+{% block page_actions %}
+{% if can_write %}
+<form method="post" action="{% url 'hub-v4-services-materialize' %}" style="display:inline;">
+  {% csrf_token %}
+  <button type="submit" class="btn btn-ghost">Materializar / semear</button>
+</form>
+<a class="btn btn-primary" href="{% url 'hub-v4-service-new' %}">Novo serviço</a>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="plan-usage-bar">
+  <span>Catálogo do escritório:</span>
+  <strong>{{ count }}</strong> serviço(s)
+</div>
+
+<form class="filter-bar" method="get">
+  <div class="field" style="flex:2;">
+    <label for="q">Buscar serviço</label>
+    <input id="q" name="q" type="search" value="{{ q }}" placeholder="Código ou descrição">
+  </div>
+  <button type="submit" class="btn btn-primary">Aplicar</button>
+</form>
+
+{% if page.object_list %}
+<div class="table-wrap desktop-only">
+  <table class="data">
+    <thead>
+      <tr><th>Código</th><th>Descrição</th><th>LC 116</th><th>Nacional</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for s in page %}
+      <tr>
+        <td class="mono">{{ s.service_code }}</td>
+        <td>{{ s.description|truncatechars:72 }}</td>
+        <td>{{ s.lc116_item|default:"—" }}</td>
+        <td class="mono">{{ s.codigo_tributacao_nacional_iss|default:"—" }}</td>
+        <td style="text-align:right;">
+          {% if can_write %}
+          <a class="btn btn-ghost btn-sm" href="{% url 'hub-v4-service-edit' s.id %}">Editar</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="mobile-cards">
+  {% for s in page %}
+  <div class="mobile-data-card">
+    <div class="title">{{ s.service_code }}</div>
+    <div class="meta">{{ s.description|truncatechars:80 }}</div>
+  </div>
+  {% endfor %}
+</div>
+<div class="pager"><span>Página {{ page.number }} / {{ page.paginator.num_pages }}</span></div>
+{% else %}
+{% empty_state "Nenhum serviço" "Semeie o catálogo mínimo ou cadastre um serviço LC 116." "Novo serviço" "/hub/servicos/novo/" %}
+{% endif %}
+{% endblock %}

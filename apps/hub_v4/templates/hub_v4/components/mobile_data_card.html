@@ -1,0 +1,14 @@
+<div class="mobile-data-card">
+  <div class="title">{{ title }}</div>
+  {% if subtitle %}<div class="meta">{{ subtitle }}</div>{% endif %}
+  <div class="row">
+    <div>{% if amount %}<strong>{{ amount }}</strong>{% endif %}</div>
+    <div>{{ badge }}</div>
+  </div>
+  {% if meta %}<div class="meta">{{ meta }}</div>{% endif %}
+  {% if cta_url %}
+  <div style="margin-top:10px;">
+    <a class="btn btn-ghost btn-sm" href="{{ cta_url }}">{{ cta_label|default:"Ver detalhes" }}</a>
+  </div>
+  {% endif %}
+</div>
