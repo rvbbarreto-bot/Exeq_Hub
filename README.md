@@ -13,6 +13,17 @@ Código **limpo e enxuto**, com **testes unitários** em toda entrega de regra �
 ## Setup
 
 ```bash
+./bootstrap.sh --bg          # sobe Docker + migrate + app (recomendado)
+# ou
+./bootstrap.sh               # runserver em foreground
+./bootstrap.sh --check       # health
+./bootstrap.sh --down        # para tudo do bootstrap
+```
+
+Windows (PowerShell, sem bash): `.\bootstrap.ps1 -Bg`
+
+Manual (equivalente):
+```bash
 docker compose up -d
 python -m pip install -r requirements.txt
 copy .env.example .env

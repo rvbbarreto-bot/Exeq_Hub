@@ -42,6 +42,61 @@
   </div>
 </div>
 
+{% if sefin %}
+<div class="card" style="margin-bottom:12px;">
+  <div class="section-label" style="margin-top:0;">Integração SEFIN / Portal Nacional</div>
+  {% if sefin.integrated %}
+  <p style="margin:0 0 10px;color:var(--ok,#0a7a3e);font-weight:600;">
+    Integrada na SEFIN Nacional (autorizada · cStat {{ sefin.c_stat|default:"100" }}).
+  </p>
+  <p style="margin:0 0 12px;color:var(--text-muted);font-size:.88rem;line-height:1.45;">
+    A nota consta no Ambiente Nacional. No Portal Contribuinte,
+    filtre por <strong>competência {{ issue.competence_date|date:"d/m/Y" }}</strong>
+    e valor <strong>{{ issue.amount_cents|cents_brl }}</strong>
+    {% if sefin.n_nfse %}· número NFS-e <strong>{{ sefin.n_nfse }}</strong>{% endif %}.
+    Notas com ícone vermelho e outros valores (ex. emissões antigas) <em>não</em> são esta emissão do Hub.
+  </p>
+  {% elif sefin.reject_local %}
+  <p style="margin:0 0 10px;color:#b42318;font-weight:600;">
+    Não enviada à SEFIN — rejeição local ({{ sefin.rejection_code }}).
+  </p>
+  {% else %}
+  <p style="margin:0 0 10px;color:var(--text-muted);">
+    Ainda sem comprovante de autorização SEFIN nesta emissão.
+  </p>
+  {% endif %}
+  <div class="form-grid">
+    {% if sefin.n_nfse %}
+    <div><span style="color:var(--text-muted);font-size:.8rem;">Nº NFS-e</span><div><strong>{{ sefin.n_nfse }}</strong></div></div>
+    {% endif %}
+    <div><span style="color:var(--text-muted);font-size:.8rem;">Ambiente</span><div>{{ sefin.ambiente_label }}</div></div>
+    {% if sefin.ver_aplic %}
+    <div><span style="color:var(--text-muted);font-size:.8rem;">Aplicativo SEFIN</span><div class="mono">{{ sefin.ver_aplic }}</div></div>
+    {% endif %}
+    {% if sefin.chave_acesso %}
+    <div class="full">
+      <span style="color:var(--text-muted);font-size:.8rem;">Chave de acesso</span>
+      <div class="mono" style="word-break:break-all;font-size:.85rem;">{{ sefin.chave_acesso }}</div>
+    </div>
+    {% endif %}
+  </div>
+  {% if sefin.chave_acesso %}
+  <div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:8px;">
+    <a class="btn btn-primary btn-sm" href="{{ sefin.consulta_publica_url }}" target="_blank" rel="noopener">
+      Consulta pública (governo)
+    </a>
+    <a class="btn btn-ghost btn-sm" href="{{ sefin.portal_contribuinte_url }}" target="_blank" rel="noopener">
+      Portal Contribuinte
+    </a>
+  </div>
+  <p style="margin:10px 0 0;color:var(--text-muted);font-size:.8rem;">
+    Na consulta pública use a chave acima e o CNPJ do prestador
+    <span class="mono">{{ issue.provider.document }}</span>.
+  </p>
+  {% endif %}
+</div>
+{% endif %}
+
 <div class="card" style="margin-bottom:12px;">
   <div class="section-label" style="margin-top:0;">Timeline fiscal</div>
   {% include "hub_v4/components/timeline.html" with timeline=timeline %}

@@ -74,10 +74,20 @@ class UploadCertificateView(APIView):
                 pfx_bytes=upload.read(),
                 password=password,
                 actor_user=request.user,
+                provider=_resolve_provider(request, cnpj),
             )
         except PfxParseError as exc:
             return Response({"detail": str(exc)}, status=400)
         return Response(DigitalCertificateSerializer(cert).data, status=status.HTTP_201_CREATED)
+
+
+def _resolve_provider(request, cnpj: str):
+    from apps.master_data.models import Provider
+
+    provider_id = request.data.get("provider_id")
+    if provider_id:
+        return Provider.objects.filter(tenant=request.tenant, id=provider_id).first()
+    return Provider.objects.filter(tenant=request.tenant, document=cnpj).first()
 
 
 class SetFocusTokenView(APIView):

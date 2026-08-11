@@ -6,6 +6,7 @@ from django.http import HttpRequest
 from django.shortcuts import redirect
 
 from apps.accounts.models import Tenant, TenantMembership, User
+from apps.accounts.permissions import FOOD_ONLY_ROLES
 
 SESSION_TENANT = "hub_v4_tenant_id"
 SESSION_USER = "hub_v4_user_id"
@@ -42,7 +43,11 @@ def session_ok(request: HttpRequest) -> bool:
     return adopt_cadastro_session(request)
 
 
-def require_hub(request: HttpRequest):
+def _food_only_home():
+    return redirect("hub-v4-food-orders")
+
+
+def require_hub(request: HttpRequest, *, allow_food_only: bool = False):
     if not session_ok(request):
         return None, None, None, redirect("hub-v4-login")
     tenant = Tenant.objects.filter(pk=request.session[SESSION_TENANT]).first()
@@ -63,6 +68,8 @@ def require_hub(request: HttpRequest):
     if not role:
         role = mem.role.code
         request.session[SESSION_ROLE] = role
+    if role in FOOD_ONLY_ROLES and not allow_food_only:
+        return tenant, user, role, _food_only_home()
     return tenant, user, role, None
 
 

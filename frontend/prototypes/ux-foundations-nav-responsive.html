@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EXEQ Hub — Protótipo UX Foundations (nav + responsive)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ink: #14181f;
+      --muted: #5c6570;
+      --line: #e2e5e9;
+      --paper: #f4f5f7;
+      --surface: #ffffff;
+      --accent: #1f6b57;
+      --accent-soft: #e7f3ef;
+      --warn: #9a6b12;
+      --warn-soft: #faf0d8;
+      --danger: #b42318;
+      --danger-soft: #fbeaea;
+      --sidebar: #0f1419;
+      --sidebar-muted: #8b939c;
+      --sidebar-active: #1f6b57;
+      --font: "DM Sans", system-ui, sans-serif;
+      --mono: "JetBrains Mono", ui-monospace, monospace;
+      --r: 10px;
+      --frame-w: 1280px;
+      --frame-h: 820px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font);
+      background: #d8dce2;
+      color: var(--ink);
+      min-height: 100vh;
+      padding: 24px 20px 48px;
+    }
+
+    /* —— studio chrome —— */
+    .studio { max-width: 1400px; margin: 0 auto; }
+    .studio-head {
+      display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end;
+      justify-content: space-between; margin-bottom: 20px;
+    }
+    .studio-head h1 {
+      font-size: 1.35rem; font-weight: 700; letter-spacing: -0.02em;
+    }
+    .studio-head p { color: var(--muted); font-size: 0.9rem; max-width: 520px; margin-top: 4px; line-height: 1.45; }
+    .vp-switch {
+      display: flex; gap: 6px; background: #fff; border: 1px solid var(--line);
+      padding: 5px; border-radius: 999px;
+    }
+    .vp-switch button {
+      border: 0; background: transparent; font: inherit; font-size: 12.5px; font-weight: 600;
+      padding: 8px 14px; border-radius: 999px; cursor: pointer; color: var(--muted);
+    }
+    .vp-switch button.is-on { background: var(--ink); color: #fff; }
+
+    .annotation {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 18px;
+    }
+    @media (max-width: 800px) { .annotation { grid-template-columns: 1fr; } }
+    .note {
+      background: #fff; border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px;
+      font-size: 13px; line-height: 1.45;
+    }
+    .note strong { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 6px; }
+    .note.problem { border-left: 3px solid var(--danger); }
+    .note.proposal { border-left: 3px solid var(--accent); }
+
+    .stage {
+      display: flex; justify-content: center; padding: 12px 0 8px;
+    }
+    .device {
+      width: var(--frame-w);
+      height: var(--frame-h);
+      max-width: 100%;
+      background: var(--paper);
+      border-radius: 16px;
+      border: 1px solid #aeb4bc;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 0 0 1px rgba(0,0,0,0.04);
+      transition: width .25s ease, height .25s ease;
+    }
+    .device[data-vp="phone"] { width: 390px; height: 780px; border-radius: 28px; }
+    .device[data-vp="tablet"] { width: 768px; height: 900px; border-radius: 18px; }
+    .device[data-vp="desktop"] { width: 1200px; height: 780px; }
+
+    /* —— app shell —— */
+    .app {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      flex: 1;
+      min-height: 0;
+      background: var(--paper);
+    }
+    .device[data-vp="phone"] .app,
+    .device[data-vp="tablet"] .app {
+      grid-template-columns: 1fr;
+    }
+
+    .sidebar {
+      background: var(--sidebar);
+      color: #fff;
+      padding: 18px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      min-height: 0;
+      overflow: auto;
+    }
+    .device[data-vp="phone"] .sidebar,
+    .device[data-vp="tablet"] .sidebar {
+      display: none;
+    }
+    .device[data-vp="tablet"].icons-sidebar .app {
+      grid-template-columns: 64px 1fr;
+    }
+    .device[data-vp="tablet"].icons-sidebar .sidebar {
+      display: flex;
+    }
+    .device[data-vp="tablet"].icons-sidebar .nav-label,
+    .device[data-vp="tablet"].icons-sidebar .brand-text,
+    .device[data-vp="tablet"].icons-sidebar .nav-group,
+    .device[data-vp="tablet"].icons-sidebar .who-text { display: none; }
+    .device[data-vp="tablet"].icons-sidebar .nav-item {
+      justify-content: center; padding: 12px;
+    }
+
+    .brand { display: flex; gap: 10px; align-items: center; padding: 4px 8px 8px; }
+    .brand-mark {
+      width: 32px; height: 32px; border-radius: 8px; background: var(--accent);
+      display: grid; place-items: center; font-weight: 700; font-size: 12px; flex-shrink: 0;
+    }
+    .brand-name { font-weight: 700; font-size: 14px; }
+    .brand-sub { font-size: 10px; color: var(--sidebar-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+
+    .nav-group { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--sidebar-muted); padding: 0 10px; margin: 8px 0 4px; }
+    .nav { display: flex; flex-direction: column; gap: 2px; }
+    .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      width: 100%; border: 0; background: transparent; color: var(--sidebar-muted);
+      font: inherit; font-size: 13px; font-weight: 500; padding: 9px 10px;
+      border-radius: 8px; cursor: pointer; text-align: left;
+    }
+    .nav-item svg { width: 17px; height: 17px; flex-shrink: 0; }
+    .nav-item:hover { background: rgba(255,255,255,0.06); color: #fff; }
+    .nav-item.is-active { background: var(--sidebar-active); color: #fff; font-weight: 600; }
+    .nav-item .pill {
+      margin-left: auto; font-size: 10px; font-weight: 700; background: rgba(255,255,255,0.15);
+      padding: 2px 6px; border-radius: 999px;
+    }
+
+    .side-foot {
+      margin-top: auto; border-top: 1px solid rgba(255,255,255,0.08);
+      padding-top: 12px; display: flex; gap: 10px; align-items: center;
+    }
+    .av {
+      width: 32px; height: 32px; border-radius: 50%; background: var(--accent);
+      display: grid; place-items: center; font-size: 11px; font-weight: 700; flex-shrink: 0;
+    }
+    .who b { display: block; font-size: 12px; }
+    .who span { font-size: 11px; color: var(--sidebar-muted); }
+
+    .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 12px 18px; background: var(--surface); border-bottom: 1px solid var(--line);
+      flex-shrink: 0;
+    }
+    .topbar-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .menu-btn {
+      display: none; width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line);
+      background: var(--surface); cursor: pointer; align-items: center; justify-content: center;
+    }
+    .device[data-vp="phone"] .menu-btn,
+    .device[data-vp="tablet"] .menu-btn { display: inline-flex; }
+    .device[data-vp="tablet"].icons-sidebar .menu-btn { display: none; }
+    .titles h2 { font-size: 16px; font-weight: 700; letter-spacing: -0.02em; }
+    .titles .crumb { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+    .top-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+    .tenant {
+      font-size: 12px; padding: 7px 11px; border-radius: 999px; border: 1px solid var(--line);
+      color: var(--muted); background: var(--paper); max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .device[data-vp="phone"] .tenant { display: none; }
+
+    .btn {
+      font: inherit; font-size: 12.5px; font-weight: 600; border-radius: 8px; border: 1px solid transparent;
+      padding: 9px 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+    }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-ghost { background: var(--surface); border-color: var(--line); color: var(--ink); }
+    .device[data-vp="phone"] .btn-label { display: none; }
+
+    .content {
+      flex: 1; overflow: auto; padding: 16px 18px 24px;
+      padding-bottom: 24px;
+    }
+    .device[data-vp="phone"] .content { padding-bottom: 88px; }
+
+    .screen { display: none; }
+    .screen.is-on { display: block; animation: in .18s ease; }
+    @keyframes in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+    .kpi-row {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px;
+    }
+    .device[data-vp="tablet"] .kpi-row { grid-template-columns: repeat(2, 1fr); }
+    .device[data-vp="phone"] .kpi-row { grid-template-columns: 1fr 1fr; }
+    .kpi {
+      background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px;
+    }
+    .kpi label { font-size: 11px; font-weight: 600; color: var(--muted); display: block; margin-bottom: 8px; }
+    .kpi .v { font-family: var(--mono); font-size: 20px; font-weight: 500; }
+    .kpi .d { font-size: 11px; margin-top: 4px; color: var(--accent); font-weight: 600; }
+
+    .alert-row {
+      display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px;
+    }
+    .alert {
+      flex: 1; min-width: 180px; background: var(--warn-soft); color: var(--warn);
+      border-radius: var(--r); padding: 12px 14px; font-size: 12.5px; font-weight: 500;
+      border: 1px solid #edd9a8;
+    }
+
+    .card {
+      background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden;
+    }
+    .card-h {
+      display: flex; justify-content: space-between; align-items: center; gap: 8px;
+      padding: 12px 14px; border-bottom: 1px solid var(--line);
+    }
+    .card-h h3 { font-size: 13.5px; font-weight: 700; }
+
+    table { width: 100%; border-collapse: collapse; }
+    th {
+      text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em;
+      color: var(--muted); padding: 10px 12px; border-bottom: 1px solid var(--line); font-weight: 600;
+    }
+    td { padding: 12px; font-size: 13px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+    tr:last-child td { border-bottom: 0; }
+    .mono { font-family: var(--mono); font-size: 12px; }
+    .sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .badge {
+      display: inline-flex; font-size: 10.5px; font-weight: 700; padding: 3px 8px; border-radius: 999px;
+    }
+    .badge.ok { background: var(--accent-soft); color: var(--accent); }
+    .badge.warn { background: var(--warn-soft); color: var(--warn); }
+    .badge.err { background: var(--danger-soft); color: var(--danger); }
+
+    .table-wrap { overflow-x: auto; }
+    .device[data-vp="phone"] .table-desk { display: none; }
+    .card-list { display: none; flex-direction: column; gap: 8px; padding: 10px; }
+    .device[data-vp="phone"] .card-list { display: flex; }
+    .nf-card {
+      border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: var(--paper);
+    }
+    .nf-card .row1 { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+    .nf-card .row2 { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+    .nf-card .actions { display: flex; gap: 6px; margin-top: 10px; }
+
+    /* bottom nav phone */
+    .bottom-nav {
+      display: none;
+      position: sticky; bottom: 0;
+      background: var(--surface);
+      border-top: 1px solid var(--line);
+      padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0));
+      grid-template-columns: repeat(4, 1fr);
+      gap: 2px;
+      flex-shrink: 0;
+    }
+    .device[data-vp="phone"] .bottom-nav { display: grid; }
+    .bn-item {
+      border: 0; background: transparent; font: inherit; font-size: 10px; font-weight: 600;
+      color: var(--muted); padding: 8px 4px; border-radius: 10px; cursor: pointer;
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+    }
+    .bn-item svg { width: 20px; height: 20px; }
+    .bn-item.is-active { color: var(--accent); background: var(--accent-soft); }
+
+    /* drawer */
+    .drawer-bg {
+      display: none; position: absolute; inset: 0; background: rgba(15,20,25,0.45); z-index: 20;
+    }
+    .drawer-bg.open { display: block; }
+    .drawer {
+      position: absolute; top: 0; left: 0; bottom: 0; width: min(280px, 86%);
+      background: var(--sidebar); color: #fff; z-index: 21;
+      transform: translateX(-105%); transition: transform .2s ease;
+      padding: 18px 12px; display: flex; flex-direction: column; gap: 14px;
+      overflow: auto;
+    }
+    .drawer.open { transform: translateX(0); }
+    .device-rel { position: relative; flex: 1; display: flex; flex-direction: column; min-height: 0; }
+
+    .legend {
+      margin-top: 20px; background: #fff; border: 1px solid var(--line); border-radius: var(--r);
+      padding: 16px 18px; font-size: 13px; line-height: 1.5; color: var(--muted);
+    }
+    .legend h3 { color: var(--ink); font-size: 13px; margin-bottom: 8px; }
+    .legend ol { margin-left: 18px; }
+    .legend li { margin-bottom: 4px; }
+  </style>
+</head>
+<body>
+  <div class="studio">
+    <header class="studio-head">
+      <div>
+        <h1>Protótipo — UI foundations, navegação e responsivo</h1>
+        <p>
+          Análise visual do EXEQ Hub (SPA + cadastros). Use os controles de viewport para comparar
+          desktop, tablet e phone. Não altera o app em produção — só protótipo de design.
+        </p>
+      </div>
+      <div class="vp-switch" role="group" aria-label="Viewport">
+        <button type="button" data-vp="desktop" class="is-on">Desktop</button>
+        <button type="button" data-vp="tablet">Tablet</button>
+        <button type="button" data-vp="phone">Phone</button>
+      </div>
+    </header>
+
+    <div class="annotation">
+      <div class="note problem">
+        <strong>Problema atual</strong>
+        Abaixo de 980px a sidebar some sem substituto: o usuário perde o menu. Cadastros abrem em
+        outra interface (Django), quebrando continuidade. Jobs fiscais (emitir, cobrar, DAS) não
+        têm prioridade visual sobre config.
+      </div>
+      <div class="note proposal">
+        <strong>Proposta neste protótipo</strong>
+        IA reagrupada (Início / Fiscal / Financeiro / Cadastros / Conta). Phone: bottom bar com
+        4 destinos + drawer “Mais”. Lista NFS-e vira cards no phone. CTA “Emitir NFS-e” sempre
+        no topo.
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="device" id="device" data-vp="desktop">
+        <div class="device-rel">
+          <div class="drawer-bg" id="drawer-bg"></div>
+          <aside class="drawer" id="drawer" aria-label="Menu">
+            <div class="brand">
+              <div class="brand-mark">EX</div>
+              <div class="brand-text">
+                <div class="brand-name">EXEQ Hub</div>
+                <div class="brand-sub">smoke-atibaia</div>
+              </div>
+            </div>
+            <div class="nav" id="drawer-nav"></div>
+          </aside>
+
+          <div class="app">
+            <aside class="sidebar" aria-label="Navegação principal">
+              <div class="brand">
+                <div class="brand-mark">EX</div>
+                <div class="brand-text">
+                  <div class="brand-name">EXEQ Hub</div>
+                  <div class="brand-sub">smoke-atibaia</div>
+                </div>
+              </div>
+              <div>
+                <div class="nav-group">Início</div>
+                <nav class="nav">
+                  <button type="button" class="nav-item is-active" data-go="dashboard">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="5" rx="1.5"/><rect x="13" y="12" width="8" height="9" rx="1.5"/><rect x="3" y="14" width="8" height="7" rx="1.5"/></svg>
+                    <span class="nav-label">Dashboard</span>
+                  </button>
+                </nav>
+                <div class="nav-group">Fiscal</div>
+                <nav class="nav">
+                  <button type="button" class="nav-item" data-go="nfse">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/></svg>
+                    <span class="nav-label">NFS-e</span>
+                    <span class="pill">12</span>
+                  </button>
+                  <button type="button" class="nav-item" data-go="das">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 9h8M8 13h5"/></svg>
+                    <span class="nav-label">DAS</span>
+                  </button>
+                </nav>
+                <div class="nav-group">Financeiro</div>
+                <nav class="nav">
+                  <button type="button" class="nav-item" data-go="cobrancas">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path d="M12 7v10M9 10.5c.5-1 1.5-1.5 3-1.5s2.5.6 2.5 1.8-1 1.7-2.5 2-2.5.8-2.5 2 1.2 1.7 2.8 1.7 2.4-.5 2.9-1.5"/></svg>
+                    <span class="nav-label">Cobranças</span>
+                  </button>
+                </nav>
+                <div class="nav-group">Cadastros</div>
+                <nav class="nav">
+                  <button type="button" class="nav-item" data-go="cadastros">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c1.5-3.5 4-5 7-5s5.5 1.5 7 5"/></svg>
+                    <span class="nav-label">Tomadores</span>
+                  </button>
+                </nav>
+                <div class="nav-group">Conta</div>
+                <nav class="nav">
+                  <button type="button" class="nav-item" data-go="conta">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9c.3.6.9 1 1.6 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+                    <span class="nav-label">Certificados · PIX</span>
+                  </button>
+                </nav>
+              </div>
+              <div class="side-foot">
+                <div class="av">RP</div>
+                <div class="who who-text">
+                  <b>Ricardo</b>
+                  <span>tenant_admin</span>
+                </div>
+              </div>
+            </aside>
+
+            <div class="main">
+              <header class="topbar">
+                <div class="topbar-left">
+                  <button type="button" class="menu-btn" id="open-drawer" aria-label="Abrir menu">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+                  </button>
+                  <div class="titles">
+                    <h2 id="page-title">Dashboard</h2>
+                    <div class="crumb" id="page-crumb">Início · Resumo operacional</div>
+                  </div>
+                </div>
+                <div class="top-actions">
+                  <span class="tenant">EXEQ · smoke-atibaia</span>
+                  <button type="button" class="btn btn-primary" data-go="nfse">
+                    <span>+</span><span class="btn-label">Emitir NFS-e</span>
+                  </button>
+                </div>
+              </header>
+
+              <div class="content">
+                <!-- DASHBOARD -->
+                <section class="screen is-on" id="screen-dashboard">
+                  <div class="alert-row">
+                    <div class="alert">Certificado A1 vence em 18 dias — renove em Conta.</div>
+                    <div class="alert" style="background:var(--accent-soft);color:var(--accent);border-color:#b8d9ce;">DAS 07/2026 ainda não capturado.</div>
+                  </div>
+                  <div class="kpi-row">
+                    <div class="kpi"><label>NFS-e no mês</label><div class="v">12</div><div class="d">3 em processamento</div></div>
+                    <div class="kpi"><label>Autorizadas</label><div class="v">9</div><div class="d">meta 15</div></div>
+                    <div class="kpi"><label>A receber</label><div class="v">R$ 8,4k</div><div class="d">2 em atraso</div></div>
+                    <div class="kpi"><label>DAS</label><div class="v">—</div><div class="d">pendente</div></div>
+                  </div>
+                  <div class="card">
+                    <div class="card-h">
+                      <h3>Atividade recente</h3>
+                      <button type="button" class="btn btn-ghost btn-sm" data-go="nfse">Ver NFS-e</button>
+                    </div>
+                    <div class="table-wrap table-desk">
+                      <table>
+                        <thead><tr><th>Ref</th><th>Tomador</th><th>Status</th><th class="num">Valor</th></tr></thead>
+                        <tbody>
+                          <tr><td class="mono">SEFIN-91</td><td>ACME Comércio<div class="sub">competência 07/2026</div></td><td><span class="badge ok">autorizada</span></td><td class="mono" style="text-align:right">R$ 1.500,00</td></tr>
+                          <tr><td class="mono">SEFIN-90</td><td>Beta Serviços<div class="sub">competência 07/2026</div></td><td><span class="badge warn">polling</span></td><td class="mono" style="text-align:right">R$ 890,00</td></tr>
+                          <tr><td class="mono">SEFIN-88</td><td>Cliente CPF<div class="sub">competência 06/2026</div></td><td><span class="badge err">failed</span></td><td class="mono" style="text-align:right">R$ 420,00</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <div class="card-list">
+                      <div class="nf-card">
+                        <div class="row1"><b>ACME Comércio</b><span class="badge ok">autorizada</span></div>
+                        <div class="row2"><span>SEFIN-91</span><span>R$ 1.500,00</span></div>
+                      </div>
+                      <div class="nf-card">
+                        <div class="row1"><b>Beta Serviços</b><span class="badge warn">polling</span></div>
+                        <div class="row2"><span>SEFIN-90</span><span>R$ 890,00</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <!-- NFSE -->
+                <section class="screen" id="screen-nfse">
+                  <div class="card">
+                    <div class="card-h">
+                      <h3>Notas fiscais de serviço</h3>
+                      <button type="button" class="btn btn-primary">Nova emissão</button>
+                    </div>
+                    <div class="table-wrap table-desk">
+                      <table>
+                        <thead><tr><th>Ref</th><th>Tomador</th><th>Competência</th><th>Status</th><th></th></tr></thead>
+                        <tbody>
+                          <tr>
+                            <td class="mono">SEFIN-91</td>
+                            <td>ACME Comércio</td>
+                            <td>07/2026</td>
+                            <td><span class="badge ok">autorizada</span></td>
+                            <td style="text-align:right"><button class="btn btn-ghost" style="padding:6px 10px">PDF</button></td>
+                          </tr>
+                          <tr>
+                            <td class="mono">SEFIN-90</td>
+                            <td>Beta Serviços</td>
+                            <td>07/2026</td>
+                            <td><span class="badge warn">polling</span></td>
+                            <td style="text-align:right"><button class="btn btn-ghost" style="padding:6px 10px">Detalhe</button></td>
+                          </tr>
+                          <tr>
+                            <td class="mono">SEFIN-88</td>
+                            <td>Cliente CPF</td>
+                            <td>06/2026</td>
+                            <td><span class="badge err">failed</span></td>
+                            <td style="text-align:right"><button class="btn btn-ghost" style="padding:6px 10px">Reprocessar</button></td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <div class="card-list">
+                      <div class="nf-card">
+                        <div class="row1"><b>ACME Comércio</b><span class="badge ok">autorizada</span></div>
+                        <div class="row2"><span>07/2026 · SEFIN-91</span><span>R$ 1.500,00</span></div>
+                        <div class="actions">
+                          <button class="btn btn-ghost" style="flex:1;justify-content:center">PDF</button>
+                          <button class="btn btn-ghost" style="flex:1;justify-content:center">XML</button>
+                          <button class="btn btn-primary" style="flex:1;justify-content:center">WhatsApp</button>
+                        </div>
+                      </div>
+                      <div class="nf-card">
+                        <div class="row1"><b>Beta Serviços</b><span class="badge warn">polling</span></div>
+                        <div class="row2"><span>07/2026 · SEFIN-90</span><span>R$ 890,00</span></div>
+                        <div class="actions">
+                          <button class="btn btn-ghost" style="flex:1;justify-content:center">Detalhe</button>
+                        </div>
+                      </div>
+                      <div class="nf-card">
+                        <div class="row1"><b>Cliente CPF</b><span class="badge err">failed</span></div>
+                        <div class="row2"><span>06/2026 · SEFIN-88</span><span>R$ 420,00</span></div>
+                        <div class="actions">
+                          <button class="btn btn-primary" style="flex:1;justify-content:center">Reprocessar</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <!-- placeholders -->
+                <section class="screen" id="screen-das">
+                  <div class="card"><div class="card-h"><h3>DAS</h3></div>
+                    <div style="padding:20px;font-size:13.5px;color:var(--muted);line-height:1.5">
+                      Protótipo de shell apenas. Conteúdo DAS permanece no fluxo atual; prioridade de nav eleva o item para o grupo Fiscal ao lado de NFS-e.
+                    </div>
+                  </div>
+                </section>
+                <section class="screen" id="screen-cobrancas">
+                  <div class="card"><div class="card-h"><h3>Cobranças</h3></div>
+                    <div style="padding:20px;font-size:13.5px;color:var(--muted)">Grupo Financeiro — atalho mobile na bottom bar.</div>
+                  </div>
+                </section>
+                <section class="screen" id="screen-cadastros">
+                  <div class="card"><div class="card-h"><h3>Tomadores</h3></div>
+                    <div style="padding:20px;font-size:13.5px;color:var(--muted);line-height:1.5">
+                      Meta: cadastros no mesmo shell (não redirecionar para pages Django com outra identidade visual).
+                    </div>
+                  </div>
+                </section>
+                <section class="screen" id="screen-conta">
+                  <div class="card"><div class="card-h"><h3>Conta</h3></div>
+                    <div style="padding:20px;font-size:13.5px;color:var(--muted)">Certificados, provedor de cobrança, canal WhatsApp — secundário.</div>
+                  </div>
+                </section>
+              </div>
+
+              <nav class="bottom-nav" aria-label="Navegação principal mobile">
+                <button type="button" class="bn-item is-active" data-go="dashboard">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5z"/></svg>
+                  Início
+                </button>
+                <button type="button" class="bn-item" data-go="nfse">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/></svg>
+                  NFS-e
+                </button>
+                <button type="button" class="bn-item" data-go="cobrancas">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path d="M12 8v8M9.5 10.5h3.2a1.5 1.5 0 0 1 0 3H9.5"/></svg>
+                  Cobrar
+                </button>
+                <button type="button" class="bn-item" id="bn-more">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="12" r="1.5" fill="currentColor"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><circle cx="18" cy="12" r="1.5" fill="currentColor"/></svg>
+                  Mais
+                </button>
+              </nav>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <h3>Como usar este protótipo com o time</h3>
+      <ol>
+        <li>Validar a <b>IA de navegação</b> (nomes de grupos e prioridade NFS-e / Cobrar / DAS).</li>
+        <li>Validar o <b>phone shell</b>: bottom bar + drawer é suficiente para o dia a dia do prestador?</li>
+        <li>Decidir se cadastros entram no SPA antes ou depois do drawer unificado.</li>
+        <li>Quando aprovado, implementar no HTML/CSS do Hub (F0–F3 da análise em <code>Docs/Exeq_Hub_UX_Analise_Navegacao_Responsive.md</code>).</li>
+      </ol>
+    </div>
+  </div>
+
+  <script>
+    const device = document.getElementById("device");
+    const titles = {
+      dashboard: ["Dashboard", "Início · Resumo operacional"],
+      nfse: ["NFS-e", "Fiscal · Emissões e artefatos"],
+      das: ["DAS", "Fiscal · Guia do Simples"],
+      cobrancas: ["Cobranças", "Financeiro · Títulos e status"],
+      cadastros: ["Tomadores", "Cadastros · Clientes da nota"],
+      conta: ["Conta", "Certificados · Provedor · Canal"],
+    };
+
+    function setVp(vp) {
+      device.dataset.vp = vp;
+      device.classList.toggle("icons-sidebar", vp === "tablet");
+      document.querySelectorAll(".vp-switch button").forEach((b) => {
+        b.classList.toggle("is-on", b.dataset.vp === vp);
+      });
+      closeDrawer();
+    }
+
+    document.querySelectorAll(".vp-switch button").forEach((b) => {
+      b.addEventListener("click", () => setVp(b.dataset.vp));
+    });
+
+    function go(name) {
+      document.querySelectorAll(".screen").forEach((s) => {
+        s.classList.toggle("is-on", s.id === "screen-" + name);
+      });
+      document.querySelectorAll(".nav-item[data-go], .bn-item[data-go]").forEach((el) => {
+        el.classList.toggle("is-active", el.getAttribute("data-go") === name);
+      });
+      const t = titles[name] || titles.dashboard;
+      document.getElementById("page-title").textContent = t[0];
+      document.getElementById("page-crumb").textContent = t[1];
+      closeDrawer();
+    }
+
+    document.querySelectorAll("[data-go]").forEach((el) => {
+      el.addEventListener("click", () => go(el.getAttribute("data-go")));
+    });
+
+    const drawer = document.getElementById("drawer");
+    const drawerBg = document.getElementById("drawer-bg");
+    const drawerNav = document.getElementById("drawer-nav");
+    // clone sidebar nav items into drawer
+    document.querySelectorAll(".sidebar .nav-item[data-go]").forEach((item) => {
+      const clone = item.cloneNode(true);
+      clone.addEventListener("click", () => go(clone.getAttribute("data-go")));
+      drawerNav.appendChild(clone);
+    });
+
+    function openDrawer() {
+      drawer.classList.add("open");
+      drawerBg.classList.add("open");
+    }
+    function closeDrawer() {
+      drawer.classList.remove("open");
+      drawerBg.classList.remove("open");
+    }
+    document.getElementById("open-drawer").addEventListener("click", openDrawer);
+    document.getElementById("bn-more").addEventListener("click", openDrawer);
+    drawerBg.addEventListener("click", closeDrawer);
+  </script>
+</body>
+</html>

@@ -847,20 +847,113 @@ def create_product(
     csosn: str = "102",
     icms_cst: str = "",
     icms_rate_bp: int = 0,
+    pis_cst: str = "07",
+    pis_rate_bp: int = 0,
+    cofins_cst: str = "07",
+    cofins_rate_bp: int = 0,
+    is_active: bool = True,
     tax_regime_hint: str = "",
 ) -> NfeProduct:
     require_nfe_enabled()
+    code_norm = (code or "").strip()[:60]
+    if not code_norm:
+        raise NfeValidationError("Código do produto é obrigatório")
+    if NfeProduct.objects.filter(tenant=tenant, code=code_norm).exists():
+        raise NfeValidationError(f"Já existe produto com código {code_norm}")
+    ncm_digits = "".join(ch for ch in str(ncm or "") if ch.isdigit())[:8]
+    if len(ncm_digits) != 8:
+        raise NfeValidationError("NCM deve ter 8 dígitos")
+    desc = (description or "").strip()[:120]
+    if not desc:
+        raise NfeValidationError("Descrição é obrigatória")
     return NfeProduct.objects.create(
         tenant=tenant,
-        code=code[:60],
-        description=description[:120],
-        ncm=ncm[:8],
-        unit=unit[:6],
-        unit_price_cents=unit_price_cents,
-        origin=origin[:1],
-        cfop_internal=cfop_internal[:4],
+        code=code_norm,
+        description=desc,
+        ncm=ncm_digits,
+        unit=(unit or "UN")[:6],
+        unit_price_cents=max(0, int(unit_price_cents or 0)),
+        origin=(origin or "0")[:1],
+        cfop_internal=(cfop_internal or "5102")[:4],
         cfop_interstate=(cfop_interstate or "6102")[:4],
-        csosn=csosn[:3],
-        icms_cst=icms_cst[:3],
-        icms_rate_bp=icms_rate_bp,
+        csosn=(csosn or "")[:3],
+        icms_cst=(icms_cst or "")[:3],
+        icms_rate_bp=max(0, int(icms_rate_bp or 0)),
+        pis_cst=(pis_cst or "07")[:2],
+        pis_rate_bp=max(0, int(pis_rate_bp or 0)),
+        cofins_cst=(cofins_cst or "07")[:2],
+        cofins_rate_bp=max(0, int(cofins_rate_bp or 0)),
+        is_active=bool(is_active),
     )
+
+
+def update_product(
+    product: NfeProduct,
+    *,
+    code: str | None = None,
+    description: str | None = None,
+    ncm: str | None = None,
+    unit_price_cents: int | None = None,
+    unit: str | None = None,
+    origin: str | None = None,
+    cfop_internal: str | None = None,
+    cfop_interstate: str | None = None,
+    csosn: str | None = None,
+    icms_cst: str | None = None,
+    icms_rate_bp: int | None = None,
+    pis_cst: str | None = None,
+    pis_rate_bp: int | None = None,
+    cofins_cst: str | None = None,
+    cofins_rate_bp: int | None = None,
+    is_active: bool | None = None,
+) -> NfeProduct:
+    require_nfe_enabled()
+    if code is not None:
+        code_norm = code.strip()[:60]
+        if not code_norm:
+            raise NfeValidationError("Código do produto é obrigatório")
+        if (
+            NfeProduct.objects.filter(tenant_id=product.tenant_id, code=code_norm)
+            .exclude(pk=product.pk)
+            .exists()
+        ):
+            raise NfeValidationError(f"Já existe produto com código {code_norm}")
+        product.code = code_norm
+    if description is not None:
+        desc = description.strip()[:120]
+        if not desc:
+            raise NfeValidationError("Descrição é obrigatória")
+        product.description = desc
+    if ncm is not None:
+        ncm_digits = "".join(ch for ch in str(ncm) if ch.isdigit())[:8]
+        if len(ncm_digits) != 8:
+            raise NfeValidationError("NCM deve ter 8 dígitos")
+        product.ncm = ncm_digits
+    if unit_price_cents is not None:
+        product.unit_price_cents = max(0, int(unit_price_cents))
+    if unit is not None:
+        product.unit = (unit or "UN")[:6]
+    if origin is not None:
+        product.origin = (origin or "0")[:1]
+    if cfop_internal is not None:
+        product.cfop_internal = (cfop_internal or "5102")[:4]
+    if cfop_interstate is not None:
+        product.cfop_interstate = (cfop_interstate or "6102")[:4]
+    if csosn is not None:
+        product.csosn = (csosn or "")[:3]
+    if icms_cst is not None:
+        product.icms_cst = (icms_cst or "")[:3]
+    if icms_rate_bp is not None:
+        product.icms_rate_bp = max(0, int(icms_rate_bp))
+    if pis_cst is not None:
+        product.pis_cst = (pis_cst or "07")[:2]
+    if pis_rate_bp is not None:
+        product.pis_rate_bp = max(0, int(pis_rate_bp))
+    if cofins_cst is not None:
+        product.cofins_cst = (cofins_cst or "07")[:2]
+    if cofins_rate_bp is not None:
+        product.cofins_rate_bp = max(0, int(cofins_rate_bp))
+    if is_active is not None:
+        product.is_active = bool(is_active)
+    product.save()
+    return product

@@ -1,17 +1,26 @@
 {% extends "master_data/base.html" %}
 {% block title %}Tomadores · EXEQ Hub{% endblock %}
 {% block content %}
-<div class="exeq-card">
-  <div class="exeq-actions" style="justify-content:space-between;margin-top:0;">
-    <div>
-      <h1>Tomadores</h1>
-      <p class="lead">CNPJ com consulta; CPF apenas validação + preenchimento manual.</p>
-    </div>
-    <a class="exeq-btn exeq-btn-primary" href="{% url 'cadastro-customer-new' %}">+ Novo</a>
+<div class="exeq-page-header">
+  <div>
+    <p class="exeq-crumb">Cadastros · Tomadores</p>
+    <h1>Tomadores cadastrados</h1>
   </div>
+  <div class="exeq-actions">
+    <a class="exeq-btn exeq-btn-primary" href="{% url 'cadastro-customer-new' %}">+ Novo tomador</a>
+  </div>
+</div>
+
+<div class="exeq-card">
   <table class="exeq-table">
     <thead>
-      <tr><th>Documento</th><th>Tipo</th><th>Nome</th><th>Origem</th><th></th></tr>
+      <tr>
+        <th>Documento</th>
+        <th>Tipo</th>
+        <th>Nome</th>
+        <th>Origem</th>
+        <th></th>
+      </tr>
     </thead>
     <tbody>
       {% for item in items %}

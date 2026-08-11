@@ -23,7 +23,7 @@ from apps.accounts.membership_services import (
     update_membership,
 )
 from apps.accounts.models import TenantMembership, TenantRole, User
-from apps.accounts.permissions import ADMIN_ROLES, WRITE_ROLES
+from apps.accounts.permissions import ADMIN_ROLES, FOOD_ONLY_ROLES, WRITE_ROLES
 from apps.accounts.plan_limits import provider_usage
 from apps.accounts.services import ensure_system_roles
 from apps.billing.models import Charge
@@ -141,6 +141,8 @@ class HubLoginView(View):
             tenant=membership.tenant,
             role_code=membership.role.code,
         )
+        if membership.role.code in FOOD_ONLY_ROLES:
+            return redirect("hub-v4-food-orders")
         return redirect("hub-v4-dashboard")
 
 
@@ -155,6 +157,8 @@ class DashboardView(View):
         tenant, user, role, redir = require_hub(request)
         if redir:
             return redir
+        if role in FOOD_ONLY_ROLES:
+            return redirect("hub-v4-food-orders")
         ctx = dashboard_context(tenant)
         ctx.update(
             {
@@ -221,6 +225,9 @@ class NfseDetailView(View):
         events = NfIssueEvent.objects.filter(nf_issue=issue).order_by("occurred_at")
         artifacts = issue.artifacts.select_related("stored_file").all()
         docs = artifact_presence(issue)
+        from apps.issuance.sefin_summary import sefin_integration_summary
+
+        sefin = sefin_integration_summary(issue)
         return render(
             request,
             "hub_v4/nfse/detail.html",
@@ -233,6 +240,7 @@ class NfseDetailView(View):
                 "artifacts": artifacts,
                 "docs": docs,
                 "role_code": role,
+                "sefin": sefin,
             },
         )
 
@@ -387,6 +395,24 @@ class NfseWizardView(View):
             if save_draft:
                 issue = save_nf_draft(draft=draft, **payload)
             else:
+                from apps.fiscal.readiness import (
+                    FiscalReadinessError,
+                    assert_emit_rule_cover,
+                )
+
+                try:
+                    assert_emit_rule_cover(
+                        tenant=tenant,
+                        fiscal_profile=payload.get("fiscal_profile"),
+                        ibge_code=payload.get("ibge_code") or "",
+                        service_code=getattr(
+                            payload.get("service"), "service_code", ""
+                        )
+                        or "",
+                        competence_date=payload.get("competence_date"),
+                    )
+                except FiscalReadinessError as exc:
+                    raise ValueError(str(exc)) from exc
                 issue = create_nf_issue(**{
                     k: v
                     for k, v in payload.items()
@@ -1774,6 +1800,98 @@ class TaxRulesListView(View):
                 "count": qs.count() if published else 0,
             },
         )
+
+
+class FiscalReadinessView(View):
+    """N1 — checklist go-live + matriz de cobertura ISS (ADR-FISCAL-001)."""
+
+    def get(self, request: HttpRequest):
+        tenant, user, role, redir = require_hub(request)
+        if redir:
+            return redir
+        from apps.fiscal.readiness import fiscal_readiness
+        from apps.fiscal.templates_factory import list_templates
+
+        readiness = fiscal_readiness(tenant=tenant)
+        return render(
+            request,
+            "hub_v4/fiscal/readiness.html",
+            {
+                "nav": "fiscal_readiness",
+                "page_title": "Pronto para emitir",
+                "role_code": role,
+                "can_write": role in WRITE_ROLES,
+                "readiness": readiness,
+                "templates": list_templates(),
+                "profiles": FiscalProfile.objects.filter(tenant=tenant).order_by("name"),
+            },
+        )
+
+
+class FiscalTemplateApplyView(View):
+    """N2 — aplica template municipal linha a linha."""
+
+    def post(self, request: HttpRequest):
+        tenant, user, role, redir = _require_writer_hub(request)
+        if redir:
+            return redir
+        from apps.fiscal.templates_factory import apply_template
+
+        profile = FiscalProfile.objects.filter(
+            tenant=tenant, pk=request.POST.get("fiscal_profile_id")
+        ).first()
+        if profile is None:
+            messages.error(request, "Selecione um perfil fiscal.")
+            return redirect("hub-v4-fiscal-readiness")
+        codes = request.POST.getlist("service_codes")
+        try:
+            result = apply_template(
+                tenant=tenant,
+                profile=profile,
+                template_id=(request.POST.get("template_id") or "").strip(),
+                service_codes=codes or None,
+            )
+        except Exception as exc:
+            messages.error(request, str(exc) or "Falha ao aplicar template.")
+            return redirect("hub-v4-fiscal-readiness")
+        messages.success(
+            request,
+            f"Template aplicado: {', '.join(result['applied_service_codes'])} "
+            f"(catálogo v{result['catalog_version']}).",
+        )
+        return redirect("hub-v4-fiscal-readiness")
+
+
+class FiscalCsvImportView(View):
+    """N2 — import CSV de regras ISS."""
+
+    def post(self, request: HttpRequest):
+        tenant, user, role, redir = _require_writer_hub(request)
+        if redir:
+            return redir
+        from apps.fiscal.templates_factory import import_rules_csv
+
+        profile = FiscalProfile.objects.filter(
+            tenant=tenant, pk=request.POST.get("fiscal_profile_id")
+        ).first()
+        if profile is None:
+            messages.error(request, "Selecione um perfil fiscal.")
+            return redirect("hub-v4-fiscal-readiness")
+        upload = request.FILES.get("csv_file")
+        raw = (request.POST.get("csv_text") or "").strip()
+        if upload is not None:
+            raw = upload.read().decode("utf-8-sig", errors="replace")
+        try:
+            result = import_rules_csv(tenant=tenant, profile=profile, csv_text=raw)
+        except Exception as exc:
+            messages.error(request, str(exc) or "Falha no import CSV.")
+            return redirect("hub-v4-fiscal-readiness")
+        messages.success(
+            request,
+            f"CSV importado: {len(result['applied_service_codes'])} regra(s) "
+            f"(catálogo v{result['catalog_version']}).",
+        )
+        return redirect("hub-v4-fiscal-readiness")
 
 
 class TaxRuleFormView(View):

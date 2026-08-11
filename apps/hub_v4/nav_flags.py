@@ -5,9 +5,10 @@ from __future__ import annotations
 from django.conf import settings
 
 from apps.accounts.models import Tenant
+from apps.accounts.permissions import FOOD_ONLY_ROLES
 from apps.accounts.plan_limits import provider_usage
 from apps.hub_v4.active_company import get_active_provider
-from apps.hub_v4.auth import SESSION_TENANT
+from apps.hub_v4.auth import SESSION_ROLE, SESSION_TENANT
 
 
 def nfe_product_enabled() -> bool:
@@ -33,8 +34,11 @@ def hub_nav_flags(request):
         "active_provider": None,
         "provider_usage": None,
         "is_platform_user": False,
+        "food_only_nav": False,
     }
     tid = request.session.get(SESSION_TENANT)
+    role = request.session.get(SESSION_ROLE) or ""
+    out["food_only_nav"] = role in FOOD_ONLY_ROLES
     if not tid:
         return out
     tenant = Tenant.objects.filter(pk=tid).only("id", "settings").first()

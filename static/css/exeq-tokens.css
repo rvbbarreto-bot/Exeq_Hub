@@ -41,7 +41,7 @@ body.exeq-cadastro {
 }
 
 .exeq-shell {
-  max-width: 980px;
+  max-width: 1040px;
   margin: 0 auto;
   padding: 28px 20px 48px;
 }
@@ -131,9 +131,12 @@ body.exeq-cadastro {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px 16px;
+  align-items: start;
 }
 
-.exeq-grid .full {
+.exeq-grid > .full,
+.exeq-grid > .exeq-section-title,
+.exeq-grid > .exeq-section-bar {
   grid-column: 1 / -1;
 }
 
@@ -150,6 +153,7 @@ body.exeq-cadastro {
   margin-top: 4px;
   font-size: 0.75rem;
   color: var(--exeq-muted);
+  min-height: 1.1em;
 }
 
 .exeq-field input,
@@ -162,6 +166,25 @@ body.exeq-cadastro {
   font: inherit;
   background: #fff;
   color: var(--exeq-ink);
+  min-height: 42px;
+}
+
+.exeq-label-spacer {
+  visibility: hidden;
+  user-select: none;
+  pointer-events: none;
+}
+
+.exeq-field-action .exeq-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+}
+
+.exeq-field-action .exeq-btn {
+  min-height: 42px;
 }
 
 .exeq-field input.mono,
@@ -195,8 +218,19 @@ body.exeq-cadastro {
 .exeq-section-title {
   font-family: var(--exeq-font-display);
   font-size: 1.05rem;
-  margin: 8px 0 4px;
-  grid-column: 1 / -1;
+  margin: 12px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--exeq-border);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.exeq-grid > .exeq-section-title:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
 }
 
 .exeq-section-title.manual {
@@ -280,16 +314,63 @@ body.exeq-cadastro {
 }
 
 .exeq-messages li {
-  padding: 10px 12px;
+  padding: 12px 14px;
   border-radius: 8px;
   margin-bottom: 8px;
   background: var(--exeq-seal-soft);
   color: #1f4f42;
+  border: 1px solid #b7d4c9;
+  font-weight: 500;
+}
+
+.exeq-messages li.success {
+  background: var(--exeq-seal-soft);
+  color: #1f4f42;
+  border-color: #b7d4c9;
 }
 
 .exeq-messages li.error {
   background: var(--exeq-alert-soft);
   color: #6e3a2d;
+  border-color: #e2c2b7;
+}
+
+/* Estrutura de página (alinhar com Hub V4 / ledger topbar) */
+.exeq-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.exeq-page-header h1 {
+  font-family: var(--exeq-font-display);
+  font-size: 1.65rem;
+  margin: 0 0 4px;
+  line-height: 1.2;
+}
+
+.exeq-crumb {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--exeq-muted);
+  font-weight: 500;
+}
+
+.exeq-page-header .exeq-actions {
+  margin-top: 0;
+  flex-shrink: 0;
+}
+
+.exeq-card > .exeq-page-header + .exeq-banner,
+.exeq-card > form {
+  margin-top: 0;
+}
+
+/* data-cnpj-only: vence display:flex inline no botão Consultar Receita */
+[data-cnpj-only][hidden] {
+  display: none !important;
 }
 
 .exeq-login-card {
@@ -304,5 +385,9 @@ body.exeq-cadastro {
   .exeq-topbar {
     flex-direction: column;
     align-items: flex-start;
+  }
+  .exeq-page-header {
+    flex-direction: column;
+    align-items: stretch;
   }
 }

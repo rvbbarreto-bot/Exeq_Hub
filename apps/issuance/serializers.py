@@ -73,14 +73,19 @@ class NfIssueCreateSerializer(serializers.Serializer):
         ) as exc:
             raise serializers.ValidationError("Referência inválida para o tenant") from exc
 
-        return create_nf_issue(
-            tenant=tenant,
-            idempotency_key=validated_data["idempotency_key"],
-            provider=provider,
-            customer=customer,
-            service=service,
-            fiscal_profile=profile,
-            ibge_code=validated_data["ibge_code"],
-            competence_date=validated_data["competence_date"],
-            amount_cents=validated_data["amount_cents"],
-        )
+        from apps.accounts.plan_limits import PlanLimitError
+
+        try:
+            return create_nf_issue(
+                tenant=tenant,
+                idempotency_key=validated_data["idempotency_key"],
+                provider=provider,
+                customer=customer,
+                service=service,
+                fiscal_profile=profile,
+                ibge_code=validated_data["ibge_code"],
+                competence_date=validated_data["competence_date"],
+                amount_cents=validated_data["amount_cents"],
+            )
+        except PlanLimitError as exc:
+            raise serializers.ValidationError({"non_field_errors": [str(exc)]}) from exc

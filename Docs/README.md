@@ -50,6 +50,7 @@ Repositório: https://github.com/rvbbarreto-bot/Exeq_Hub
 | RF-72 mídia WhatsApp NF-e | `Exeq_Hub_NFe_RF72_Midia_WhatsApp.md` | DANFE/XML se sessão canal ligar `nfe.authorized` |
 | Reforma Tributária / RTC | `Exeq_Hub_Reforma_Tributaria_RTC_MultiDocumento_Estudo_Tecnico.md` | **0.1.0-draft** (estudo direção — IBS/CBS/IS, multi-DF-e, contábil) |
 | ADR RTC execução | `ADR_RTC_001_Priorizacao_Pilares.md` | **Aceito** (PO 2026-07-26 — pilares 1→5→2→4→3) |
+| ADR Matriz ISS N0/N1/N2 | `ADR_FISCAL_001_Matriz_ISS_N0_N1_N2.md` | **Aprovado + GO** (PO 2026-08-11 — readiness + templates) |
 | Billing Inter | `Exeq_Hub_Inter_Billing_Integration_Study.md` | **1.0.0** (Sprint 5 — Inter first / BolePix v3) |
 | v4 API | `Exeq_Hub_v4_API_OpenAPI.md` + `openapi-v4.yaml` | **4.1.0-draft** (DAS + billing + proxies) |
 | v5 UX | — | Pendente |

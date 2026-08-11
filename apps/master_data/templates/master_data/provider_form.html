@@ -2,11 +2,18 @@
 {% load static %}
 {% block title %}{% if obj %}Editar{% else %}Novo{% endif %} prestador · EXEQ{% endblock %}
 {% block content %}
-<div class="exeq-card">
-  <h1>{% if obj %}Editar prestador{% else %}Novo prestador{% endif %}</h1>
-  <p class="lead">Campos com cadeado vêm da Receita. WhatsApp, contato, IM e regime tributário são manuais.</p>
+<div class="exeq-page-header">
+  <div>
+    <p class="exeq-crumb">Cadastros · Prestadores · {% if obj %}Editar{% else %}Novo{% endif %}</p>
+    <h1>{% if obj %}Editar prestador{% else %}Novo prestador{% endif %}</h1>
+  </div>
+  <div class="exeq-actions">
+    <a class="exeq-btn" href="{% url 'cadastro-provider-list' %}">Voltar à lista</a>
+  </div>
+</div>
 
-  <div id="lookup-banner" class="exeq-banner info" {% if not obj %}{% else %}hidden{% endif %}>
+<div class="exeq-card">
+  <div id="lookup-banner" class="exeq-banner info" {% if not obj %}{% else %}hidden{% endif %} role="status">
     Informe um CNPJ válido e consulte a Receita para pré-preencher.
   </div>
 
@@ -18,18 +25,25 @@
     <div class="exeq-grid">
       <div class="exeq-section-title receita">Documento e consulta</div>
       <div class="exeq-field">
-        <label>CNPJ</label>
-        <input class="mono" name="document" required maxlength="18"
-               value="{{ obj.document|default:'' }}" placeholder="00.000.000/0001-91">
+        <label for="id_document">CNPJ</label>
+        <input class="mono" name="document" id="id_document" required maxlength="18"
+               inputmode="numeric" autocomplete="off"
+               value="{{ obj.document|default:'' }}" placeholder="00.000.000/0000-00"
+               aria-describedby="document-format-hint">
+        <span class="hint" id="document-format-hint">Formato: 00.000.000/0000-00</span>
       </div>
-      <div class="exeq-field" style="display:flex;align-items:flex-end;gap:8px;">
-        <button type="button" class="exeq-btn exeq-btn-primary" id="btn-lookup">Consultar Receita</button>
-        {% if obj %}
-        <button type="button" class="exeq-btn exeq-btn-gold" id="btn-refresh-lookup">Atualizar dados da Receita</button>
-        {% endif %}
+      <div class="exeq-field exeq-field-action">
+        <label class="exeq-label-spacer" aria-hidden="true">&nbsp;</label>
+        <div class="exeq-action-row">
+          <button type="button" class="exeq-btn exeq-btn-primary" id="btn-lookup">Consultar Receita</button>
+          {% if obj %}
+          <button type="button" class="exeq-btn exeq-btn-gold" id="btn-refresh-lookup">Atualizar dados da Receita</button>
+          {% endif %}
+        </div>
       </div>
 
-      <div class="exeq-section-title receita">Dados cadastrais (Receita)
+      <div class="exeq-section-title receita">
+        Dados cadastrais (Receita)
         <span class="exeq-lock-badge">🔒 auto-preenchido</span>
       </div>
       <div class="exeq-field is-locked">
@@ -130,7 +144,7 @@
 
     <div class="exeq-actions">
       <button type="submit" class="exeq-btn exeq-btn-primary">Salvar prestador</button>
-      <a class="exeq-btn" href="{% url 'cadastro-provider-list' %}">Voltar</a>
+      <a class="exeq-btn" href="{% url 'cadastro-provider-list' %}">Cancelar</a>
       {% if obj and obj.last_lookup_at %}
       <span class="hint">Última consulta: {{ obj.last_lookup_at }}</span>
       {% endif %}
@@ -156,6 +170,46 @@
     if (seed) {
       document.querySelector('[name="receita_raw_payload"]').value = seed.textContent;
     }
+
+    var docEl = document.getElementById("id_document");
+    if (!docEl) return;
+
+    function onlyDigits(v) {
+      return String(v || "").replace(/\D/g, "");
+    }
+
+    function formatCnpj(d) {
+      d = onlyDigits(d).slice(0, 14);
+      if (d.length <= 2) return d;
+      if (d.length <= 5) return d.slice(0, 2) + "." + d.slice(2);
+      if (d.length <= 8) return d.slice(0, 2) + "." + d.slice(2, 5) + "." + d.slice(5);
+      if (d.length <= 12) {
+        return d.slice(0, 2) + "." + d.slice(2, 5) + "." + d.slice(5, 8) + "/" + d.slice(8);
+      }
+      return (
+        d.slice(0, 2) +
+        "." +
+        d.slice(2, 5) +
+        "." +
+        d.slice(5, 8) +
+        "/" +
+        d.slice(8, 12) +
+        "-" +
+        d.slice(12)
+      );
+    }
+
+    function applyMask() {
+      docEl.value = formatCnpj(docEl.value);
+      docEl.maxLength = 18;
+    }
+
+    docEl.addEventListener("input", applyMask);
+    docEl.addEventListener("blur", applyMask);
+    docEl.addEventListener("paste", function () {
+      setTimeout(applyMask, 0);
+    });
+    applyMask();
   })();
 </script>
 {% endblock %}

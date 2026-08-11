@@ -17,6 +17,28 @@
         <span>{{ request.session.hub_v4_tenant_name|default:"Ledger" }}</span>
       </div>
 
+      {% if food_only_nav %}
+      <div class="nav-group-label">Food</div>
+      <a class="nav-item {% if nav == 'food' %}is-active{% endif %}" href="{% url 'hub-v4-food-orders' %}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h10"/><circle cx="18" cy="17" r="2"/></svg>
+        <span class="label">Pedidos</span>
+      </a>
+      <a class="nav-item {% if nav == 'food_purchases' %}is-active{% endif %}" href="{% url 'hub-v4-food-purchases' %}">
+        <span class="label">Compras</span>
+      </a>
+      <a class="nav-item {% if nav == 'food_production' %}is-active{% endif %}" href="{% url 'hub-v4-food-production' %}">
+        <span class="label">Produção</span>
+      </a>
+      <a class="nav-item {% if nav == 'food_intelligence' %}is-active{% endif %}" href="{% url 'hub-v4-food-intelligence' %}">
+        <span class="label">Inteligência</span>
+      </a>
+      <a class="nav-item {% if nav == 'food_retention' %}is-active{% endif %}" href="{% url 'hub-v4-food-retention' %}">
+        <span class="label">Régua</span>
+      </a>
+      <a class="nav-item {% if nav == 'food_marketplace' %}is-active{% endif %}" href="{% url 'hub-v4-food-marketplace' %}">
+        <span class="label">Marketplace</span>
+      </a>
+      {% else %}
       <div class="nav-group-label">Painel</div>
       <a class="nav-item {% if nav == 'dashboard' %}is-active{% endif %}" href="{% url 'hub-v4-dashboard' %}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="5" rx="1.5"/><rect x="13" y="12" width="8" height="9" rx="1.5"/><rect x="3" y="14" width="8" height="7" rx="1.5"/></svg>
@@ -66,6 +88,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><path d="M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v0a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2z"/><path d="M9 12h6M9 16h4"/></svg>
         <span class="label">Regras ISS</span>
       </a>
+      <a class="nav-item {% if nav == 'fiscal_readiness' %}is-active{% endif %}" href="{% url 'hub-v4-fiscal-readiness' %}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        <span class="label">Pronto p/ emitir</span>
+      </a>
       <a class="nav-item {% if nav == 'services' %}is-active{% endif %}" href="{% url 'hub-v4-services' %}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
         <span class="label">Serviços</span>
@@ -88,6 +114,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         <span class="label">Preferências</span>
       </a>
+      {% endif %}
 
       <div class="hub-sidebar-footer">
         <b>{{ request.session.hub_v4_user_name|default:"Usuário" }}</b>

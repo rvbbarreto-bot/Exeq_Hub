@@ -25,3 +25,7 @@ Docs/Certificados Bancos/
 *.crt
 *.key
 local_media/
+
+# bootstrap local runtime
+.bootstrap/
+

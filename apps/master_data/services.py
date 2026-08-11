@@ -20,6 +20,11 @@ from shared.validators import validate_cnpj, validate_cpf
 
 
 def create_provider(*, tenant, document: str, legal_name: str, tax_regime: str, **extra) -> Provider:
+    from apps.accounts.plan_limits import assert_can_add_active_provider
+
+    is_active = extra.get("is_active", True)
+    if is_active:
+        assert_can_add_active_provider(tenant)
     return Provider.objects.create(
         tenant=tenant,
         document=validate_cnpj(document),
@@ -59,6 +64,81 @@ def create_service(*, tenant, service_code: str, description: str, **extra):
         description=description,
         **extra,
     )
+
+
+# Catálogo mínimo quando o tenant ainda não tem serviços (lab / onboarding).
+# Após import+materialize da Lista Nacional, estes não são recriados.
+_SEED_SERVICES: tuple[tuple[str, str, str], ...] = (
+    (
+        "01.07",
+        "01.07",
+        "Suporte técnico em informática, inclusive instalação, configuração e "
+        "manutenção de programas de computação e bancos de dados.",
+    ),
+    (
+        "17.01",
+        "17.01",
+        "Assessoria ou consultoria de qualquer natureza; análise, pesquisa e "
+        "fornecimento de dados e informações de qualquer natureza.",
+    ),
+    (
+        "17.19",
+        "17.19",
+        "Contabilidade, inclusive serviços técnicos e auxiliares.",
+    ),
+    (
+        "14.01",
+        "14.01",
+        "Lubrificação, limpeza, lustração, revisão, carga e recarga, conserto, "
+        "restauração, blindagem, manutenção e conservação de máquinas, veículos, "
+        "aparelhos, equipamentos, motores, elevadores ou de qualquer objeto.",
+    ),
+)
+
+
+def ensure_services_for_wizard(*, tenant, limit: int = 500) -> list:
+    """
+    Garante opções no select Serviço do wizard NFS-e.
+    1) Catálogo do tenant (ativos)
+    2) Materializa Lista Nacional publicada, se existir
+    3) Semeia itens mínimos de LC 116 para operação inicial
+    """
+    from apps.master_data.models import ServiceCatalogItem
+
+    def active():
+        return ServiceCatalogItem.objects.filter(tenant=tenant, is_active=True).order_by(
+            "service_code"
+        )
+
+    qs = active()
+    if qs.exists():
+        return list(qs[:limit])
+
+    try:
+        from apps.master_data.national_service_import import (
+            NationalServiceImportError,
+            materialize_national_services_for_tenant,
+        )
+
+        materialize_national_services_for_tenant(tenant=tenant, only_missing=True)
+    except NationalServiceImportError:
+        pass
+
+    qs = active()
+    if qs.exists():
+        return list(qs[:limit])
+
+    for code, lc116, description in _SEED_SERVICES:
+        ServiceCatalogItem.objects.get_or_create(
+            tenant=tenant,
+            service_code=code,
+            defaults={
+                "description": description,
+                "lc116_item": lc116,
+                "is_active": True,
+            },
+        )
+    return list(active()[:limit])
 
 
 def _cache_ttl() -> timedelta:

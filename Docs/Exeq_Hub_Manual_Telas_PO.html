@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>EXEQ Hub — Manual de Telas (PO)</title>
+<style>
+  :root {
+    --ink: #1a1d21;
+    --muted: #5c6570;
+    --line: #e2e6ea;
+    --bg: #f4f5f7;
+    --card: #fff;
+    --accent: #0f766e;
+    --accent-soft: #ecfdf8;
+    --sidebar: #0b0b0c;
+    --warn: #b45309;
+    --danger: #b91c1c;
+    --ok: #15803d;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Segoe UI", system-ui, sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+    line-height: 1.5;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 32px 20px 80px; }
+  header.doc-head {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 28px 32px;
+    margin-bottom: 28px;
+  }
+  header.doc-head h1 { margin: 0 0 8px; font-size: 1.75rem; }
+  header.doc-head .meta { color: var(--muted); font-size: 0.92rem; }
+  .badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .badge {
+    font-size: 0.75rem; font-weight: 600;
+    padding: 4px 10px; border-radius: 999px;
+    background: var(--accent-soft); color: var(--accent);
+  }
+  .badge.warn { background: #fff7ed; color: var(--warn); }
+  .badge.mute { background: #eef1f4; color: var(--muted); }
+  nav.toc {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 18px 24px;
+    margin-bottom: 28px;
+  }
+  nav.toc h2 { margin: 0 0 10px; font-size: 1rem; }
+  nav.toc ol { margin: 0; padding-left: 1.2rem; }
+  nav.toc a { color: var(--accent); text-decoration: none; }
+  nav.toc a:hover { text-decoration: underline; }
+  section.block {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 24px 28px;
+    margin-bottom: 22px;
+  }
+  section.block h2 {
+    margin: 0 0 6px;
+    font-size: 1.25rem;
+    border-bottom: 2px solid var(--accent);
+    padding-bottom: 8px;
+    display: inline-block;
+  }
+  section.block h3 { margin: 22px 0 8px; font-size: 1.05rem; }
+  section.block p, section.block li { color: var(--ink); }
+  .lead { color: var(--muted); margin-top: 0; }
+  table.matrix {
+    width: 100%; border-collapse: collapse; font-size: 0.9rem; margin: 12px 0;
+  }
+  table.matrix th, table.matrix td {
+    border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top;
+  }
+  table.matrix th { background: #f0f2f5; font-weight: 600; }
+  .steps { counter-reset: step; list-style: none; padding: 0; margin: 12px 0; }
+  .steps li {
+    counter-increment: step;
+    position: relative;
+    padding: 10px 12px 10px 48px;
+    margin-bottom: 8px;
+    background: var(--bg);
+    border-radius: 8px;
+    border: 1px solid var(--line);
+  }
+  .steps li::before {
+    content: counter(step);
+    position: absolute; left: 12px; top: 10px;
+    width: 26px; height: 26px; border-radius: 50%;
+    background: var(--accent); color: #fff;
+    font-size: 0.8rem; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .callout {
+    border-left: 4px solid var(--accent);
+    background: var(--accent-soft);
+    padding: 12px 14px;
+    border-radius: 0 8px 8px 0;
+    margin: 14px 0;
+    font-size: 0.92rem;
+  }
+  .callout.warn { border-color: var(--warn); background: #fff7ed; }
+  .callout.danger { border-color: var(--danger); background: #fef2f2; }
+  /* ---- mock screens ---- */
+  .shot {
+    margin: 16px 0 8px;
+    border: 1px solid #2a2a2e;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 8px 24px rgba(0,0,0,.12);
+    background: #f7f6f1;
+  }
+  .shot-caption {
+    font-size: 0.82rem; color: var(--muted);
+    margin: 0 0 18px;
+  }
+  .mock-top {
+    display: flex; height: 320px;
+  }
+  .mock-side {
+    width: 168px; background: var(--sidebar); color: #d4d4d4;
+    padding: 12px 10px; font-size: 0.72rem; flex-shrink: 0;
+  }
+  .mock-side .brand { color: #f5d66a; font-weight: 700; font-size: 0.85rem; margin-bottom: 12px; }
+  .mock-side .g { color: #777; font-size: 0.62rem; text-transform: uppercase; letter-spacing: .04em; margin: 10px 0 4px; }
+  .mock-side .ni {
+    display: block; padding: 6px 8px; border-radius: 6px; margin-bottom: 2px; color: #ccc;
+  }
+  .mock-side .ni.on { background: #f5d66a; color: #0b0b0c; font-weight: 600; }
+  .mock-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .mock-bar {
+    background: #fff; border-bottom: 1px solid #e5e5e5;
+    padding: 10px 14px; display: flex; justify-content: space-between; align-items: center;
+  }
+  .mock-bar h4 { margin: 0; font-size: 0.95rem; }
+  .mock-bar .pill {
+    font-size: 0.68rem; background: #f0f0f0; padding: 3px 8px; border-radius: 999px; color: #555;
+  }
+  .mock-body { padding: 12px 14px; overflow: hidden; flex: 1; font-size: 0.72rem; }
+  .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
+  .kpi {
+    background: #fff; border: 1px solid #e5e5e5; border-radius: 8px; padding: 8px;
+  }
+  .kpi .l { color: #777; font-size: 0.65rem; }
+  .kpi .v { font-weight: 700; font-size: 0.95rem; margin-top: 2px; }
+  .mock-card {
+    background: #fff; border: 1px solid #e5e5e5; border-radius: 8px; padding: 8px 10px; margin-bottom: 8px;
+  }
+  .mock-card .ch { font-weight: 600; margin-bottom: 6px; font-size: 0.75rem; }
+  .mtbl { width: 100%; border-collapse: collapse; }
+  .mtbl th { text-align: left; color: #888; font-weight: 500; border-bottom: 1px solid #eee; padding: 4px 2px; }
+  .mtbl td { padding: 5px 2px; border-bottom: 1px solid #f3f3f3; }
+  .btn-chip {
+    display: inline-block; background: #f5d66a; color: #111; font-weight: 600;
+    padding: 4px 10px; border-radius: 6px; font-size: 0.68rem;
+  }
+  .btn-ghost {
+    display: inline-block; border: 1px solid #ccc; padding: 3px 8px; border-radius: 6px; font-size: 0.65rem; color: #444;
+  }
+  .status { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 0.62rem; font-weight: 600; }
+  .st-ok { background: #dcfce7; color: #166534; }
+  .st-warn { background: #fef3c7; color: #92400e; }
+  .st-bad { background: #fee2e2; color: #991b1b; }
+  .st-neu { background: #e5e7eb; color: #374151; }
+  .flow {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+    margin: 12px 0; font-size: 0.82rem;
+  }
+  .flow .box {
+    background: #fff; border: 1px solid var(--line); border-radius: 8px;
+    padding: 8px 12px; font-weight: 600;
+  }
+  .flow .box.act { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .flow .arr { color: var(--muted); font-weight: 700; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 720px) {
+    .two-col { grid-template-columns: 1fr; }
+    .mock-top { height: auto; flex-direction: column; }
+    .mock-side { width: 100%; }
+    .kpi-row { grid-template-columns: 1fr 1fr; }
+  }
+  @media print {
+    body { background: #fff; }
+    section.block, header.doc-head, nav.toc { break-inside: avoid; box-shadow: none; }
+    .shot { box-shadow: none; }
+  }
+  footer {
+    margin-top: 12px; color: var(--muted); font-size: 0.8rem; text-align: center;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc-head">
+  <h1>Manual de Telas — EXEQ Hub</h1>
+  <p class="meta">
+    Documento de Product Owner · uso operacional do Hub unificado<br />
+    URL: <strong>http://&lt;servidor&gt;:8000/app/</strong> · Login multi-tenant (slug + e-mail + senha)<br />
+    Versão: 1.0 · 2026-08-08 · Público: PO, CS, onboarding, treino
+  </p>
+  <div class="badges">
+    <span class="badge">Hub v2 (layouts + API)</span>
+    <span class="badge">NFS-e piloto</span>
+    <span class="badge">Cobrança multi-gateway</span>
+    <span class="badge warn">NF-e: flag / G-EMIT</span>
+    <span class="badge mute">Sem tela de Agenda no Hub ainda</span>
+  </div>
+</header>
+
+<nav class="toc">
+  <h2>Sumário</h2>
+  <ol>
+    <li><a href="#mapa">Mapa do menu e papéis</a></li>
+    <li><a href="#login">Login e sessão</a></li>
+    <li><a href="#onboarding">Fluxo ideal de onboarding (1ª configuração)</a></li>
+    <li><a href="#painel">Painel</a></li>
+    <li><a href="#cadastros">Cadastros (Prestadores / Tomadores)</a></li>
+    <li><a href="#cert">Certificados digitais</a></li>
+    <li><a href="#provedor">Provedor de cobrança</a></li>
+    <li><a href="#cobrancas">Cobranças</a></li>
+    <li><a href="#nfse">Emissão NFS-e</a></li>
+    <li><a href="#nfe">Emissão NF-e</a></li>
+    <li><a href="#das">Guias DAS</a></li>
+    <li><a href="#checklist">Checklist de demonstração (15 min)</a></li>
+  </ol>
+</nav>
+
+<!-- ===================== MAPA ===================== -->
+<section class="block" id="mapa">
+  <h2>1. Mapa do menu e papéis</h2>
+  <p class="lead">Barra lateral esquerda. Três grupos: Cadastros · Operação · Configuração.</p>
+
+  <table class="matrix">
+    <thead>
+      <tr><th>Menu</th><th>Tela</th><th>Para quê</th><th>Quem usa no dia a dia</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Cadastros → Prestadores</td><td>Lista + modal CNPJ</td><td>Empresas emitentes do tenant</td><td>Admin / operador</td></tr>
+      <tr><td>Cadastros → Tomadores</td><td>Lista + modal CPF/CNPJ</td><td>Clientes da nota/cobrança</td><td>Admin / operador</td></tr>
+      <tr><td>Painel</td><td>KPIs + gráficos</td><td>Visão do dia</td><td>Todos</td></tr>
+      <tr><td>Cobranças</td><td>Lista + nova + detalhe</td><td>Boleto/PIX (Inter etc.)</td><td>Operador financeiro</td></tr>
+      <tr><td>Emissão NFS-e</td><td>Lista + emitir + cancelar</td><td>NF de serviço</td><td>Operador fiscal</td></tr>
+      <tr><td>Emissão NF-e</td><td>Gate, produtos, lista, detalhe</td><td>NF-e 55 B2B (sem estoque)</td><td>Operador fiscal (se habilitado)</td></tr>
+      <tr><td>Guias DAS</td><td>Lista + gerar guia</td><td>Simples Nacional</td><td>Contábil / admin</td></tr>
+      <tr><td>Provedor de cobrança</td><td>Inter / Asaas / C6</td><td>Credenciais de pagamento</td><td>Admin tenant</td></tr>
+      <tr><td>Certificados digitais</td><td>Lista + upload PFX</td><td>A1 multi-uso (NF e DAS)</td><td>Admin tenant</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <strong>Papéis (RBAC):</strong> escrita de cadastros e operações sensíveis para
+    <code>tenant_admin</code> e <code>operator</code>. Papéis somente leitura
+    veem listas, mas botões de criar/editar ficam ocultos ou bloqueados
+    (<span class="btn-ghost">js-writer-only</span>).
+  </div>
+</section>
+
+<!-- ===================== LOGIN ===================== -->
+<section class="block" id="login">
+  <h2>2. Login e sessão</h2>
+  <p class="lead">Overlay de login bloqueia o app até autenticação JWT.</p>
+
+  <div class="shot" aria-label="Mock login">
+    <div class="mock-body" style="min-height:200px;display:flex;align-items:center;justify-content:center;background:rgba(11,11,12,.82)">
+      <div style="background:#fff;border-radius:12px;padding:24px 28px;width:320px;box-shadow:0 12px 40px rgba(0,0,0,.3)">
+        <div style="font-weight:700;font-size:1rem;margin-bottom:4px">EXEQ Hub</div>
+        <div style="font-size:0.75rem;color:#666;margin-bottom:14px">Entre com o tenant e seu e-mail</div>
+        <div style="font-size:0.7rem;color:#888;margin-bottom:3px">Tenant (slug)</div>
+        <div style="border:1px solid #ddd;border-radius:6px;padding:7px 8px;margin-bottom:8px;color:#999">exeq-lab</div>
+        <div style="font-size:0.7rem;color:#888;margin-bottom:3px">E-mail</div>
+        <div style="border:1px solid #ddd;border-radius:6px;padding:7px 8px;margin-bottom:8px;color:#999">admin@…</div>
+        <div style="font-size:0.7rem;color:#888;margin-bottom:3px">Senha</div>
+        <div style="border:1px solid #ddd;border-radius:6px;padding:7px 8px;margin-bottom:14px;color:#999">••••••••</div>
+        <div class="btn-chip" style="width:100%;text-align:center;padding:8px">Entrar</div>
+      </div>
+    </div>
+  </div>
+  <p class="shot-caption">Figura 1 — Tela de login (mock fiel ao overlay real).</p>
+
+  <ol class="steps">
+    <li>Abrir <strong>/app/</strong>.</li>
+    <li>Preencher <strong>slug do tenant</strong> (ex.: <code>exeq-lab</code>), e-mail e senha.</li>
+    <li>Após sucesso: topbar mostra o <strong>tenant</strong>; rodapé da sidebar mostra nome e papel.</li>
+    <li><strong>Sair</strong> limpa a sessão JWT do navegador.</li>
+  </ol>
+  <div class="callout warn">
+    O mesmo usuário pode existir em vários tenants: o <strong>slug</strong> escolhe o contexto fiscal.
+  </div>
+</section>
+
+<!-- ===================== ONBOARDING ===================== -->
+<section class="block" id="onboarding">
+  <h2>3. Fluxo ideal de onboarding (1ª configuração)</h2>
+  <p class="lead">Ordem recomendada em demonstração e go-live de 1 CNPJ.</p>
+
+  <div class="flow">
+    <span class="box">Login</span><span class="arr">→</span>
+    <span class="box act">Certificado A1</span><span class="arr">→</span>
+    <span class="box act">Prestador</span><span class="arr">→</span>
+    <span class="box">Tomador</span><span class="arr">→</span>
+    <span class="box">Provedor cobrança*</span><span class="arr">→</span>
+    <span class="box act">1ª NFS-e</span><span class="arr">→</span>
+    <span class="box">Cobrança*</span>
+  </div>
+  <p style="font-size:0.85rem;color:var(--muted)">* Opcional se o piloto for só nota fiscal.</p>
+
+  <table class="matrix">
+    <thead><tr><th>Ordem</th><th>Tela</th><th>Critério de pronto</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Certificados</td><td>Certificado active/primary, validade OK</td></tr>
+      <tr><td>2</td><td>Prestadores</td><td>CNPJ ativo, endereço/UF/IM se exigido</td></tr>
+      <tr><td>3</td><td>Tomadores</td><td>Ao menos 1 tomador com documento e endereço</td></tr>
+      <tr><td>4</td><td>Provedor</td><td>(se cobrança) Inter/Asaas configurado e “Testar conexão” OK</td></tr>
+      <tr><td>5</td><td>NFS-e</td><td>Emitir → status Autorizada → baixar PDF/XML</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ===================== PAINEL ===================== -->
+<section class="block" id="painel">
+  <h2>4. Painel</h2>
+  <p class="lead">Home operacional. Resumo financeiro e fiscal do tenant logado.</p>
+
+  <div class="shot">
+    <div class="mock-top">
+      <div class="mock-side">
+        <div class="brand">EXEQ Hub</div>
+        <div class="g">Cadastros</div>
+        <span class="ni">Prestadores</span>
+        <span class="ni">Tomadores</span>
+        <div class="g">Operação</div>
+        <span class="ni on">Painel</span>
+        <span class="ni">Cobranças</span>
+        <span class="ni">Emissão NFS-e</span>
+        <span class="ni">Emissão NF-e</span>
+        <span class="ni">Guias DAS</span>
+        <div class="g">Config</div>
+        <span class="ni">Provedor…</span>
+        <span class="ni">Certificados</span>
+      </div>
+      <div class="mock-main">
+        <div class="mock-bar">
+          <div><h4>Painel</h4><div style="font-size:0.65rem;color:#888">EXEQ Hub / Painel</div></div>
+          <span class="pill">Tenant: Empresa XYZ</span>
+        </div>
+        <div class="mock-body">
+          <div class="kpi-row">
+            <div class="kpi"><div class="l">Em aberto</div><div class="v">R$ 12.400</div></div>
+            <div class="kpi"><div class="l">Vence em 7 dias</div><div class="v">R$ 3.200</div></div>
+            <div class="kpi"><div class="l">NFS-e (30d)</div><div class="v">18</div></div>
+            <div class="kpi"><div class="l">Certificado</div><div class="v" style="color:var(--ok);font-size:0.8rem">Válido</div></div>
+          </div>
+          <div class="two-col">
+            <div class="mock-card">
+              <div class="ch">Cobranças por status</div>
+              <div style="height:70px;background:conic-gradient(#15803d 0 40%,#f59e0b 40% 70%,#94a3b8 70%);border-radius:50%;width:70px;margin:8px auto"></div>
+            </div>
+            <div class="mock-card">
+              <div class="ch">Últimas cobranças</div>
+              <table class="mtbl">
+                <tr><td>Cliente A</td><td><span class="status st-ok">Paga</span></td><td style="text-align:right">R$ 500</td></tr>
+                <tr><td>Cliente B</td><td><span class="status st-warn">Aberta</span></td><td style="text-align:right">R$ 900</td></tr>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="shot-caption">Figura 2 — Painel (mock). KPIs reais vêm da API do tenant.</p>
+
+  <h3>O que mostrar na demo</h3>
+  <ul>
+    <li>KPIs de cobrança em aberto e janela de 7 dias.</li>
+    <li>Volume de NFS-e recentes.</li>
+    <li>Status do certificado (atalho para upload se ausente).</li>
+    <li>Temas visuais (XP / Ledger / Graphite) no canto da topbar — cosmético.</li>
+  </ul>
+</section>
+
+<!-- ===================== CADASTROS ===================== -->
+<section class="block" id="cadastros">
+  <h2>5. Cadastros — Prestadores e Tomadores</h2>
+  <p class="lead">Base para qualquer nota ou cobrança. Lookup de CNPJ (Receita, dados públicos).</p>
+
+  <div class="shot">
+    <div class="mock-top" style="height:280px">
+      <div class="mock-side">
+        <div class="brand">EXEQ Hub</div>
+        <div class="g">Cadastros</div>
+        <span class="ni on">Prestadores</span>
+        <span class="ni">Tomadores</span>
+        <div class="g">Operação</div>
+        <span class="ni">Painel</span>
+        <span class="ni">…</span>
+      </div>
+      <div class="mock-main">
+        <div class="mock-bar">
+          <h4>Prestadores</h4>
+          <span class="btn-chip">Novo prestador</span>
+        </div>
+        <div class="mock-body">
+          <div class="mock-card" style="padding:0">
+            <table class="mtbl" style="padding:8px">
+              <thead><tr><th>CNPJ</th><th>Razão social</th><th>Regime</th><th>Origem</th><th></th></tr></thead>
+              <tbody>
+                <tr><td>37.229.907/0001-37</td><td>EXEQ LAB LTDA</td><td>Simples</td><td>Receita</td><td><span class="btn-ghost">Editar</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="shot-caption">Figura 3 — Lista de prestadores.</p>
+
+  <h3>Fluxo — Novo prestador</h3>
+  <ol class="steps">
+    <li>Menu <strong>Prestadores</strong> → <strong>Novo prestador</strong>.</li>
+    <li>Informar CNPJ → consulta automática preenche razão social e endereço (quando disponível).</li>
+    <li>Completar campos manuais: regime tributário, IE (se NF-e), IM (se NFS-e exigir), WhatsApp/contato.</li>
+    <li>Salvar. O prestador entra ativo no tenant.</li>
+  </ol>
+
+  <h3>Fluxo — Novo tomador</h3>
+  <ol class="steps">
+    <li>Menu <strong>Tomadores</strong> → <strong>Novo tomador</strong>.</li>
+    <li><strong>CNPJ:</strong> lookup Receita. <strong>CPF:</strong> preenchimento manual (LGPD).</li>
+    <li>Endereço completo (necessário para NF-e; recomendado para NFS-e).</li>
+    <li>Salvar.</li>
+  </ol>
+
+  <div class="callout">
+    Cadastros Django oficiais em <code>/cadastros/…</code> redirecionam para o Hub
+    (<code>/app/#prestadores</code> / tomadores — mesmo login.
+  </div>
+</section>
+
+<!-- ===================== CERT ===================== -->
+<section class="block" id="cert">
+  <h2>6. Certificados digitais</h2>
+  <p class="lead">Configuração. Certificado A1 (PFX/P12) do CNPJ — usado em emissão e guias.</p>
+
+  <div class="shot">
+    <div class="mock-top" style="height:240px">
+      <div class="mock-side">
+        <div class="brand">EXEQ Hub</div>
+        <div class="g">Config</div>
+        <span class="ni">Provedor…</span>
+        <span class="ni on">Certificados</span>
+      </div>
+      <div class="mock-main">
+        <div class="mock-bar">
+          <h4>Certificados digitais</h4>
+          <span class="btn-chip">Enviar certificado</span>
+        </div>
+        <div class="mock-body">
+          <div class="mock-card" style="padding:0">
+            <table class="mtbl">
+              <thead><tr><th>CNPJ</th><th>Validade</th><th>Status</th><th>Primary</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>37.229…</td>
+                  <td>15/03/2027</td>
+                  <td><span class="status st-ok">Ativo</span></td>
+                  <td>Sim</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="shot-caption">Figura 4 — Lista de certificados A1.</p>
+
+  <ol class="steps">
+    <li>Configuração → <strong>Certificados digitais</strong> → <strong>Enviar certificado</strong>.</li>
+    <li>Selecionar arquivo <strong>.pfx / .p12</strong> e senha do certificado.</li>
+    <li>Ao enviar, o cert torna-se <strong>primary</strong> do tenant (criptografado em disco seguro).</li>
+    <li>Validar no Painel: KPI de certificado “Válido”.</li>
+  </ol>
+  <div class="callout warn">
+    Nunca pedir senha do cert em proposta comercial por e-mail. Upload só no Hub, por admin do tenant.
+  </div>
+</section>
+
+<!-- ===================== PROVEDOR ===================== -->
+<section class="block" id="provedor">
+  <h2>7. Provedor de cobrança</h2>
+  <p class="lead">Escolha e credenciais: Inter (padrão BolePix), Asaas ou C6.</p>
+
+  <div class="flow">
+    <span class="box">Escolher provedor</span><span class="arr">→</span>
+    <span class="box act">Credenciais / cert mTLS</span><span class="arr">→</span>
+    <span class="box">Testar conexão</span><span class="arr">→</span>
+    <span class="box act">Nova cobrança</span>
+  </div>
+
+  <ol class="steps">
+    <li>Abrir <strong>Provedor de cobrança</strong>.</li>
+    <li>Ativar o provedor desejado (cards Inter / Asaas / C6).</li>
+    <li><strong>Inter:</strong> client id/secret + certificado e chave mTLS (zonas de drop).</li>
+    <li>Clicar <strong>Testar conexão</strong> (admin) — não devolve token na tela.</li>
+    <li>Somente após OK: emitir cobranças com sucesso em ambiente real.</li>
+  </ol>
+  <div class="callout">
+    Em laboratório o Hub pode rodar gateway em modo stub (sem banco real).
+    Na demo comercial, deixar claro se a cobrança é simulada ou sandbox Inter.
+  </div>
+</section>
+
+<!-- ===================== COBRANÇAS ===================== -->
+<section class="block" id="cobrancas">
+  <h2>8. Cobranças</h2>
+  <p class="lead">Emissão e acompanhamento de boletos/PIX. Lista com abas por status, gráfico e detalhe.</p>
+
+  <div class="shot">
+    <div class="mock-top" style="height:300px">
+      <div class="mock-side">
+        <div class="brand">EXEQ Hub</div>
+        <div class="g">Operação</div>
+        <span class="ni">Painel</span>
+        <span class="ni on">Cobranças</span>
+        <span class="ni">Emissão NFS-e</span>
+      </div>
+      <div class="mock-main">
+        <div class="mock-bar">
+          <h4>Cobranças</h4>
+          <span class="btn-chip">Nova cobrança</span>
+        </div>
+        <div class="mock-body">
+          <div class="mock-card">
+            <div class="ch">Predefinições (multa / juros / dias agenda)</div>
+            <div style="display:flex;gap:8px">
+              <span class="btn-ghost">Salvar predefinições</span>
+            </div>
+          </div>
+          <div class="mock-card" style="padding:0">
+            <table class="mtbl">
+              <thead><tr><th>Tomador</th><th>Descrição</th><th>Venc.</th><th>Status</th><th>Valor</th></tr></thead>
+              <tbody>
+                <tr><td>Cliente A</td><td>Mensalidade ago</td><td>10/08</td><td><span class="status st-warn">Aberta</span></td><td>R$ 350</td></tr>
+                <tr><td>Cliente B</td><td>Serviço avulso</td><td>01/08</td><td><span class="status st-ok">Paga</span></td><td>R$ 1.200</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="shot-caption">Figura 5 — Lista de cobranças + predefinições.</p>
+
+  <h3>Fluxo — Nova cobrança</h3>
+  <ol class="steps">
+    <li><strong>Nova cobrança</strong> → escolher tomador, valor, vencimento, descrição.</li>
+    <li>Tipo: única, parcelada ou recorrente (Hub orquestra N boletos no gateway).</li>
+    <li>Confirmar. Status inicial tipicamente <em>aberta / registrada</em>.</li>
+    <li>No detalhe: baixar PDF do boleto, copiar linha/PIX (se o gateway retornar), sincronizar status.</li>
+    <li>Cancelamento: motivo obrigatório no Inter (modal de cancelamento).</li>
+  </ol>
+
+  <div class="callout">
+    Status <strong>pago</strong> só entra via webhook/evento de pagamento — não marca-se “à mão” no Hub.
+  </div>
+</section>
+
+<!-- ===================== NFS-e ===================== -->
+<section class="block" id="nfse">
+  <h2>9. Emissão NFS-e</h2>
+  <p class="lead">Principal fluxo de valor do produto hoje (serviço). Lista, gráfico de status, emitir e cancelar.</p>
+
+  <div class="shot">
+    <div class="mock-top" style="height:300px">
+      <div class="mock-side">
+        <div class="brand">EXEQ Hub</div>
+        <div class="g">Operação</div>
+        <span class="ni">Painel</span>
+        <span class="ni">Cobranças</span>
+        <span class="ni on">Emissão NFS-e</span>
+        <span class="ni">Emissão NF-e</span>
+      </div>
+      <div class="mock-main">
+        <div class="mock-bar">
+          <h4>Emissão NFS-e</h4>
+          <span class="btn-chip">Emitir NFS-e</span>
+        </div>
+        <div class="mock-body">
+          <div style="display:flex;gap:6px;margin-bottom:8px;font-size:0.65rem">
+            <span class="status st-neu">Todas</span>
+            <span class="status st-ok">Autorizadas</span>
+            <span class="status st-warn">Processando</span>
+            <span class="status st-bad">Rejeitadas</span>
+          </div>
+          <div class="mock-card" style="padding:0">
+            <table class="mtbl">
+              <thead><tr><th>Nº / Tomador</th><th>Serviço</th><th>Compet.</th><th>Status</th><th>Valor</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>12 · Clínica Alfa</td>
+                  <td>Consultoria TI</td>
+                  <td>08/2026</td>
+                  <td><span class="status st-ok">Autorizada</span></td>
+                  <td>R$ 2.500</td>
+                </tr>
+                <tr>
+                  <td>— · Beta LTDA</td>
+                  <td>Suporte</td>
+                  <td>08/2026</td>
+                  <td><span class="status st-warn">Processando</span></td>
+                  <td>R$ 800</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="shot-caption">Figura 6 — Lista NFS-e com filtros de status.</p>
+
+  <h3>Fluxo — Emitir</h3>
+  <div class="flow">
+    <span class="box">Emitir NFS-e</span><span class="arr">→</span>
+    <span class="box">Prestador + Tomador + Serviço + Valor</span><span class="arr">→</span>
+    <span class="box act">Enfileira (Celery)</span><span class="arr">→</span>
+    <span class="box">Processando</span><span class="arr">→</span>
+    <span class="box act">Autorizada</span><span class="arr">→</span>
+    <span class="box">PDF + XML</span>
+  </div>
+
+  <ol class="steps">
+    <li>Clique <strong>Emitir NFS-e</strong> (modal).</li>
+    <li>Selecionar prestador, tomador, item de serviço, valor e competência.</li>
+    <li>Confirmar. A emissão é <strong>assíncrona</strong> — status acompanha automaticamente na lista.</li>
+    <li>Quando <strong>Autorizada</strong>: ações de baixar PDF (DANFSe) e XML.</li>
+    <li>Se processando: ícone de atualizar status (poll).</li>
+    <li>Cancelar: justificativa ≥ 15 caracteres (modal de cancelamento).</li>
+  </ol>
+
+  <div class="callout warn">
+    Texto de UI pode citar “Focus” no subtítulo do layout; a estratégia de produto é
+    <strong>emissor próprio Nacional</strong> no piloto. Na demo, alinear a narrativa com o ambiente do cliente.
+  </div>
+</section>
+
+<!-- ===================== NF-e ===================== -->
+<section class="block" id="nfe">
+  <h2>10. Emissão NF-e (modelo 55 B2B)</h2>
+  <p class="lead">Tela rica de produto/gate/série. Produção SEFAZ depende de flag e G-EMIT (homolog real).</p>
+
+  <div class="shot">
+    <div class="mock-top" style="height:340px">
+      <div class="mock-side">
+        <div class="brand">EXEQ Hub</div>
+        <div class="g">Operação</div>
+        <span class="ni">Emissão NFS-e</span>
+        <span class="ni on">Emissão NF-e</span>
+        <span class="ni">Guias DAS</span>
+      </div>
+      <div class="mock-main">
+        <div class="mock-bar">
+          <h4>Emissão NF-e</h4>
+          <div>
+            <span class="btn-ghost">+ Produto fiscal</span>
+            <span class="btn-chip">Nova NF-e</span>
+          </div>
+        </div>
+        <div class="mock-body">
+          <div class="mock-card">
+            <div class="ch">Pré-condições (T0) + série (T6)</div>
+            <div style="color:#166534">✓ Certificado · ✓ Prestador · ⚠ IE-SP · série 1 · próximo nº 15</div>
+          </div>
+          <div class="mock-card">
+            <div class="ch">Ops KPIs (30d)</div>
+            <div style="display:flex;gap:12px">
+              <span>Aut: 4</span><span>Rej: 1</span><span>PDF pend: 0</span><span>Deneg: 0</span>
+            </div>
+          </div>
+          <div style="display:flex;gap:4px;margin-bottom:6px;flex-wrap:wrap;font-size:0.6rem">
+            <span class="status st-neu">Todas</span>
+            <span class="status st-ok">Autorizadas</span>
+            <span class="status st-warn">PDF pendente</span>
+            <span class="status st-bad">Denegadas</span>
+          </div>
+          <div class="mock-card" style="padding:0">
+            <table class="mtbl">
+              <thead><tr><th>Série/Nº</th><th>Dest.</th><th>Valor</th><th>Status</th><th></th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>1 / 14</td>
+                  <td>Dest. B2B</td>
+                  <td>R$ 1.000</td>
+                  <td><span class="status st-ok">Autorizada</span></td>
+                  <td><span class="btn-ghost">Detalhe</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="shot-caption">Figura 7 — Tela NF-e: gate, KPIs, abas ops e lista.</p>
+
+  <h3>Blocos da tela (ordem vertical)</h3>
+  <table class="matrix">
+    <thead><tr><th>Bloco</th><th>Função</th></tr></thead>
+    <tbody>
+      <tr><td>Pré-condições + série</td><td>Gate T0 (pode criar?) · gravar série/ambiente · inutilizar faixa</td></tr>
+      <tr><td>Ops KPIs 30d</td><td>Resumo autorizadas / rejeitadas / PDF pendente / denegadas</td></tr>
+      <tr><td>Produtos fiscais</td><td>Catálogo sem estoque (NCM, preço, CSOSN/CST)</td></tr>
+      <tr><td>Filtros</td><td>Busca e período; abas Todas / Rascunho / PDF pendente / Denegadas…</td></tr>
+      <tr><td>Lista + detalhe</td><td>Ações contextuais: validar, emitir, cancelar, CCe, XML, DANFE, regenerar PDF</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Fluxo — Emitir NF-e (stub ou HTTP)</h3>
+  <ol class="steps">
+    <li>Conferir gate: se botão <strong>Nova NF-e</strong> estiver desabilitado, corrigir itens em vermelho no box T0.</li>
+    <li>Cadastrar <strong>produto fiscal</strong> (se lista vazia).</li>
+    <li><strong>Nova NF-e</strong> → destinatário + itens → salvar rascunho.</li>
+    <li>Validar (regras Hub) → <strong>Transmitir</strong> (confirmação).</li>
+    <li>Acompanhar processando → autorizada / rejeitada / denegada.</li>
+    <li>Autorizada: baixar XML e DANFE; se PDF pendente, usar <strong>Regenerar DANFE</strong>.</li>
+    <li>Pós-autorização (quando permitido): Cancelar, CCe, e-mail de artefatos.</li>
+  </ol>
+
+  <div class="callout danger">
+    <strong>Narrativa PO:</strong> não apresente NF-e como “produção em todos os clientes”
+    enquanto G-EMIT (1ª autorizada SEFAZ-SP real) não estiver fechado.
+    Em lab: stub funciona de ponta a ponta com número e DANFE simulados.
+  </div>
+</section>
+
+<!-- ===================== DAS ===================== -->
+<section class="block" id="das">
+  <h2>11. Guias DAS</h2>
+  <p class="lead">Simples Nacional. Stub local por padrão; HTTP SERPRO exige A1 + procuração e-CAC.</p>
+
+  <div class="shot">
+    <div class="mock-top" style="height:240px">
+      <div class="mock-side">
+        <div class="brand">EXEQ Hub</div>
+        <span class="ni on">Guias DAS</span>
+      </div>
+      <div class="mock-main">
+        <div class="mock-bar">
+          <h4>Guias DAS</h4>
+          <span class="btn-chip">Gerar guia</span>
+        </div>
+        <div class="mock-body">
+          <div class="mock-card" style="padding:0">
+            <table class="mtbl">
+              <thead><tr><th>Empresa</th><th>Competência</th><th>Tipo</th><th>Status</th><th>Valor</th></tr></thead>
+              <tbody>
+                <tr><td>EXEQ LAB</td><td>07/2026</td><td>DAS</td><td><span class="status st-ok">Emitida</span></td><td>R$ 890</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="mock-card">
+            <div class="ch">Procuração e-CAC</div>
+            <div style="color:#666">Status da procuração do prestador (obrigatória em HTTP SERPRO).</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="shot-caption">Figura 8 — Guias DAS e bloco de procuração.</p>
+
+  <ol class="steps">
+    <li><strong>Gerar guia</strong> → escolher prestador, competência, tipo (DAS/DARF).</li>
+    <li>Confirmar geração (stub ou Integra Contador).</li>
+    <li>Baixar PDF da guia quando disponível na linha.</li>
+    <li>Conferir card de <strong>procuração e-CAC</strong> se o cliente está em modo HTTP Receita.</li>
+  </ol>
+</section>
+
+<!-- ===================== CHECKLIST ===================== -->
+<section class="block" id="checklist">
+  <h2>12. Checklist de demonstração (15 minutos)</h2>
+  <p class="lead">Roteiro sugerido para call de PO / comercial com tela compartilhada.</p>
+
+  <table class="matrix">
+    <thead><tr><th>#</th><th>Min</th><th>Ação na tela</th><th>Mensagem ao cliente</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>0–1</td><td>Login com tenant piloto</td><td>“Um login, um contexto fiscal por empresa”</td></tr>
+      <tr><td>2</td><td>1–3</td><td>Painel — KPIs</td><td>“Operação financeira + fiscal no mesmo lugar”</td></tr>
+      <tr><td>3</td><td>3–5</td><td>Prestador + Tomador (lista)</td><td>“Cadastro com consulta de CNPJ”</td></tr>
+      <tr><td>4</td><td>5–7</td><td>Certificado (lista)</td><td>“Mesmo A1 para NFS-e / DAS / futuro NF-e”</td></tr>
+      <tr><td>5</td><td>7–11</td><td>Emitir ou abrir NFS-e autorizada + PDF</td><td>“Nota de serviço com DANFSe”</td></tr>
+      <tr><td>6</td><td>11–13</td><td>Cobrança ou Provedor</td><td>“Boleto/PIX no mesmo tenant (quando contratado)”</td></tr>
+      <tr><td>7</td><td>13–15</td><td>NF-e (gate) ou Roadmap</td><td>“NF-e B2B no Hub; SEFAZ conforme homolog”</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <strong>Como gravar imagens reais:</strong> com o ambiente no ar
+    (<code>http://127.0.0.1:8000/app/</code>, capture cada menu e cole em pasta
+    <code>Docs/manual_po/screenshots/</code> com os nomes
+    <code>01-login.png</code> … <code>08-das.png</code>. Esta página já funciona
+    offline com mocks; as capturas reais substituem as figuras em uma 2ª revisão de design.
+  </div>
+</section>
+
+<footer>
+  EXEQ Hub · Manual de Telas PO v1.0 · Base: frontend
+  <code>exeq_hub_layouts_v2_dados_graficos.html</code> + módulos <code>hub-*.js</code>.
+  <br />Arquivo: Docs/Exeq_Hub_Manual_Telas_PO.html · Abrir no navegador ou imprimir PDF (Ctrl+P).
+</footer>
+
+</div>
+</body>
+</html>

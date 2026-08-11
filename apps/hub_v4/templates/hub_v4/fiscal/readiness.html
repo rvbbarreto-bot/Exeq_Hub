@@ -1,0 +1,151 @@
+{% extends "hub_v4/base.html" %}
+{% load hub_v4_tags %}
+
+{% block page_actions %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-tax-rules' %}">Regras ISS</a>
+<a class="btn btn-ghost" href="{% url 'hub-v4-fiscal' %}">Perfis</a>
+{% endblock %}
+
+{% block content %}
+<div class="card" style="margin-bottom:12px;">
+  {% if readiness.ready %}
+  <p style="margin:0;color:var(--ok,#0a7a3e);font-weight:700;">Pronto para emitir (N1)</p>
+  <p style="margin:6px 0 0;color:var(--text-muted);font-size:.9rem;">
+    Checklist e matriz serviço × município do prestador cobertos no catálogo publicado.
+  </p>
+  {% else %}
+  <p style="margin:0;color:#b42318;font-weight:700;">Configuração incompleta</p>
+  <p style="margin:6px 0 0;color:var(--text-muted);font-size:.9rem;">
+    Complete os itens abaixo. O wizard e o WhatsApp bloqueiam emissão sem regra ISS
+    (ADR-FISCAL-001 / N1).
+  </p>
+  {% endif %}
+</div>
+
+<div class="card" style="margin-bottom:12px;">
+  <div class="section-label" style="margin-top:0;">Checklist go-live</div>
+  <table class="data">
+    <thead><tr><th>Item</th><th>Status</th><th>Detalhe</th></tr></thead>
+    <tbody>
+      {% for c in readiness.checks %}
+      <tr>
+        <td>{{ c.label }}</td>
+        <td>{% if c.ok %}<span class="chip">OK</span>{% else %}<span class="chip" style="background:#fee;color:#b42318;">Falta</span>{% endif %}</td>
+        <td style="color:var(--text-muted);font-size:.9rem;">{{ c.detail }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card" style="margin-bottom:12px;">
+  <div class="section-label" style="margin-top:0;">Matriz ISS (serviço × IBGE × perfil)</div>
+  {% if readiness.coverage %}
+  <div class="table-wrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Serviço</th>
+          <th>IBGE</th>
+          <th>Perfil</th>
+          <th>Cobertura</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for cell in readiness.coverage %}
+        <tr>
+          <td>
+            <strong>{{ cell.service_code }}</strong>
+            <div style="color:var(--text-muted);font-size:.8rem;">{{ cell.service_description|truncatechars:48 }}</div>
+          </td>
+          <td class="mono">{{ cell.ibge_code|default:"—" }}</td>
+          <td>{{ cell.profile_name }}</td>
+          <td>{% if cell.ok %}<span class="chip">Regra OK</span>{% else %}<span class="chip" style="background:#fee;color:#b42318;">Sem regra</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p style="color:var(--text-muted);margin:0;">Sem dados para montar a matriz.</p>
+  {% endif %}
+</div>
+
+{% if can_write %}
+<div class="card" style="margin-bottom:12px;">
+  <div class="section-label" style="margin-top:0;">N2 — Aplicar template municipal</div>
+  <p style="color:var(--text-muted);font-size:.88rem;margin:0 0 12px;">
+    Gera <strong>uma regra por código de serviço</strong> (não generaliza alíquota).
+    Template lab EXEQ — valide alíquotas com o fiscal antes de produção.
+  </p>
+  <form method="post" action="{% url 'hub-v4-fiscal-template-apply' %}">
+    {% csrf_token %}
+    <div class="form-grid">
+      <div>
+        <label for="tid">Template</label>
+        <select id="tid" name="template_id" required>
+          {% for t in templates %}
+          <option value="{{ t.id }}">{{ t.name }} ({{ t.ibge_code }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="tprofile">Perfil fiscal</label>
+        <select id="tprofile" name="fiscal_profile_id" required>
+          <option value="">Selecione…</option>
+          {% for p in profiles %}
+          <option value="{{ p.id }}">{{ p.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="full">
+        <label>Serviços do template (vazio = todos)</label>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:6px;">
+          {% for t in templates %}
+            {% if forloop.first %}
+              {% for code in t.service_codes %}
+              <label style="display:flex;align-items:center;gap:6px;font-weight:400;">
+                <input type="checkbox" name="service_codes" value="{{ code }}"> {{ code }}
+              </label>
+              {% endfor %}
+            {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary" style="margin-top:12px;">Aplicar template</button>
+  </form>
+</div>
+
+<div class="card">
+  <div class="section-label" style="margin-top:0;">N2 — Import CSV</div>
+  <p style="color:var(--text-muted);font-size:.88rem;margin:0 0 12px;">
+    Colunas obrigatórias: <span class="mono">service_code,ibge_code,iss_rate</span>.
+    Opcionais: <span class="mono">municipio_nome,uf,simples_codigo_tributacao,valid_from</span>.
+  </p>
+  <form method="post" action="{% url 'hub-v4-fiscal-csv-import' %}" enctype="multipart/form-data">
+    {% csrf_token %}
+    <div class="form-grid">
+      <div>
+        <label for="cprofile">Perfil fiscal</label>
+        <select id="cprofile" name="fiscal_profile_id" required>
+          <option value="">Selecione…</option>
+          {% for p in profiles %}
+          <option value="{{ p.id }}">{{ p.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="csv_file">Arquivo CSV</label>
+        <input id="csv_file" type="file" name="csv_file" accept=".csv,text/csv">
+      </div>
+      <div class="full">
+        <label for="csv_text">Ou cole o CSV</label>
+        <textarea id="csv_text" name="csv_text" rows="5" placeholder="service_code,ibge_code,iss_rate,municipio_nome,uf&#10;17.19,3504107,0.02,Atibaia,SP"></textarea>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary" style="margin-top:12px;">Importar CSV</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

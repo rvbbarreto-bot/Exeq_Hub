@@ -926,6 +926,19 @@ def process_webhook_inbox(inbox: WebhookInbox) -> WebhookInbox:
             correlation_id=charge.correlation_id,
         )
 
+    # Bridge EXEQ Hub Food: confirma pedido unificado se charge estiver ligada
+    try:
+        from apps.food.services import sync_food_order_on_charge_paid
+
+        sync_food_order_on_charge_paid(tenant=inbox.tenant, charge=charge)
+    except Exception:
+        # Não reverte pagamento da cobrança; reprocessamento ou log cobrem o pedido
+        import logging
+
+        logging.getLogger(__name__).exception(
+            "food.sync_on_charge_paid failed charge=%s", charge.id
+        )
+
     inbox.status = WebhookInbox.Status.PROCESSED
     inbox.processed_at = timezone.now()
     inbox.error_message = ""

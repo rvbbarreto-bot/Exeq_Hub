@@ -21,9 +21,26 @@ class Tenant(TimeStampedModel):
         verbose_name="Status",
     )
     focus_layout = models.CharField(
-        max_length=16, default="nfsen", verbose_name="Layout Focus"
+        max_length=16,
+        default="nfsen",
+        verbose_name="Layout Exeq",
+        help_text=(
+            "Preferência de layout NFS-e do tenant: nfsen = Nacional "
+            "(emissor EXEQ/SEFIN no MVP); nfse = municipal (legado/lab). "
+            "Não ativa a integração Focus."
+        ),
     )
-    settings = models.JSONField(default=dict, blank=True, verbose_name="Configurações")
+    settings = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name="Configurações",
+        help_text=(
+            "Flags do tenant. Ex.: "
+            '{"nfe_enabled": true, "payment_provider": "inter"}. '
+            "Limites comerciais preferem Subscription.plan.limits; "
+            "max_emit_cnpjs em settings ainda funciona como override/fallback."
+        ),
+    )
 
     class Meta:
         verbose_name = "Tenant"
@@ -32,6 +49,81 @@ class Tenant(TimeStampedModel):
 
     def __str__(self) -> str:
         return self.slug
+
+
+class Plan(TimeStampedModel):
+    """Catálogo global de planos (platform-admin). Ver ERD v3.1 §6.5."""
+
+    code = models.SlugField(max_length=64, unique=True, verbose_name="Código")
+    name = models.CharField(max_length=128, verbose_name="Nome")
+    is_active = models.BooleanField(default=True, verbose_name="Ativo")
+    limits = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name="Limites",
+        help_text=(
+            'Ex.: {"max_emit_cnpjs": 5, "max_users": 5, "max_nf_month": 500}. '
+            "null / omitido em uma chave = sem teto para aquele entitlement."
+        ),
+    )
+    sort_order = models.PositiveSmallIntegerField(default=0, verbose_name="Ordem")
+
+    class Meta:
+        verbose_name = "Plano"
+        verbose_name_plural = "Planos"
+        ordering = ["sort_order", "code"]
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.code})"
+
+
+class Subscription(TimeStampedModel):
+    """Assinatura do tenant — 1 plan ativo por tenant (MVP). ERD v3.1 §6.6."""
+
+    class Status(models.TextChoices):
+        TRIALING = "trialing", "Trial"
+        ACTIVE = "active", "Ativo"
+        PAST_DUE = "past_due", "Inadimplente"
+        CANCELED = "canceled", "Cancelado"
+
+    tenant = models.OneToOneField(
+        Tenant,
+        on_delete=models.CASCADE,
+        related_name="subscription",
+        verbose_name="Tenant",
+    )
+    plan = models.ForeignKey(
+        Plan,
+        on_delete=models.PROTECT,
+        related_name="subscriptions",
+        verbose_name="Plano",
+    )
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.ACTIVE,
+        verbose_name="Status",
+    )
+    current_period_start = models.DateTimeField(
+        null=True, blank=True, verbose_name="Início do período"
+    )
+    current_period_end = models.DateTimeField(
+        null=True, blank=True, verbose_name="Fim do período"
+    )
+
+    class Meta:
+        verbose_name = "Assinatura"
+        verbose_name_plural = "Assinaturas"
+
+    def __str__(self) -> str:
+        return f"{self.tenant.slug} → {self.plan.code} [{self.status}]"
+
+    @property
+    def is_entitled(self) -> bool:
+        return self.status in {
+            Subscription.Status.TRIALING,
+            Subscription.Status.ACTIVE,
+        }
 
 
 class UserManager(BaseUserManager):

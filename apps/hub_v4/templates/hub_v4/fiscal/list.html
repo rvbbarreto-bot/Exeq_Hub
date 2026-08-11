@@ -3,6 +3,7 @@
 
 {% block page_actions %}
 {% if can_write %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-fiscal-readiness' %}">Pronto p/ emitir</a>
 <a class="btn btn-ghost" href="{% url 'hub-v4-tax-rules' %}">Regras ISS</a>
 <a class="btn btn-primary" href="{% url 'hub-v4-fiscal-new' %}">Novo perfil</a>
 {% endif %}

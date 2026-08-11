@@ -11,7 +11,7 @@ from django.http import HttpRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
 
-from apps.accounts.permissions import WRITE_ROLES
+from apps.accounts.permissions import FOOD_WRITE_ROLES
 from apps.food.exceptions import FoodError
 from apps.food.intelligence import intelligence_report
 from apps.food.models import (
@@ -47,23 +47,36 @@ from apps.food.services import (
     create_pix_intent_for_order,
 )
 from apps.hub_v4.auth import require_hub
-from apps.hub_v4.views import _require_writer_hub
 
 
 def _food_ctx(role, **extra):
     base = {
         "nav": "food",
         "role_code": role,
-        "can_write": role in WRITE_ROLES,
+        "can_write": role in FOOD_WRITE_ROLES,
         "food_section": extra.pop("food_section", "orders"),
     }
     base.update(extra)
     return base
 
 
+def _require_food_hub(request: HttpRequest):
+    return require_hub(request, allow_food_only=True)
+
+
+def _require_food_writer_hub(request: HttpRequest):
+    tenant, user, role, redir = _require_food_hub(request)
+    if redir:
+        return None, None, None, redir
+    if role not in FOOD_WRITE_ROLES:
+        messages.error(request, "Seu papel não permite editar no Food.")
+        return tenant, user, role, redirect("hub-v4-food-orders")
+    return tenant, user, role, None
+
+
 class FoodOrdersListView(View):
     def get(self, request: HttpRequest):
-        tenant, user, role, redir = require_hub(request)
+        tenant, user, role, redir = _require_food_hub(request)
         if redir:
             return redir
         qs = (
@@ -91,7 +104,7 @@ class FoodOrdersListView(View):
 
 class FoodOrderDetailView(View):
     def get(self, request: HttpRequest, pk):
-        tenant, user, role, redir = require_hub(request)
+        tenant, user, role, redir = _require_food_hub(request)
         if redir:
             return redir
         order = get_object_or_404(
@@ -117,7 +130,7 @@ class FoodOrderDetailView(View):
         )
 
     def post(self, request: HttpRequest, pk):
-        tenant, user, role, redir = _require_writer_hub(request)
+        tenant, user, role, redir = _require_food_writer_hub(request)
         if redir:
             return redir
         order = get_object_or_404(FoodOrder, pk=pk, tenant=tenant)
@@ -141,13 +154,13 @@ class FoodOrderCreateView(View):
     template_name = "hub_v4/food/order_form.html"
 
     def get(self, request: HttpRequest):
-        tenant, user, role, redir = _require_writer_hub(request)
+        tenant, user, role, redir = _require_food_writer_hub(request)
         if redir:
             return redir
         return render(request, self.template_name, self._ctx(tenant, role))
 
     def post(self, request: HttpRequest):
-        tenant, user, role, redir = _require_writer_hub(request)
+        tenant, user, role, redir = _require_food_writer_hub(request)
         if redir:
             return redir
         try:
@@ -262,7 +275,7 @@ def _create_purchase_from_post(*, tenant, post) -> None:
 
 class FoodPurchasesListView(View):
     def get(self, request: HttpRequest):
-        tenant, user, role, redir = require_hub(request)
+        tenant, user, role, redir = _require_food_hub(request)
         if redir:
             return redir
         qs = (
@@ -283,7 +296,7 @@ class FoodPurchasesListView(View):
         )
 
     def post(self, request: HttpRequest):
-        tenant, user, role, redir = _require_writer_hub(request)
+        tenant, user, role, redir = _require_food_writer_hub(request)
         if redir:
             return redir
         action = (request.POST.get("action") or "").strip()
@@ -303,7 +316,7 @@ class FoodPurchasesListView(View):
 
 class FoodPurchasesNewView(View):
     def get(self, request: HttpRequest):
-        tenant, user, role, redir = _require_writer_hub(request)
+        tenant, user, role, redir = _require_food_writer_hub(request)
         if redir:
             return redir
         return render(
@@ -324,7 +337,7 @@ class FoodPurchasesNewView(View):
         )
 
     def post(self, request: HttpRequest):
-        tenant, user, role, redir = _require_writer_hub(request)
+        tenant, user, role, redir = _require_food_writer_hub(request)
         if redir:
             return redir
         try:
@@ -357,7 +370,7 @@ class FoodPurchasesNewView(View):
 
 class FoodProductionListView(View):
     def get(self, request: HttpRequest):
-        tenant, user, role, redir = require_hub(request)
+        tenant, user, role, redir = _require_food_hub(request)
         if redir:
             return redir
         qs = (
@@ -381,7 +394,7 @@ class FoodProductionListView(View):
         )
 
     def post(self, request: HttpRequest):
-        tenant, user, role, redir = _require_writer_hub(request)
+        tenant, user, role, redir = _require_food_writer_hub(request)
         if redir:
             return redir
         action = (request.POST.get("action") or "").strip()
@@ -416,7 +429,7 @@ class FoodProductionListView(View):
 
 class FoodIntelligenceView(View):
     def get(self, request: HttpRequest):
-        tenant, user, role, redir = require_hub(request)
+        tenant, user, role, redir = _require_food_hub(request)
         if redir:
             return redir
         lookback = int(request.GET.get("lookback_days") or 28)
@@ -440,7 +453,7 @@ class FoodIntelligenceView(View):
 
 class FoodRetentionHubView(View):
     def get(self, request: HttpRequest):
-        tenant, user, role, redir = require_hub(request)
+        tenant, user, role, redir = _require_food_hub(request)
         if redir:
             return redir
         rules = (
@@ -473,7 +486,7 @@ class FoodRetentionHubView(View):
         )
 
     def post(self, request: HttpRequest):
-        tenant, user, role, redir = _require_writer_hub(request)
+        tenant, user, role, redir = _require_food_writer_hub(request)
         if redir:
             return redir
         action = (request.POST.get("action") or "").strip()
@@ -548,7 +561,7 @@ class FoodRetentionHubView(View):
 
 class FoodMarketplaceHubView(View):
     def get(self, request: HttpRequest):
-        tenant, user, role, redir = require_hub(request)
+        tenant, user, role, redir = _require_food_hub(request)
         if redir:
             return redir
         conns = FoodMarketplaceConnection.objects.filter(tenant=tenant).order_by(
@@ -576,7 +589,7 @@ class FoodMarketplaceHubView(View):
         )
 
     def post(self, request: HttpRequest):
-        tenant, user, role, redir = _require_writer_hub(request)
+        tenant, user, role, redir = _require_food_writer_hub(request)
         if redir:
             return redir
         action = (request.POST.get("action") or "").strip()

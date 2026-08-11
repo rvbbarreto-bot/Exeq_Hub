@@ -182,6 +182,8 @@
             showBanner("info", bannerDefaultSafe());
           }
         });
+        // Estado inicial (ex.: CPF na edição) sem depender de outro script.
+        dt.dispatchEvent(new Event("change"));
       }
     },
   };

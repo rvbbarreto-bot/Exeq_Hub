@@ -7,6 +7,8 @@ from apps.accounts.models import (
     CertificateAudit,
     DigitalCertificate,
     ElectronicProxy,
+    Plan,
+    Subscription,
     Tenant,
     TenantMembership,
     TenantRole,
@@ -33,6 +35,22 @@ from integrations.payments.router import (
 )
 
 
+@admin.register(Plan)
+class PlanAdmin(admin.ModelAdmin):
+    list_display = ("code", "name", "is_active", "sort_order", "limits")
+    list_filter = ("is_active",)
+    search_fields = ("code", "name")
+    ordering = ("sort_order", "code")
+
+
+@admin.register(Subscription)
+class SubscriptionAdmin(admin.ModelAdmin):
+    list_display = ("tenant", "plan", "status", "current_period_start", "updated_at")
+    list_filter = ("status", "plan")
+    search_fields = ("tenant__slug", "tenant__legal_name", "plan__code")
+    autocomplete_fields = ("tenant", "plan")
+
+
 @admin.register(Tenant)
 class TenantAdmin(admin.ModelAdmin):
     list_display = (
@@ -41,10 +59,19 @@ class TenantAdmin(admin.ModelAdmin):
         "document",
         "status",
         "focus_layout",
+        "subscription_plan",
         "billing_provider_link",
     )
     search_fields = ("slug", "legal_name", "document")
     list_filter = ("status", "focus_layout")
+
+    @admin.display(description="Plano")
+    def subscription_plan(self, obj: Tenant) -> str:
+        try:
+            sub = obj.subscription
+        except Subscription.DoesNotExist:
+            return "—"
+        return f"{sub.plan.code} ({sub.get_status_display()})"
 
     def get_urls(self):
         urls = super().get_urls()
@@ -167,6 +194,24 @@ class TenantMembershipAdmin(admin.ModelAdmin):
     list_display = ("tenant", "user", "role", "is_active")
     list_filter = ("is_active", "role")
     autocomplete_fields = ("tenant", "user", "role")
+
+    def save_model(self, request, obj, form, change):
+        from django.core.exceptions import ValidationError
+
+        from apps.accounts.plan_limits import PlanLimitError, assert_can_add_active_user
+
+        if obj.is_active:
+            was_active = False
+            if change and obj.pk:
+                was_active = (
+                    TenantMembership.objects.filter(pk=obj.pk, is_active=True).exists()
+                )
+            if not was_active:
+                try:
+                    assert_can_add_active_user(obj.tenant)
+                except PlanLimitError as exc:
+                    raise ValidationError(str(exc)) from exc
+        super().save_model(request, obj, form, change)
 
 
 @admin.register(TenantSecret)

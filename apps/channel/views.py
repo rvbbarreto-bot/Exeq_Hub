@@ -1,12 +1,29 @@
+import logging
+
 from rest_framework import serializers, status, viewsets
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework.throttling import AnonRateThrottle
 from rest_framework.views import APIView
 
-from apps.accounts.models import Tenant
 from apps.accounts.permissions import IsTenantWriter
+from apps.channel.engine import process_inbound
 from apps.channel.models import ChannelNotification, ChannelSession
-from apps.channel.services import enqueue_notification, ingest_inbound_message
+from apps.channel.services import enqueue_notification
+from apps.channel.webhook import (
+    mask_phone,
+    mask_sensitive,
+    parse_inbound_payload,
+    verify_webhook_token,
+)
+
+logger = logging.getLogger(__name__)
+
+
+class EvolutionWebhookThrottle(AnonRateThrottle):
+    """WA-SEC-04 — limita rajadas no webhook público."""
+
+    scope = "webhook_evolution"
 
 
 class ChannelSessionSerializer(serializers.ModelSerializer):
@@ -35,6 +52,7 @@ class ChannelNotificationSerializer(serializers.ModelSerializer):
             "event_type",
             "message_body",
             "status",
+            "provider",
             "provider_ref",
             "created_at",
         )
@@ -46,32 +64,56 @@ class ChannelSessionViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = ChannelSessionSerializer
 
     def get_queryset(self):
+        # WA-SEC-03 — isolamento por tenant do JWT
         return ChannelSession.objects.filter(tenant=self.request.tenant)
 
 
 class EvolutionWebhookView(APIView):
     authentication_classes = []
     permission_classes = [AllowAny]
+    throttle_classes = [EvolutionWebhookThrottle]
 
     def post(self, request):
+        if not verify_webhook_token(request):
+            return Response({"detail": "não autorizado", "code": "webhook_unauthorized"}, status=401)
+
         payload = request.data if isinstance(request.data, dict) else {}
-        tenant_slug = payload.get("tenant_slug")
-        phone = payload.get("phone_e164")
-        message_id = payload.get("message_id")
-        text = payload.get("text", "")
-        if not all([tenant_slug, phone, message_id]):
-            return Response({"detail": "payload incompleto"}, status=400)
-        try:
-            tenant = Tenant.objects.get(slug=tenant_slug, status=Tenant.Status.ACTIVE)
-        except Tenant.DoesNotExist:
-            return Response({"detail": "tenant inválido"}, status=400)
-        session = ingest_inbound_message(
-            tenant=tenant,
-            phone_e164=phone,
-            message_id=message_id,
-            text=text,
+        outcome = parse_inbound_payload(payload)
+
+        if outcome.status == "ignored":
+            return Response({"status": "ignored", "reason": outcome.reason}, status=200)
+
+        if outcome.status != "ok" or outcome.inbound is None:
+            code = outcome.reason or "payload_incompleto"
+            http = 404 if code == "instancia_desconhecida" else 400
+            return Response({"detail": code, "code": code}, status=http)
+
+        inbound = outcome.inbound
+        logger.info(
+            "channel.webhook inbound tenant=%s phone=%s msg=%s text=%s",
+            inbound.tenant.slug,
+            mask_phone(inbound.phone_e164),
+            inbound.message_id[:16],
+            mask_sensitive(inbound.text)[:80],
         )
-        return Response(ChannelSessionSerializer(session).data, status=200)
+
+        session, reply = process_inbound(
+            tenant=inbound.tenant,
+            phone_e164=inbound.phone_e164,
+            message_id=inbound.message_id,
+            text=inbound.text,
+        )
+        if reply:
+            enqueue_notification(
+                tenant=inbound.tenant,
+                phone_e164=inbound.phone_e164,
+                event_type="channel.reply",
+                message_body=reply,
+                session=session,
+            )
+        data = ChannelSessionSerializer(session).data if session else {"status": "blocked"}
+        data["reply"] = reply
+        return Response(data, status=200)
 
 
 class ChannelNotifyView(APIView):

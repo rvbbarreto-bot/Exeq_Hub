@@ -133,6 +133,21 @@ urlpatterns = [
         views.TaxRuleFormView.as_view(),
         name="hub-v4-tax-rule-new",
     ),
+    path(
+        "fiscal/pronto/",
+        views.FiscalReadinessView.as_view(),
+        name="hub-v4-fiscal-readiness",
+    ),
+    path(
+        "fiscal/pronto/template/",
+        views.FiscalTemplateApplyView.as_view(),
+        name="hub-v4-fiscal-template-apply",
+    ),
+    path(
+        "fiscal/pronto/csv/",
+        views.FiscalCsvImportView.as_view(),
+        name="hub-v4-fiscal-csv-import",
+    ),
     path("servicos/", views.ServicesListView.as_view(), name="hub-v4-services"),
     path(
         "servicos/novo/",

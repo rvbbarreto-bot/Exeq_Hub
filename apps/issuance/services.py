@@ -108,8 +108,41 @@ def _refresh_forensic_after_emit(issue: NfIssue, *, layout: str) -> None:
     issue.save(update_fields=["resolved_params", "updated_at"])
 
 
+def _apply_nf_issue_fields(
+    issue: NfIssue,
+    *,
+    provider,
+    customer,
+    service,
+    fiscal_profile: FiscalProfile,
+    ibge_code: str,
+    competence_date,
+    amount_cents: int,
+) -> NfIssue:
+    issue.provider = provider
+    issue.customer = customer
+    issue.service = service
+    issue.fiscal_profile = fiscal_profile
+    issue.ibge_code = str(ibge_code)[:7]
+    issue.competence_date = competence_date
+    issue.amount_cents = amount_cents
+    issue.save(
+        update_fields=[
+            "provider",
+            "customer",
+            "service",
+            "fiscal_profile",
+            "ibge_code",
+            "competence_date",
+            "amount_cents",
+            "updated_at",
+        ]
+    )
+    return issue
+
+
 @transaction.atomic
-def create_nf_issue(
+def save_nf_draft(
     *,
     tenant,
     idempotency_key: str,
@@ -120,20 +153,60 @@ def create_nf_issue(
     ibge_code: str,
     competence_date,
     amount_cents: int,
+    draft: NfIssue | None = None,
 ) -> NfIssue:
-    existing = NfIssue.objects.filter(
-        tenant=tenant,
-        idempotency_key=idempotency_key,
-    ).first()
-    if existing:
-        return existing
-
+    """
+    Persiste NFS-e em status rascunho (sem tributação, fila ou envio).
+    Atualiza somente se status=DRAFT; chave de idempotência reutilizada no Hub.
+    """
     if fiscal_profile is None:
         raise FiscalProfileRequiredError(
-            "Perfil fiscal é obrigatório para emitir a NFS-e."
+            "Perfil fiscal é obrigatório para salvar a NFS-e."
+        )
+    if amount_cents < 1:
+        raise ValueError("Valor deve ser positivo")
+
+    if draft is not None:
+        issue = NfIssue.objects.select_for_update().get(pk=draft.pk, tenant=tenant)
+        if issue.status != NfIssue.Status.DRAFT:
+            raise InvalidTransitionError(
+                "Somente rascunhos podem ser editados no wizard."
+            )
+        return _apply_nf_issue_fields(
+            issue,
+            provider=provider,
+            customer=customer,
+            service=service,
+            fiscal_profile=fiscal_profile,
+            ibge_code=ibge_code,
+            competence_date=competence_date,
+            amount_cents=amount_cents,
         )
 
-    issue = NfIssue.objects.create(
+    existing = (
+        NfIssue.objects.select_for_update()
+        .filter(tenant=tenant, idempotency_key=idempotency_key)
+        .first()
+    )
+    if existing is not None:
+        if existing.status != NfIssue.Status.DRAFT:
+            return existing
+        return _apply_nf_issue_fields(
+            existing,
+            provider=provider,
+            customer=customer,
+            service=service,
+            fiscal_profile=fiscal_profile,
+            ibge_code=ibge_code,
+            competence_date=competence_date,
+            amount_cents=amount_cents,
+        )
+
+    from apps.accounts.plan_limits import assert_can_create_nf_this_month
+
+    assert_can_create_nf_this_month(tenant)
+
+    return NfIssue.objects.create(
         tenant=tenant,
         idempotency_key=idempotency_key,
         status=NfIssue.Status.DRAFT,
@@ -141,11 +214,38 @@ def create_nf_issue(
         customer=customer,
         service=service,
         fiscal_profile=fiscal_profile,
-        ibge_code=ibge_code,
+        ibge_code=str(ibge_code)[:7],
         competence_date=competence_date,
         amount_cents=amount_cents,
     )
-    transition(issue, to_status=NfIssue.Status.PENDING_TAX, actor="api")
+
+
+@transaction.atomic
+def submit_nf_draft(issue: NfIssue, *, actor: str = "api") -> NfIssue:
+    """Avança rascunho: tributação → fila → processamento (caminho de create_nf_issue)."""
+    # Lock só na NfIssue: select_related em FKs null=True (ex. fiscal_profile)
+    # gera OUTER JOIN e o Postgres recusa FOR UPDATE nesse lado.
+    NfIssue.objects.select_for_update().get(pk=issue.pk)
+    issue = NfIssue.objects.select_related(
+        "provider", "customer", "service", "fiscal_profile"
+    ).get(pk=issue.pk)
+
+    if issue.status != NfIssue.Status.DRAFT:
+        return issue
+
+    if issue.fiscal_profile_id is None:
+        raise FiscalProfileRequiredError(
+            "Perfil fiscal é obrigatório para emitir a NFS-e."
+        )
+
+    fiscal_profile = issue.fiscal_profile
+    service = issue.service
+    amount_cents = issue.amount_cents
+    competence_date = issue.competence_date
+    ibge_code = issue.ibge_code
+    tenant = issue.tenant
+
+    transition(issue, to_status=NfIssue.Status.PENDING_TAX, actor=actor)
 
     try:
         rule, resolve_meta = resolve_tax_rule_detailed(
@@ -163,7 +263,7 @@ def create_nf_issue(
         transition(
             issue,
             to_status=NfIssue.Status.REJECTED,
-            actor="api",
+            actor=actor,
             metadata={"code": "TAX_RULE_NOT_FOUND"},
         )
         return issue
@@ -198,7 +298,7 @@ def create_nf_issue(
         transition(
             issue,
             to_status=NfIssue.Status.REJECTED,
-            actor="api",
+            actor=actor,
             metadata={"code": issue.rejection_code, "detail": str(exc)},
         )
         return issue
@@ -211,7 +311,7 @@ def create_nf_issue(
             transition(
                 issue,
                 to_status=NfIssue.Status.REJECTED,
-                actor="api",
+                actor=actor,
                 metadata={"code": issue.rejection_code},
             )
             return issue
@@ -227,7 +327,7 @@ def create_nf_issue(
     issue.resolved_rule = rule
     issue.resolved_params = payload
     issue.save(update_fields=["resolved_rule", "resolved_params", "updated_at"])
-    transition(issue, to_status=NfIssue.Status.QUEUED, actor="api")
+    transition(issue, to_status=NfIssue.Status.QUEUED, actor=actor)
 
     enqueue_outbox(
         tenant=tenant,
@@ -240,6 +340,45 @@ def create_nf_issue(
     _enqueue_process(issue)
     issue.refresh_from_db()
     return issue
+
+
+@transaction.atomic
+def create_nf_issue(
+    *,
+    tenant,
+    idempotency_key: str,
+    provider,
+    customer,
+    service,
+    fiscal_profile: FiscalProfile,
+    ibge_code: str,
+    competence_date,
+    amount_cents: int,
+) -> NfIssue:
+    existing = NfIssue.objects.filter(
+        tenant=tenant,
+        idempotency_key=idempotency_key,
+    ).first()
+    if existing and existing.status != NfIssue.Status.DRAFT:
+        return existing
+
+    draft = None
+    if existing and existing.status == NfIssue.Status.DRAFT:
+        draft = existing
+
+    issue = save_nf_draft(
+        tenant=tenant,
+        idempotency_key=idempotency_key,
+        provider=provider,
+        customer=customer,
+        service=service,
+        fiscal_profile=fiscal_profile,
+        ibge_code=ibge_code,
+        competence_date=competence_date,
+        amount_cents=amount_cents,
+        draft=draft,
+    )
+    return submit_nf_draft(issue, actor="api")
 
 
 @transaction.atomic
