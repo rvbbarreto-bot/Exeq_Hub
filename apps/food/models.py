@@ -116,6 +116,7 @@ class FoodOrder(TenantOwnedModel):
     class PaymentStatus(models.TextChoices):
         UNPAID = "unpaid", "Não pago"
         AWAITING_PIX = "awaiting_pix", "Pix pendente"
+        AWAITING_PAYMENT = "awaiting_payment", "Pagamento pendente"
         PAID = "paid", "Pago"
         FAILED = "failed", "Falhou"
         REFUNDED = "refunded", "Estornado"
@@ -225,6 +226,139 @@ class FoodOrder(TenantOwnedModel):
 
     def __str__(self) -> str:
         return f"Pedido {self.id} ({self.channel}/{self.status})"
+
+
+class FoodPayment(TenantOwnedModel):
+    """Pagamento nativo Food (Mercado Pago e futuros PSPs). Inter usa billing.Charge."""
+
+    class Provider(models.TextChoices):
+        INTER = "inter", "Inter"
+        ASAAS = "asaas", "Asaas"
+        C6 = "c6", "C6"
+        MERCADOPAGO = "mercadopago", "Mercado Pago"
+
+    class Method(models.TextChoices):
+        PIX = "pix", "Pix"
+        CARD = "card", "Cartão"
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pendente"
+        AWAITING_PAYMENT = "awaiting_payment", "Aguardando pagamento"
+        PAID = "paid", "Pago"
+        FAILED = "failed", "Falhou"
+        CANCELLED = "cancelled", "Cancelado"
+        EXPIRED = "expired", "Expirado"
+
+    order = models.ForeignKey(
+        FoodOrder,
+        on_delete=models.CASCADE,
+        related_name="payments",
+        verbose_name="Pedido",
+    )
+    provider = models.CharField(
+        max_length=32,
+        choices=Provider.choices,
+        verbose_name="Provedor",
+    )
+    method = models.CharField(
+        max_length=16,
+        choices=Method.choices,
+        verbose_name="Meio",
+    )
+    status = models.CharField(
+        max_length=24,
+        choices=Status.choices,
+        default=Status.PENDING,
+        verbose_name="Status",
+    )
+    idempotency_key = models.CharField(
+        max_length=128,
+        verbose_name="Chave de idempotência",
+    )
+    provider_payment_id = models.CharField(
+        max_length=128,
+        blank=True,
+        default="",
+        verbose_name="ID pagamento no provedor",
+    )
+    amount_cents = models.BigIntegerField(verbose_name="Valor (centavos)")
+    pix_copy_paste = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="PIX copia e cola",
+    )
+    failure_code = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        verbose_name="Código de falha",
+    )
+    failure_detail = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name="Detalhe da falha",
+    )
+    gateway_payload = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name="Payload do gateway",
+    )
+    charge = models.ForeignKey(
+        "billing.Charge",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="food_payments",
+        verbose_name="Cobrança billing (Inter)",
+    )
+    paid_at = models.DateTimeField(null=True, blank=True, verbose_name="Pago em")
+
+    class Meta:
+        verbose_name = "Pagamento Food"
+        verbose_name_plural = "Pagamentos Food"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "idempotency_key"],
+                name="uq_food_payment_tenant_idempotency",
+            ),
+            models.CheckConstraint(
+                condition=Q(amount_cents__gt=0),
+                name="ck_food_payment_amount_positive",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["tenant", "order", "status"]),
+            models.Index(fields=["tenant", "provider_payment_id"]),
+            models.Index(fields=["tenant", "provider", "status"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"FoodPayment {self.id} ({self.provider}/{self.method})"
+
+
+class FoodPaymentEvent(TenantOwnedModel):
+    """Evento de webhook/idempotência por pagamento Food."""
+
+    payment = models.ForeignKey(
+        FoodPayment,
+        on_delete=models.CASCADE,
+        related_name="events",
+        verbose_name="Pagamento",
+    )
+    provider = models.CharField(max_length=32, verbose_name="Provedor")
+    event_id = models.CharField(max_length=128, verbose_name="ID do evento")
+    payload = models.JSONField(default=dict, blank=True, verbose_name="Payload")
+
+    class Meta:
+        verbose_name = "Evento pagamento Food"
+        verbose_name_plural = "Eventos pagamento Food"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "provider", "event_id"],
+                name="uq_food_payment_event_tenant_provider_event",
+            ),
+        ]
 
 
 class FoodOrderLine(TenantOwnedModel):

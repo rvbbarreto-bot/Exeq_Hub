@@ -12,7 +12,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
 
 from apps.accounts.permissions import FOOD_WRITE_ROLES
-from apps.food.exceptions import FoodError
+from apps.food.exceptions import FoodError, FoodPaymentEmailRequiredError, FoodPaymentCardTokenRequiredError
 from apps.food.intelligence import intelligence_report
 from apps.food.models import (
     FoodCustomer,
@@ -41,10 +41,11 @@ from apps.food.production import (
     start_production,
 )
 from apps.food.retention import create_retention_rule, process_retention_tick
+from apps.food.payments.display import payment_panel_context
+from apps.food.payments.services import create_payment_intent_for_order
 from apps.food.services import (
     create_food_customer,
     create_order,
-    create_pix_intent_for_order,
 )
 from apps.hub_v4.auth import require_hub
 
@@ -103,21 +104,26 @@ class FoodOrdersListView(View):
 
 
 class FoodOrderDetailView(View):
+    template_name = "food/order_detail.html"
+
+    def _order_qs(self, tenant):
+        return (
+            FoodOrder.objects.filter(tenant=tenant)
+            .select_related("customer", "charge", "coupon")
+            .prefetch_related("lines", "payments")
+        )
+
     def get(self, request: HttpRequest, pk):
         tenant, user, role, redir = _require_food_hub(request)
         if redir:
             return redir
-        order = get_object_or_404(
-            FoodOrder.objects.select_related("customer", "charge", "coupon")
-            .prefetch_related("lines"),
-            pk=pk,
-            tenant=tenant,
-        )
+        order = get_object_or_404(self._order_qs(tenant), pk=pk)
         next_statuses = sorted(ORDER_TRANSITIONS.get(order.status, set()))
         status_labels = dict(FoodOrder.Status.choices)
+        panel = payment_panel_context(tenant=tenant, order=order)
         return render(
             request,
-            "hub_v4/food/order_detail.html",
+            self.template_name,
             _food_ctx(
                 role,
                 food_section="orders",
@@ -126,6 +132,7 @@ class FoodOrderDetailView(View):
                 next_status_choices=[
                     (s, status_labels.get(s, s)) for s in next_statuses
                 ],
+                **panel,
             ),
         )
 
@@ -137,14 +144,44 @@ class FoodOrderDetailView(View):
         action = (request.POST.get("action") or "").strip()
         try:
             if action == "pix":
-                create_pix_intent_for_order(tenant=tenant, order_id=order.id)
-                messages.success(request, "Cobrança Pix gerada no gateway.")
+                create_payment_intent_for_order(
+                    tenant=tenant, order_id=order.id, method="pix"
+                )
+                messages.success(request, "Pagamento Pix gerado no gateway.")
+            elif action == "card":
+                installments_raw = (request.POST.get("installments") or "1").strip()
+                try:
+                    installments = max(1, int(installments_raw))
+                except ValueError:
+                    installments = 1
+                updated = create_payment_intent_for_order(
+                    tenant=tenant,
+                    order_id=order.id,
+                    method="card",
+                    card_token=(request.POST.get("card_token") or "").strip(),
+                    payment_method_id=(request.POST.get("payment_method_id") or "").strip(),
+                    issuer_id=(request.POST.get("issuer_id") or "").strip(),
+                    installments=installments,
+                )
+                if updated.payment_status == FoodOrder.PaymentStatus.PAID:
+                    messages.success(request, "Pagamento com cartão aprovado.")
+                elif updated.payment_status == FoodOrder.PaymentStatus.FAILED:
+                    messages.error(request, "Pagamento com cartão recusado.")
+                else:
+                    messages.info(request, "Pagamento com cartão em processamento.")
             elif action == "transition":
                 to_status = (request.POST.get("status") or "").strip()
                 transition_order_status(
                     tenant=tenant, order_id=order.id, to_status=to_status
                 )
                 messages.success(request, f"Status atualizado para {to_status}.")
+        except FoodPaymentEmailRequiredError as exc:
+            messages.error(
+                request,
+                f"{exc} Cadastre o e-mail do cliente e tente novamente.",
+            )
+        except FoodPaymentCardTokenRequiredError as exc:
+            messages.error(request, str(exc))
         except FoodError as exc:
             messages.error(request, str(exc))
         return redirect("hub-v4-food-order-detail", pk=order.id)
@@ -227,7 +264,9 @@ class FoodOrderCreateView(View):
             deduct_stock=not await_pix,
         )
         if request_pix and order.payment_status != FoodOrder.PaymentStatus.PAID:
-            order = create_pix_intent_for_order(tenant=tenant, order_id=order.id)
+            order = create_payment_intent_for_order(
+                tenant=tenant, order_id=order.id, method="pix"
+            )
         return order
 
 

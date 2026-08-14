@@ -9,7 +9,10 @@ from apps.food.exceptions import (
     FoodInvalidOrderError,
     FoodInvalidTransitionError,
     FoodOrderNotFoundError,
+    FoodPaymentEmailRequiredError,
+    FoodPaymentCardTokenRequiredError,
     FoodPaymentError,
+    FoodPaymentProviderError,
 )
 from apps.food.models import (
     FoodBom,
@@ -61,7 +64,7 @@ from apps.food.serializers import (
     FoodSupplierSerializer,
     MarketplaceImportSerializer,
 )
-from apps.food.services import create_pix_intent_for_order
+from apps.food.payments.services import create_payment_intent_for_order
 from shared.pagination import HubPageNumberPagination
 
 
@@ -400,7 +403,9 @@ class FoodOrderViewSet(TenantQuerysetMixin, viewsets.GenericViewSet):
     @action(detail=True, methods=["post"], url_path="pix")
     def pix(self, request, pk=None):
         try:
-            order = create_pix_intent_for_order(tenant=request.tenant, order_id=pk)
+            order = create_payment_intent_for_order(
+                tenant=request.tenant, order_id=pk, method="pix"
+            )
         except FoodOrderNotFoundError as exc:
             return Response(
                 {"detail": str(exc), "code": exc.code},
@@ -411,7 +416,13 @@ class FoodOrderViewSet(TenantQuerysetMixin, viewsets.GenericViewSet):
                 {"detail": str(exc), "code": exc.code},
                 status=status.HTTP_409_CONFLICT,
             )
-        except (FoodInvalidOrderError, FoodPaymentError, FoodError) as exc:
+        except (
+            FoodInvalidOrderError,
+            FoodPaymentError,
+            FoodPaymentProviderError,
+            FoodPaymentEmailRequiredError,
+            FoodError,
+        ) as exc:
             return Response(
                 {"detail": str(exc), "code": getattr(exc, "code", "food_error")},
                 status=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -421,6 +432,55 @@ class FoodOrderViewSet(TenantQuerysetMixin, viewsets.GenericViewSet):
                 "customer", "charge", "coupon", "marketplace_connection"
             )
             .prefetch_related("lines")
+            .get(pk=order.pk)
+        )
+        return Response(FoodOrderSerializer(order).data)
+
+    @action(detail=True, methods=["post"], url_path="payment-intent")
+    def payment_intent(self, request, pk=None):
+        method = (request.data.get("method") or "pix").strip().lower()
+        installments_raw = request.data.get("installments", 1)
+        try:
+            installments = max(1, int(installments_raw))
+        except (TypeError, ValueError):
+            installments = 1
+        try:
+            order = create_payment_intent_for_order(
+                tenant=request.tenant,
+                order_id=pk,
+                method=method,
+                card_token=(request.data.get("token") or request.data.get("card_token") or "").strip(),
+                payment_method_id=(request.data.get("payment_method_id") or "").strip(),
+                issuer_id=str(request.data.get("issuer_id") or "").strip(),
+                installments=installments,
+            )
+        except FoodOrderNotFoundError as exc:
+            return Response(
+                {"detail": str(exc), "code": exc.code},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except FoodInvalidTransitionError as exc:
+            return Response(
+                {"detail": str(exc), "code": exc.code},
+                status=status.HTTP_409_CONFLICT,
+            )
+        except (
+            FoodInvalidOrderError,
+            FoodPaymentError,
+            FoodPaymentProviderError,
+            FoodPaymentEmailRequiredError,
+            FoodPaymentCardTokenRequiredError,
+            FoodError,
+        ) as exc:
+            return Response(
+                {"detail": str(exc), "code": getattr(exc, "code", "food_error")},
+                status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+        order = (
+            FoodOrder.objects.select_related(
+                "customer", "charge", "coupon", "marketplace_connection"
+            )
+            .prefetch_related("lines", "payments")
             .get(pk=order.pk)
         )
         return Response(FoodOrderSerializer(order).data)

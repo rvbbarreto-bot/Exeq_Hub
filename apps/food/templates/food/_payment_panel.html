@@ -1,0 +1,151 @@
+{% load hub_v4_tags static %}
+<div class="card" style="margin-bottom:12px;">
+  <div class="section-label" style="margin-top:0;">Pagamento</div>
+  <div class="form-grid">
+    <div>
+      <span style="color:var(--text-muted);font-size:.8rem;">Provedor</span>
+      <div>{{ food_payment_provider_label }}</div>
+    </div>
+    <div>
+      <span style="color:var(--text-muted);font-size:.8rem;">Status pagamento</span>
+      <div>{{ order.get_payment_status_display }}</div>
+    </div>
+    <div>
+      <span style="color:var(--text-muted);font-size:.8rem;">Referência gateway</span>
+      <div class="mono">{% if payment_ref %}{{ payment_ref }}{% else %}—{% endif %}</div>
+    </div>
+    <div>
+      <span style="color:var(--text-muted);font-size:.8rem;">Status cobrança</span>
+      <div>{% if payment_status %}{{ payment_status }}{% else %}—{% endif %}</div>
+    </div>
+    {% if payment_method %}
+    <div>
+      <span style="color:var(--text-muted);font-size:.8rem;">Meio</span>
+      <div>{{ payment_method }}</div>
+    </div>
+    {% endif %}
+    {% if order.charge_id %}
+    <div>
+      <span style="color:var(--text-muted);font-size:.8rem;">Cobrança billing</span>
+      <div class="mono">{{ order.charge_id }}</div>
+    </div>
+    {% endif %}
+    {% if food_payment %}
+    <div>
+      <span style="color:var(--text-muted);font-size:.8rem;">Pagamento Food</span>
+      <div class="mono">{{ food_payment.id }}</div>
+    </div>
+    {% endif %}
+    <div class="full">
+      <span style="color:var(--text-muted);font-size:.8rem;">PIX copia e cola</span>
+      {% if pix_copy_paste %}
+      <div id="food-pix-copy" class="mono" style="word-break:break-all;font-size:.85rem;margin-top:4px;">{{ pix_copy_paste }}</div>
+      <button type="button" class="btn btn-ghost btn-sm" style="margin-top:8px;" onclick="foodCopyPix()">Copiar Pix</button>
+      {% else %}
+      <div class="mono" style="font-size:.85rem;">—</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if mp_email_missing and can_write %}
+  <p style="margin-top:12px;color:var(--danger,#c0392b);font-size:.9rem;">
+    Mercado Pago exige e-mail do cliente. Cadastre o e-mail antes de gerar o pagamento.
+  </p>
+  {% endif %}
+
+  {% if can_write and can_generate_payment and not mp_email_missing %}
+  <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
+    {% if mp_pix_enabled or food_payment_provider != "mercadopago" %}
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="pix" />
+      <button class="btn btn-primary" type="submit">Gerar pagamento Pix</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if can_write and mp_card_enabled and not mp_email_missing and can_generate_payment %}
+  <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border,#e5e7eb);">
+    <div class="section-label" style="margin-top:0;">Cartão de crédito</div>
+    {% if mp_stub_mode %}
+    <p style="color:var(--text-muted);font-size:.85rem;margin-bottom:8px;">
+      Modo lab (stub): dados de cartão não são enviados ao servidor.
+    </p>
+    {% endif %}
+    <form id="food-card-form" method="post" style="display:grid;gap:8px;max-width:420px;">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="card" />
+      <input type="hidden" id="food-card-token" name="card_token" value="" />
+      <input type="hidden" id="food-card-payment-method-id" name="payment_method_id" value="" />
+      <input type="hidden" id="food-card-issuer-id" name="issuer_id" value="" />
+      {% if not mp_stub_mode %}
+      <label>Número do cartão
+        <input id="food-card-number" type="text" inputmode="numeric" autocomplete="cc-number" placeholder="4509 9535 6623 3704" />
+      </label>
+      <label>Nome no cartão
+        <input id="food-card-name" type="text" autocomplete="cc-name" value="{{ payer_name }}" />
+      </label>
+      <div style="display:flex;gap:8px;">
+        <label style="flex:1;">Mês
+          <input id="food-card-exp-month" type="text" placeholder="11" maxlength="2" />
+        </label>
+        <label style="flex:1;">Ano
+          <input id="food-card-exp-year" type="text" placeholder="2028" maxlength="4" />
+        </label>
+        <label style="flex:1;">CVV
+          <input id="food-card-cvv" type="password" inputmode="numeric" autocomplete="cc-csc" maxlength="4" />
+        </label>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <label style="flex:1;">Doc. tipo
+          <select id="food-card-doc-type">
+            <option value="CPF">CPF</option>
+            <option value="CNPJ">CNPJ</option>
+          </select>
+        </label>
+        <label style="flex:2;">Documento
+          <input id="food-card-doc-number" type="text" value="{{ payer_document }}" />
+        </label>
+      </div>
+      {% endif %}
+      <label>Parcelas
+        <select name="installments">
+          <option value="1">1x</option>
+        </select>
+      </label>
+      <button class="btn btn-primary" type="submit">Pagar com cartão</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+{% if pix_copy_paste %}
+<script>
+function foodCopyPix() {
+  var el = document.getElementById("food-pix-copy");
+  if (!el) return;
+  var text = el.textContent || el.innerText;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).catch(function () {
+      window.prompt("Copie o Pix:", text);
+    });
+  } else {
+    window.prompt("Copie o Pix:", text);
+  }
+}
+</script>
+{% endif %}
+{% if can_write and mp_card_enabled and can_generate_payment and not mp_email_missing %}
+<script>
+window.FOOD_MP_CONFIG = {
+  stub: {{ mp_stub_mode|yesno:"true,false" }},
+  publicKey: "{{ mp_public_key|escapejs }}",
+  payerEmail: "{{ payer_email|escapejs }}",
+  payerDocument: "{{ payer_document|escapejs }}"
+};
+</script>
+{% if not mp_stub_mode and mp_public_key %}
+<script src="https://sdk.mercadopago.com/js/v2"></script>
+{% endif %}
+<script src="{% static 'food/mp-checkout.js' %}"></script>
+{% endif %}

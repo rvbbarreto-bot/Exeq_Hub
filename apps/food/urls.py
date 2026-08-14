@@ -21,6 +21,7 @@ from apps.food.views import (
     FoodRetentionRuleViewSet,
     FoodSupplierViewSet,
 )
+from apps.food.webhook_views import MercadoPagoFoodWebhookView
 
 router = DefaultRouter()
 router.register("food/customers", FoodCustomerViewSet, basename="food-customers")
@@ -70,6 +71,11 @@ urlpatterns = [
         "food/marketplace/sync",
         FoodMarketplaceSyncView.as_view(),
         name="food-marketplace-sync",
+    ),
+    path(
+        "food/webhooks/mercadopago",
+        MercadoPagoFoodWebhookView.as_view(),
+        name="food-webhooks-mercadopago",
     ),
     *router.urls,
 ]

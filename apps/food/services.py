@@ -366,14 +366,14 @@ def create_order(
     return order
 
 
-def mark_order_paid_by_pix(
+def mark_order_paid(
     *,
     tenant,
     order_id,
-    pix_txid: str = "",
+    provider_ref: str = "",
     deduct_stock: bool = True,
 ) -> FoodOrder:
-    """Confirma pagamento (webhook banking / Charge.paid)."""
+    """Confirma pagamento (webhook / FoodPayment / Charge.paid)."""
     from apps.food.exceptions import FoodOrderNotFoundError
 
     with transaction.atomic():
@@ -391,6 +391,7 @@ def mark_order_paid_by_pix(
         if order.payment_status not in (
             FoodOrder.PaymentStatus.UNPAID,
             FoodOrder.PaymentStatus.AWAITING_PIX,
+            FoodOrder.PaymentStatus.AWAITING_PAYMENT,
             FoodOrder.PaymentStatus.FAILED,
         ):
             raise FoodInvalidTransitionError(
@@ -411,14 +412,14 @@ def mark_order_paid_by_pix(
                     product=line.product,
                     movement_type=FoodStockMovement.MovementType.OUT,
                     quantity=line.quantity,
-                    reason="venda_pix",
+                    reason="venda_paga",
                     order=order,
                 )
 
         order.payment_status = FoodOrder.PaymentStatus.PAID
         order.status = FoodOrder.Status.CONFIRMED
-        if pix_txid:
-            order.pix_txid = pix_txid.strip()
+        if provider_ref:
+            order.pix_txid = provider_ref.strip()[:128]
         order.paid_at = timezone.now()
         order.save(
             update_fields=[
@@ -440,6 +441,22 @@ def mark_order_paid_by_pix(
             tenant=tenant, customer=order.customer, reason="purchase"
         )
     return order
+
+
+def mark_order_paid_by_pix(
+    *,
+    tenant,
+    order_id,
+    pix_txid: str = "",
+    deduct_stock: bool = True,
+) -> FoodOrder:
+    """Alias legado — confirma pagamento Pix."""
+    return mark_order_paid(
+        tenant=tenant,
+        order_id=order_id,
+        provider_ref=pix_txid,
+        deduct_stock=deduct_stock,
+    )
 
 
 def ensure_fiscal_customer_for_food(food_customer: FoodCustomer):
@@ -488,81 +505,27 @@ def ensure_fiscal_customer_for_food(food_customer: FoodCustomer):
 
 
 def create_pix_intent_for_order(*, tenant, order_id, due_date=None) -> FoodOrder:
-    """
-    Emite cobrança gateway (boleto+PIX) e associa ao pedido.
-    Reusa apps.billing — sem segundo provider Pix.
-    """
-    from datetime import date
+    """Emite intent Pix via roteador Food (Inter ou Mercado Pago)."""
+    from apps.food.payments.services import create_payment_intent_for_order
 
-    from apps.billing.amount_rules import CHARGE_MIN_AMOUNT_CENTS
-    from apps.billing.due_date_rules import min_due_date
-    from apps.billing.exceptions import (
-        GatewayRegistrationError,
-        InvalidChargeInputError,
+    return create_payment_intent_for_order(
+        tenant=tenant,
+        order_id=order_id,
+        method="pix",
+        due_date=due_date,
     )
-    from apps.billing.services import create_charge
-    from apps.food.exceptions import FoodOrderNotFoundError, FoodPaymentError
-
-    order = (
-        FoodOrder.objects.select_related("customer", "charge")
-        .filter(tenant=tenant, pk=order_id)
-        .first()
-    )
-    if order is None:
-        raise FoodOrderNotFoundError("Pedido não encontrado.")
-    if order.payment_status == FoodOrder.PaymentStatus.PAID:
-        return order
-    if order.status == FoodOrder.Status.CANCELLED:
-        raise FoodInvalidTransitionError("Pedido cancelado.")
-    if order.charge_id and order.charge is not None:
-        # Já tem intent: devolve (idempotente)
-        return order
-    if order.total_cents < CHARGE_MIN_AMOUNT_CENTS:
-        raise FoodInvalidOrderError(
-            f"Valor do pedido abaixo do mínimo de cobrança "
-            f"({CHARGE_MIN_AMOUNT_CENTS} centavos)."
-        )
-
-    fiscal = ensure_fiscal_customer_for_food(order.customer)
-    due = due_date or min_due_date()
-    charge_key = f"food-order:{order.id}"
-
-    try:
-        charge = create_charge(
-            tenant=tenant,
-            idempotency_key=charge_key,
-            customer=fiscal,
-            amount_cents=order.total_cents,
-            due_date=due if isinstance(due, date) else min_due_date(),
-            description=f"Pedido Food {order.id}",
-        )
-    except InvalidChargeInputError as exc:
-        raise FoodInvalidOrderError(str(exc)) from exc
-    except GatewayRegistrationError as exc:
-        raise FoodPaymentError(str(exc)) from exc
-
-    if isinstance(charge, list):
-        charge = charge[0]
-
-    order.charge = charge
-    order.payment_status = FoodOrder.PaymentStatus.AWAITING_PIX
-    if order.status == FoodOrder.Status.DRAFT:
-        order.status = FoodOrder.Status.PENDING_PAYMENT
-    order.pix_txid = (charge.gateway_ref or order.pix_txid or "")[:128]
-    order.save(
-        update_fields=[
-            "charge",
-            "payment_status",
-            "status",
-            "pix_txid",
-            "updated_at",
-        ]
-    )
-    return order
 
 
 def sync_food_order_on_charge_paid(*, tenant, charge) -> FoodOrder | None:
-    """Chamado após Charge → paid (webhook). Idempotente."""
+    """Chamado após Charge → paid (webhook billing). Idempotente."""
+    from apps.food.models import FoodPayment
+
+    FoodPayment.objects.filter(tenant=tenant, charge=charge).exclude(
+        status=FoodPayment.Status.PAID
+    ).update(
+        status=FoodPayment.Status.PAID,
+        paid_at=timezone.now(),
+    )
     order = (
         FoodOrder.objects.filter(tenant=tenant, charge=charge)
         .order_by("created_at")
@@ -571,10 +534,10 @@ def sync_food_order_on_charge_paid(*, tenant, charge) -> FoodOrder | None:
     if order is None:
         return None
     txid = (charge.gateway_ref or order.pix_txid or "")[:128]
-    return mark_order_paid_by_pix(
+    return mark_order_paid(
         tenant=tenant,
         order_id=order.id,
-        pix_txid=txid,
+        provider_ref=txid,
         deduct_stock=True,
     )
 

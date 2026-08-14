@@ -1,0 +1,80 @@
+{% extends "hub_v4/base.html" %}
+{% load hub_v4_tags %}
+
+{% block page_actions %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-food-orders' %}">Lista</a>
+{% if can_write %}
+<a class="btn btn-primary" href="{% url 'hub-v4-food-order-new' %}">Novo pedido</a>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+{% include "hub_v4/food/_subnav.html" %}
+<div class="card" style="margin-bottom:12px;">
+  <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center;">
+    <div>
+      <div style="font-family:var(--font-display);font-weight:700;font-size:1.1rem;">
+        {{ order.customer.name }}
+      </div>
+      <div style="color:var(--text-muted);font-size:.9rem;">
+        {{ order.get_channel_display }} · {{ order.created_at|date:"d/m/Y H:i" }}
+      </div>
+      {% if order.customer.email %}
+      <div style="color:var(--text-muted);font-size:.85rem;">{{ order.customer.email }}</div>
+      {% endif %}
+    </div>
+    <div style="text-align:right;">
+      <div>{{ order.get_status_display }}</div>
+      <div style="color:var(--text-muted);font-size:.85rem;">{{ order.get_payment_status_display }}</div>
+    </div>
+  </div>
+  {% if can_write and next_status_choices %}
+  <form method="post" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:end;">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="transition" />
+    <label>
+      <span style="color:var(--text-muted);font-size:.8rem;">Avançar status</span>
+      <select name="status">
+        {% for val, label in next_status_choices %}
+        <option value="{{ val }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button class="btn btn-ghost" type="submit">Aplicar</button>
+  </form>
+  {% endif %}
+</div>
+
+<div class="card" style="margin-bottom:12px;">
+  <div class="section-label" style="margin-top:0;">Resumo</div>
+  <div class="form-grid">
+    <div><span style="color:var(--text-muted);font-size:.8rem;">Total</span><div><strong>{{ order.total_cents|cents_brl }}</strong></div></div>
+    <div><span style="color:var(--text-muted);font-size:.8rem;">Subtotal</span><div>{{ order.subtotal_cents|cents_brl }}</div></div>
+    <div><span style="color:var(--text-muted);font-size:.8rem;">Desconto</span><div>{{ order.discount_cents|cents_brl }}</div></div>
+    <div><span style="color:var(--text-muted);font-size:.8rem;">Pago em</span><div>{{ order.paid_at|date:"d/m/Y H:i"|default:"—" }}</div></div>
+    <div class="full"><span style="color:var(--text-muted);font-size:.8rem;">Idempotência</span><div class="mono">{{ order.idempotency_key }}</div></div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:12px;">
+  <div class="section-label" style="margin-top:0;">Itens</div>
+  <table class="data">
+    <thead>
+      <tr><th>SKU</th><th>Nome</th><th>Qtd</th><th class="num">Unit.</th><th class="num">Total</th></tr>
+    </thead>
+    <tbody>
+      {% for line in order.lines.all %}
+      <tr>
+        <td class="mono">{{ line.sku }}</td>
+        <td>{{ line.name }}</td>
+        <td>{{ line.quantity }} {{ line.unit }}</td>
+        <td class="num">{{ line.unit_price_cents|cents_brl }}</td>
+        <td class="num">{{ line.line_total_cents|cents_brl }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% include "food/_payment_panel.html" %}
+{% endblock %}
