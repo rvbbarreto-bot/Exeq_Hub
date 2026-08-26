@@ -1,0 +1,33 @@
+{% extends "hub_v4/base.html" %}
+
+{% block page_actions %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-food-customers' %}">Lista</a>
+{% endblock %}
+
+{% block content %}
+{% include "hub_v4/food/_subnav.html" %}
+<form method="post" class="card">
+  {% csrf_token %}
+  <div class="form-grid">
+    <label class="full">
+      <span>Nome</span>
+      <input name="name" value="{{ form.name }}" required />
+    </label>
+    <label>
+      <span>Telefone / WhatsApp</span>
+      <input name="phone_e164" value="{{ form.phone_e164 }}" placeholder="+55119…" />
+    </label>
+    <label>
+      <span>E-mail (Mercado Pago)</span>
+      <input name="email" type="email" value="{{ form.email }}" placeholder="cliente@email.com" />
+    </label>
+    <label>
+      <span>CPF/CNPJ</span>
+      <input name="document" value="{{ form.document }}" placeholder="somente dígitos" />
+    </label>
+  </div>
+  <div style="margin-top:16px;">
+    <button class="btn btn-primary" type="submit">Salvar cliente</button>
+  </div>
+</form>
+{% endblock %}

@@ -8,7 +8,7 @@ from apps.accounts.models import Tenant
 from apps.accounts.permissions import FOOD_ONLY_ROLES
 from apps.accounts.plan_limits import provider_usage
 from apps.hub_v4.active_company import get_active_provider
-from apps.hub_v4.auth import SESSION_ROLE, SESSION_TENANT
+from apps.hub_v4.auth import SESSION_ROLE, SESSION_TENANT, SESSION_TENANT_SLUG
 
 
 def nfe_product_enabled() -> bool:
@@ -35,13 +35,18 @@ def hub_nav_flags(request):
         "provider_usage": None,
         "is_platform_user": False,
         "food_only_nav": False,
+        "hub_tenant_slug": request.session.get(SESSION_TENANT_SLUG) or "",
+        "hub_tenant_name": request.session.get("hub_v4_tenant_name") or "",
+        "hub_user_name": request.session.get("hub_v4_user_name") or "",
     }
     tid = request.session.get(SESSION_TENANT)
     role = request.session.get(SESSION_ROLE) or ""
     out["food_only_nav"] = role in FOOD_ONLY_ROLES
     if not tid:
         return out
-    tenant = Tenant.objects.filter(pk=tid).only("id", "settings").first()
+    tenant = Tenant.objects.filter(pk=tid).only("id", "settings", "slug", "legal_name").first()
+    if tenant is not None and not out["hub_tenant_slug"]:
+        out["hub_tenant_slug"] = tenant.slug
     if tenant is None:
         return out
     out["nfe_enabled_nav"] = nfe_enabled_for_tenant(tenant)

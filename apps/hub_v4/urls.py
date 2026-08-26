@@ -52,6 +52,26 @@ urlpatterns = [
         name="hub-v4-food-order-detail",
     ),
     path(
+        "food/produtos/",
+        food_hub.FoodProductsListView.as_view(),
+        name="hub-v4-food-products",
+    ),
+    path(
+        "food/produtos/novo/",
+        food_hub.FoodProductCreateView.as_view(),
+        name="hub-v4-food-product-new",
+    ),
+    path(
+        "food/clientes/",
+        food_hub.FoodCustomersListView.as_view(),
+        name="hub-v4-food-customers",
+    ),
+    path(
+        "food/clientes/novo/",
+        food_hub.FoodCustomerCreateView.as_view(),
+        name="hub-v4-food-customer-new",
+    ),
+    path(
         "food/compras/",
         food_hub.FoodPurchasesListView.as_view(),
         name="hub-v4-food-purchases",

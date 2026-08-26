@@ -28,6 +28,17 @@
       <div style="color:var(--text-muted);font-size:.85rem;">{{ order.get_payment_status_display }}</div>
     </div>
   </div>
+  {% if can_write %}
+  <form method="post" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:end;">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="customer_email" />
+    <label style="flex:1;min-width:220px;">
+      <span style="color:var(--text-muted);font-size:.8rem;">E-mail (Mercado Pago)</span>
+      <input type="email" name="customer_email" value="{{ order.customer.email }}" placeholder="cliente@email.com" />
+    </label>
+    <button class="btn btn-ghost btn-sm" type="submit">Salvar e-mail</button>
+  </form>
+  {% endif %}
   {% if can_write and next_status_choices %}
   <form method="post" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:end;">
     {% csrf_token %}
@@ -77,4 +88,34 @@
 </div>
 
 {% include "food/_payment_panel.html" %}
+
+{% if order.payments.all %}
+<div class="card" style="margin-bottom:12px;">
+  <div class="section-label" style="margin-top:0;">Histórico de pagamentos</div>
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Provedor</th>
+        <th>Meio</th>
+        <th>Status</th>
+        <th class="num">Valor</th>
+        <th>Pago em</th>
+        <th>Eventos</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for payment in order.payments.all %}
+      <tr>
+        <td>{{ payment.get_provider_display }}</td>
+        <td>{{ payment.get_method_display }}</td>
+        <td>{{ payment.get_status_display }}</td>
+        <td class="num">{{ payment.amount_cents|cents_brl }}</td>
+        <td>{{ payment.paid_at|date:"d/m/Y H:i"|default:"—" }}</td>
+        <td>{{ payment.events.count }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
 {% endblock %}

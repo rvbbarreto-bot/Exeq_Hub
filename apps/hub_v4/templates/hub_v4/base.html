@@ -5,7 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ page_title|default:"Hub" }} · EXEQ Hub{% endblock %}</title>
-  <link rel="stylesheet" href="{% static 'hub_v4/css/exeq-ledger.css' %}?v=4">
+  <link rel="stylesheet" href="{% static 'hub_v4/css/exeq-ledger.css' %}?v=8">
   {% block head %}{% endblock %}
 </head>
 <body class="hub-v4">
@@ -14,30 +14,16 @@
     <aside class="hub-sidebar" id="hub-sidebar" aria-label="Navegação principal">
       <div class="brand">
         EXEQ Hub
-        <span>{{ request.session.hub_v4_tenant_name|default:"Ledger" }}</span>
+        <span class="hub-tenant-label">
+          {% if hub_tenant_slug %}<strong>{{ hub_tenant_slug }}</strong>{% endif %}
+          {% if hub_tenant_name and hub_tenant_name != hub_tenant_slug %} · {{ hub_tenant_name }}{% elif not hub_tenant_slug %}{{ request.session.hub_v4_tenant_name|default:"Ledger" }}{% endif %}
+        </span>
       </div>
 
       {% if food_only_nav %}
+      {% load food_pilot %}
       <div class="nav-group-label">Food</div>
-      <a class="nav-item {% if nav == 'food' %}is-active{% endif %}" href="{% url 'hub-v4-food-orders' %}">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h10"/><circle cx="18" cy="17" r="2"/></svg>
-        <span class="label">Pedidos</span>
-      </a>
-      <a class="nav-item {% if nav == 'food_purchases' %}is-active{% endif %}" href="{% url 'hub-v4-food-purchases' %}">
-        <span class="label">Compras</span>
-      </a>
-      <a class="nav-item {% if nav == 'food_production' %}is-active{% endif %}" href="{% url 'hub-v4-food-production' %}">
-        <span class="label">Produção</span>
-      </a>
-      <a class="nav-item {% if nav == 'food_intelligence' %}is-active{% endif %}" href="{% url 'hub-v4-food-intelligence' %}">
-        <span class="label">Inteligência</span>
-      </a>
-      <a class="nav-item {% if nav == 'food_retention' %}is-active{% endif %}" href="{% url 'hub-v4-food-retention' %}">
-        <span class="label">Régua</span>
-      </a>
-      <a class="nav-item {% if nav == 'food_marketplace' %}is-active{% endif %}" href="{% url 'hub-v4-food-marketplace' %}">
-        <span class="label">Marketplace</span>
-      </a>
+      {% food_hub_sidebar nav %}
       {% else %}
       <div class="nav-group-label">Painel</div>
       <a class="nav-item {% if nav == 'dashboard' %}is-active{% endif %}" href="{% url 'hub-v4-dashboard' %}">
@@ -117,11 +103,16 @@
       {% endif %}
 
       <div class="hub-sidebar-footer">
-        <b>{{ request.session.hub_v4_user_name|default:"Usuário" }}</b>
-        <span>{{ role_code|default:request.session.hub_v4_role_code }}</span>
-        <form method="post" action="{% url 'hub-v4-logout' %}" style="margin-top:8px;">
+        <div class="hub-session-meta">
+          <b>{{ hub_user_name|default:request.session.hub_v4_user_name|default:"Usuário" }}</b>
+          <span>{{ role_code|default:request.session.hub_v4_role_code }}</span>
+          {% if hub_tenant_slug %}
+          <span class="hub-tenant-slug">Tenant: {{ hub_tenant_slug }}</span>
+          {% endif %}
+        </div>
+        <form method="post" action="{% url 'hub-v4-logout' %}" class="hub-logout-form">
           {% csrf_token %}
-          <button type="submit" class="btn btn-ghost btn-sm" style="width:100%;color:#fff;border-color:rgba(255,255,255,.2);background:transparent;">Sair</button>
+          <button type="submit" class="btn btn-ghost btn-sm btn-logout-sidebar" title="Sair e trocar usuário">Sair</button>
         </form>
       </div>
     </aside>
@@ -129,14 +120,25 @@
     <div class="hub-main">
       <header class="hub-mobile-header">
         <button type="button" class="icon-btn" data-drawer-toggle aria-label="Abrir menu">☰</button>
-        <div class="title">EXEQ Hub</div>
-        <a class="icon-btn" href="{% url 'hub-v4-preferences' %}" aria-label="Conta">👤</a>
+        <div class="title">
+          EXEQ Hub
+          {% if hub_tenant_slug %}<span class="hub-mobile-tenant">{{ hub_tenant_slug }}</span>{% endif %}
+        </div>
+        <div class="hub-mobile-actions">
+          {% if not food_only_nav %}
+          <a class="icon-btn" href="{% url 'hub-v4-preferences' %}" aria-label="Preferências">👤</a>
+          {% endif %}
+          <form method="post" action="{% url 'hub-v4-logout' %}" class="hub-logout-form hub-logout-form--inline">
+            {% csrf_token %}
+            <button type="submit" class="icon-btn hub-logout-icon" aria-label="Sair" title="Sair">⎋</button>
+          </form>
+        </div>
       </header>
 
       <div class="hub-topbar">
         <div>
           <h1>{% block page_heading %}{{ page_title }}{% endblock %}</h1>
-          <div class="crumb">EXEQ Hub · Ledger · {{ page_title }}</div>
+          <div class="crumb">EXEQ Hub{% if hub_tenant_slug %} · {{ hub_tenant_slug }}{% endif %} · {{ page_title }}</div>
           {% if active_provider %}
           <div class="active-company" title="CNPJ emitente em contexto">
             <span class="active-company-label">Empresa ativa</span>
@@ -154,7 +156,13 @@
           </div>
           {% endif %}
         </div>
-        <div>{% block page_actions %}{% endblock %}</div>
+        <div class="hub-topbar-right">
+          <div>{% block page_actions %}{% endblock %}</div>
+          <form method="post" action="{% url 'hub-v4-logout' %}" class="hub-logout-form hub-logout-topbar">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-ghost btn-sm" title="Sair e trocar usuário">Sair</button>
+          </form>
+        </div>
       </div>
 
       <main class="hub-content" id="main-content">
@@ -169,7 +177,7 @@
       </main>
     </div>
   </div>
-  <script src="{% static 'hub_v4/js/hub-v4.js' %}"></script>
+  <script src="{% static 'hub_v4/js/hub-v4.js' %}?v=6"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

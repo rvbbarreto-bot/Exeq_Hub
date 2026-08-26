@@ -1,0 +1,17 @@
+{% extends "hub_v4/base.html" %}
+{% load hub_v4_tags %}
+
+{% block content %}
+{% include "hub_v4/food/_subnav.html" %}
+<div class="card" style="padding:24px;max-width:520px;">
+  <div class="section-label" style="margin-top:0;">Fora do piloto</div>
+  <h2 style="margin:0 0 8px;font-family:var(--font-display);font-size:1.15rem;">{{ section_label }}</h2>
+  <p style="color:var(--text-muted);margin:0 0 16px;line-height:1.5;">
+    Esta área ainda não faz parte do piloto Food. Use as telas disponíveis no menu ou volte aos pedidos.
+  </p>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <a class="btn btn-primary" href="{% url 'hub-v4-food-orders' %}">Ir para Pedidos</a>
+    <a class="btn btn-ghost" href="{% url 'hub-v4-dashboard' %}">Painel</a>
+  </div>
+</div>
+{% endblock %}

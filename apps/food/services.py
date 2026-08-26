@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
 from django.db import IntegrityError, transaction
 from django.db.models import F
@@ -25,6 +26,15 @@ from apps.food.models import (
     FoodStockBalance,
     FoodStockMovement,
 )
+
+
+def _parse_product_id(value) -> UUID:
+    if isinstance(value, UUID):
+        return value
+    try:
+        return UUID(str(value))
+    except (TypeError, ValueError) as exc:
+        raise FoodProductNotFoundError(f"product_id inválido: {value}") from exc
 
 
 def create_food_customer(
@@ -270,7 +280,7 @@ def create_order(
     if customer is None:
         raise FoodCustomerNotFoundError("Cliente Food não encontrado.")
 
-    product_ids = [row.get("product_id") for row in lines]
+    product_ids = [_parse_product_id(row.get("product_id")) for row in lines]
     products = {
         p.id: p
         for p in FoodProduct.objects.filter(
@@ -281,7 +291,7 @@ def create_order(
     prepared: list[tuple[FoodProduct, Decimal, int, int]] = []
     subtotal = 0
     for row in lines:
-        pid = row.get("product_id")
+        pid = _parse_product_id(row.get("product_id"))
         product = products.get(pid)
         if product is None:
             raise FoodProductNotFoundError(f"Produto inexistente/inativo: {pid}")

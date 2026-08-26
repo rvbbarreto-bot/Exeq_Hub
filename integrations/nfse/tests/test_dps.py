@@ -105,8 +105,73 @@ def test_build_xml_contains_namespace_and_blocks():
     text = xml.decode("utf-8")
     assert "infDPS" in text
     assert "pTotTribSN" in text
+    assert "pAliq" not in text
     assert "Signature" not in text
     assert 'Id="DPS' in text
+
+
+def test_dps_paliq_when_iss_retained_sn():
+    issue = _issue(
+        resolved_params={
+            "iss_retained": True,
+            "iss_rate": "0.0500",
+            "simples_codigo_tributacao": 3,
+            "tributacao_iss": 1,
+            "percentual_total_tributos_simples_nacional": 6.0,
+        }
+    )
+    payload = to_sefin_dps_dict(issue, tp_amb=2, serie=1, n_dps=11)
+    trib_mun = payload["infDPS"]["valores"]["trib"]["tribMun"]
+    assert trib_mun["tpRetISSQN"] == 2
+    assert trib_mun["pAliq"] == "5.00"
+    xml = to_sefin_dps_xml(issue, tp_amb=2, serie=1, n_dps=11)
+    assert b"pAliq" in xml
+
+
+def test_dps_paliq_non_simples_always():
+    issue = _issue()
+    issue.provider.tax_regime = TaxRegime.PRESUMIDO
+    issue.resolved_params = {
+        "iss_retained": False,
+        "iss_rate": "0.0500",
+        "simples_codigo_tributacao": 1,
+        "tributacao_iss": 1,
+        "c_trib_mun": "107",
+        "codigo_tributacao_nacional_iss": "010701",
+    }
+    payload = to_sefin_dps_dict(issue, tp_amb=2, serie=1, n_dps=12)
+    assert payload["infDPS"]["prest"]["regTrib"]["opSimpNac"] == 1
+    assert payload["infDPS"]["valores"]["trib"]["tribMun"]["pAliq"] == "5.00"
+    assert payload["infDPS"]["serv"]["cServ"]["cTribMun"] == "107"
+
+
+def test_dps_c_trib_mun_from_params():
+    issue = _issue(
+        resolved_params={
+            "iss_retained": False,
+            "tributacao_iss": 1,
+            "percentual_total_tributos_simples_nacional": 6.0,
+            "c_trib_mun": "101",
+            "codigo_tributacao_nacional_iss": "010101",
+        }
+    )
+    payload = to_sefin_dps_dict(issue, tp_amb=2, serie=1, n_dps=14)
+    assert payload["infDPS"]["serv"]["cServ"]["cTribMun"] == "101"
+    xml = to_sefin_dps_xml(issue, tp_amb=2, serie=1, n_dps=14)
+    assert b"cTribMun" in xml
+
+
+def test_dps_op_simp_from_resolved_params():
+    issue = _issue(
+        resolved_params={
+            "iss_retained": False,
+            "simples_codigo_tributacao": 2,
+            "tributacao_iss": 1,
+            "percentual_total_tributos_simples_nacional": 6.0,
+        }
+    )
+    payload = to_sefin_dps_dict(issue, tp_amb=2, serie=1, n_dps=13)
+    assert payload["infDPS"]["prest"]["regTrib"]["opSimpNac"] == 2
 
 
 def test_rejects_short_ctribnac():

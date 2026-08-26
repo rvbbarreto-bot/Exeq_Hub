@@ -1,0 +1,43 @@
+{% extends "hub_v4/base.html" %}
+{% load hub_v4_tags %}
+
+{% block page_actions %}
+{% if can_write %}
+<a class="btn btn-primary" href="{% url 'hub-v4-food-product-new' %}">Novo produto</a>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+{% include "hub_v4/food/_subnav.html" %}
+<form method="get" class="card" style="margin-bottom:12px;padding:12px;display:flex;gap:12px;flex-wrap:wrap;align-items:end;">
+  <label class="full" style="flex:1;min-width:200px;">
+    <span style="color:var(--text-muted);font-size:.8rem;">Buscar SKU ou nome</span>
+    <input name="q" value="{{ search_q }}" placeholder="PATE-01" />
+  </label>
+  <button class="btn btn-ghost" type="submit">Buscar</button>
+</form>
+
+{% if page.object_list %}
+<table class="data">
+  <thead>
+    <tr><th>SKU</th><th>Nome</th><th>Categoria</th><th class="num">Preço</th><th>Ativo</th></tr>
+  </thead>
+  <tbody>
+    {% for p in page.object_list %}
+    <tr>
+      <td class="mono">{{ p.sku }}</td>
+      <td>{{ p.name }}</td>
+      <td>{{ p.category|default:"—" }}</td>
+      <td class="num">{{ p.price_cents|cents_brl }}</td>
+      <td>{% if p.is_active %}Sim{% else %}Não{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p style="color:var(--text-muted);">Nenhum produto cadastrado.</p>
+{% if can_write %}
+<p><a class="btn btn-primary btn-sm" href="{% url 'hub-v4-food-product-new' %}">Cadastrar produto</a></p>
+{% endif %}
+{% endif %}
+{% endblock %}

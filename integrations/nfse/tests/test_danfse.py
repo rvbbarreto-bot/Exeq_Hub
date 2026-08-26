@@ -36,8 +36,9 @@ def test_extract_fields_from_authorized_fixture():
     assert fields.numero_dps == "1"
     assert fields.serie_dps == "900"
     assert fields.cancelled is False
+    assert fields.situacao == "NFS-e Gerada"
     assert fields.qr_payload.startswith(QR_BASE_URL)
-    assert LAYOUT_VERSION == "nt008-v1.02"
+    assert LAYOUT_VERSION == "nt008-v1.06"
 
 
 def test_extract_fields_from_prod_sample():
@@ -47,6 +48,11 @@ def test_extract_fields_from_prod_sample():
     assert fields.numero == "68"
     assert fields.prestador_nome.startswith("EXEQ")
     assert fields.prestador_doc == "37229907000137"
+    assert fields.prestador_email == "RIICARDO84@HOTMAIL.COM"
+    assert fields.op_simp_nac == "Optante — ME/EPP"
+    assert fields.trib_issqn == "Operação Tributável"
+    assert fields.tp_ret_issqn == "Não Retido"
+    assert fields.amb_gerador == "Sistema Nacional NFS-e"
     assert "JOSE FLORIDO" in fields.prestador_endereco.upper().replace("É", "E")
     assert "Spike" in fields.tomador_endereco or "Rua Spike" in fields.tomador_endereco
     assert fields.tomador_nome.startswith("MARIA")
@@ -83,7 +89,10 @@ def test_render_authorized_pdf_a4_single_page_with_qr_metadata():
     assert "Atibaia" in text
     assert "Homologação" in text
     assert "PRESTADOR EXEQ LAB" in text
-    assert "010701" in text
+    assert "01.07.01" in text or "010701" in text
+    assert "TRIBUTAÇÃO MUNICIPAL" in text.upper() or "ISSQN" in text
+    assert "IBS" in text and "CBS" in text
+    assert "VALOR TOTAL" in text.upper()
     assert "R$ 1.500,00" in text
     assert "IDENTIFICA" in text
     assert "PRESTADOR" in text

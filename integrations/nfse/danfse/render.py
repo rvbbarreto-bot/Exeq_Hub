@@ -1,8 +1,9 @@
-"""Renderização PDF do DANFSe — NT SE/CGNFS-e 008/2026 v1.02 (Anexo I / M1 polish)."""
+"""Renderização PDF DANFSe — NT 008 gov-parity compacto (1 página A4)."""
 
 from __future__ import annotations
 
 import io
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
@@ -16,31 +17,58 @@ from reportlab.pdfgen import canvas
 
 from integrations.nfse.danfse.fields import DanfseFields, extract_danfse_fields
 from integrations.nfse.danfse.formatters import (
+    format_cep,
+    format_codigo_trib_nacional,
     format_competencia,
     format_datetime_br,
     format_document,
-    format_endereco_display,
+    format_endereco_curto,
+    format_ibge,
     format_money_br,
     format_percent_br,
 )
 from integrations.nfse.xml_safe import safe_fromstring
 
-LAYOUT_VERSION = "nt008-v1.02"
+LAYOUT_VERSION = "nt008-v1.06"
 _ASSETS = Path(__file__).resolve().parent / "assets"
 _LOGO_PATH = _ASSETS / "logo_nfse_horizontal.png"
 
-# NT 008 §2.2.3 — cinza claro 5%; §2.5.1 CANCELADA K35.
 _GRAY_HEADER = Color(0.95, 0.95, 0.95)
-_QR_MIN_CM = 1.52
-_MARGIN = 0.30 * cm
+_MARGIN = 0.28 * cm
+_USABLE_PAD = 0.14 * cm
+
+# Tipografia gov — layout top-down (Y = topo da faixa; evita invasão da barra cinza)
+_FS_LABEL = 5
+_FS_VALUE = 6.5
+_FS_BLOCK = 6
+_FS_HEADER = 8
+_FS_SUB = 6
+_LABEL_LEADING = 0.12 * cm
+_LABEL_VALUE_GAP = 0.08 * cm
+_ROW_PAD = 0.06 * cm
+_BLOCK_H = 0.34 * cm
+_BLOCK_PAD = 0.10 * cm
 
 
-def render_danfse_pdf(
-    xml_bytes: bytes,
-    *,
-    cancelled: bool = False,
-) -> bytes:
-    """Gera PDF A4 retrato, uma página, campos só do XML (RF-41a…d, RF-43, RF-47)."""
+@dataclass
+class _Ctx:
+    c: canvas.Canvas
+    width: float
+    height: float
+    y: float
+    fonts: dict[str, str]
+    cancelled: bool
+
+    @property
+    def left(self) -> float:
+        return _MARGIN + _USABLE_PAD
+
+    @property
+    def usable(self) -> float:
+        return self.width - 2 * _MARGIN - 2 * _USABLE_PAD
+
+
+def render_danfse_pdf(xml_bytes: bytes, *, cancelled: bool = False) -> bytes:
     fields = extract_danfse_fields(xml_bytes, cancelled=cancelled)
     fonts = _fonts()
     buffer = io.BytesIO()
@@ -49,377 +77,402 @@ def render_danfse_pdf(
     c.setTitle(f"DANFSe v2.0 — {fields.numero}")
     c.setSubject(f"danfse_layout_version={LAYOUT_VERSION}")
     c.setCreator("EXEQ Hub")
-
-    # Borda da página 1 pt (NT §2.2.3)
     c.setStrokeColor(black)
     c.setLineWidth(1)
     c.rect(_MARGIN, _MARGIN, width - 2 * _MARGIN, height - 2 * _MARGIN)
-
-    # Watermark atrás do conteúdo (NT §2.5.1) — não cobrir títulos dos blocos.
     if fields.cancelled:
-        _draw_cancelled_watermark(c, width, height, fonts)
+        _watermark(c, width, height, fonts)
 
-    y = _draw_header(c, width, height, fields, fonts)
-    y = _draw_identificacao(c, width, y, fields, fonts)
-    y = _draw_prestador(c, width, y, fields, fonts)
-    y = _draw_tomador(c, width, y, fields, fonts)
-    y = _draw_servico(c, width, y, fields, fonts)
-    y = _draw_valores(c, width, y, fields, fonts)
-    _draw_complementares(c, width, y, fields, fonts)
+    ctx = _Ctx(c=c, width=width, height=height, y=height - _MARGIN, fonts=fonts, cancelled=fields.cancelled)
+    ctx.y = _header(ctx, fields)
+    _section_identificacao(ctx, fields)
+    _section_prestador(ctx, fields)
+    _section_tomador(ctx, fields)
+    _section_dest_inter(ctx, fields)
+    _section_servico(ctx, fields)
+    _section_trib_mun(ctx, fields)
+    _section_trib_fed(ctx, fields)
+    _section_trib_ibscbs(ctx, fields)
+    _section_valores(ctx, fields)
+    _section_complementares(ctx, fields)
 
-    c.showPage()
     c.save()
     return buffer.getvalue()
 
 
 @lru_cache(maxsize=1)
 def _fonts() -> dict[str, str]:
-    """Arial (títulos) + Microsoft Sans Serif (conteúdo); fallback Helvetica."""
-    title = "Helvetica-Bold"
-    body = "Helvetica"
-    candidates = [
-        (Path(r"C:\Windows\Fonts\arial.ttf"), Path(r"C:\Windows\Fonts\arialbd.ttf"),
-         Path(r"C:\Windows\Fonts\micross.ttf")),
-        (Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
-         Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
-         Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")),
-    ]
-    for regular, bold, ms in candidates:
+    title, body = "Helvetica-Bold", "Helvetica"
+    for regular, bold in (
+        (Path(r"C:\Windows\Fonts\arial.ttf"), Path(r"C:\Windows\Fonts\arialbd.ttf")),
+        (
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+        ),
+    ):
         try:
             if regular.is_file() and bold.is_file():
                 pdfmetrics.registerFont(TTFont("DanfseArial", str(regular)))
                 pdfmetrics.registerFont(TTFont("DanfseArial-Bold", str(bold)))
-                title = "DanfseArial-Bold"
-                body = "DanfseArial"
-                if ms.is_file():
-                    pdfmetrics.registerFont(TTFont("DanfseMSS", str(ms)))
-                    body = "DanfseMSS"
-                break
+                return {"title": "DanfseArial-Bold", "body": "DanfseArial"}
         except Exception:  # noqa: BLE001
             continue
     return {"title": title, "body": body}
 
 
-def _draw_header(
-    c: canvas.Canvas,
-    width: float,
-    height: float,
-    fields: DanfseFields,
-    fonts: dict[str, str],
-) -> float:
-    left = _MARGIN + 0.15 * cm
-    top = height - _MARGIN
+def _header(ctx: _Ctx, f: DanfseFields) -> float:
+    c, w, top = ctx.c, ctx.width, ctx.y
+    left = ctx.left
 
-    # Logo oficial NFS-e (NT §2.4.3) — ~4,00 × 0,85 cm
     if _LOGO_PATH.is_file():
-        logo_w, logo_h = 4.0 * cm, 0.85 * cm
-        c.drawImage(
-            str(_LOGO_PATH),
-            left + 0.15 * cm,
-            top - 0.45 * cm - logo_h,
-            width=logo_w,
-            height=logo_h,
-            mask="auto",
-            preserveAspectRatio=True,
-            anchor="c",
-        )
+        lw, lh = 3.6 * cm, 0.72 * cm
+        c.drawImage(str(_LOGO_PATH), left, top - 0.35 * cm - lh, width=lw, height=lh, mask="auto", preserveAspectRatio=True)
 
-    # Centro: DANFSe v2.0 + subtítulo (Arial Bold 9)
-    c.setFillColor(black)
-    c.setFont(fonts["title"], 9)
-    c.drawCentredString(width / 2, top - 1.0 * cm, "DANFSe v2.0")
-    c.drawCentredString(width / 2, top - 1.4 * cm, "Documento Auxiliar da NFS-e")
+    c.setFont(ctx.fonts["title"], _FS_HEADER)
+    c.drawCentredString(w / 2, top - 0.85 * cm, "DANFSe v2.0")
+    c.setFont(ctx.fonts["body"], _FS_SUB)
+    c.drawCentredString(w / 2, top - 1.12 * cm, "Documento Auxiliar da NFS-e")
 
-    if fields.is_homologacao:
+    if f.is_homologacao:
         c.setFillColor(red)
-        c.setFont(fonts["title"], 9)
-        c.drawCentredString(
-            width / 2,
-            top - 1.85 * cm,
-            "NFS-e SEM VALIDADE JURÍDICA",
-        )
+        c.setFont(ctx.fonts["title"], 7)
+        c.drawCentredString(w / 2, top - 1.38 * cm, "NFS-e SEM VALIDADE JURÍDICA")
         c.setFillColor(black)
 
-    # Direita: município 8pt; ambiente 6pt
-    right = width - _MARGIN - 0.2 * cm
-    c.setFont(fonts["body"], 8)
-    c.drawRightString(right - 1.7 * cm, top - 0.9 * cm, fields.municipio_emitente)
-    c.setFont(fonts["body"], 6)
-    c.drawRightString(right - 1.7 * cm, top - 1.25 * cm, "Sistema Nacional NFS-e")
-    c.drawRightString(right - 1.7 * cm, top - 1.5 * cm, fields.ambiente)
-    c.setFont(fonts["body"], 6)
-    c.drawRightString(right - 1.7 * cm, top - 1.75 * cm, LAYOUT_VERSION)
+    right = w - _MARGIN - _USABLE_PAD
+    mun_line = f.municipio_emitente
+    if f.prestador_uf:
+        mun_line = f"{mun_line} - {f.prestador_uf}"
+    c.setFont(ctx.fonts["body"], _FS_VALUE)
+    c.drawRightString(right - 1.55 * cm, top - 0.75 * cm, mun_line)
+    c.setFont(ctx.fonts["body"], _FS_LABEL)
+    c.drawRightString(right - 1.55 * cm, top - 0.98 * cm, "Sistema Nacional NFS-e")
+    c.drawRightString(right - 1.55 * cm, top - 1.18 * cm, f.ambiente)
+    c.drawRightString(right - 1.55 * cm, top - 1.36 * cm, LAYOUT_VERSION)
 
-    # QR Code coordenadas aproximadas NT (X≈17,48 cm; Y≈1,67 cm do topo; mín 1,52 cm)
-    qr_side = _QR_MIN_CM * cm
-    qr_x = 17.48 * cm
-    qr_y = height - 1.67 * cm - qr_side
-    c.drawImage(
-        _qr_image(fields.qr_payload),
-        qr_x,
-        qr_y,
-        width=qr_side,
-        height=qr_side,
-        mask="auto",
-    )
-    c.setFont(fonts["body"], 6)
-    qr_caption = (
-        "A autenticidade desta NFS-e pode ser verificada pela leitura deste código QR "
-        "ou pela consulta da chave de acesso no portal nacional da NFS-e"
-    )
-    _draw_wrapped(
-        c,
-        qr_caption,
-        x=15.80 * cm,
-        y=qr_y - 0.25 * cm,
-        max_width=4.7 * cm,
-        font=fonts["body"],
-        size=6,
-        leading=8,
-        align="center",
-        center_x=qr_x + qr_side / 2,
-    )
+    qr = 1.45 * cm
+    qx = w - _MARGIN - qr - 0.05 * cm
+    qy = top - 0.32 * cm - qr
+    c.drawImage(_qr_image(f.qr_payload), qx, qy, width=qr, height=qr, mask="auto")
+    cap = "A autenticidade desta NFS-e pode ser verificada pela leitura deste código QR ou pela consulta da chave de acesso no portal nacional da NFS-e"
+    _wrap(c, cap, x=qx - 0.15 * cm, y=qy - 0.10 * cm, w=qr + 0.25 * cm, font=ctx.fonts["body"], size=4.5, leading=5.5, cx=qx + qr / 2)
 
-    header_bottom = min(top - 2.5 * cm, qr_y - 1.1 * cm)
-    return header_bottom - 0.15 * cm
+    chave_top = top - 1.55 * cm
+    c.setFont(ctx.fonts["title"], _FS_LABEL)
+    lb = chave_top - _ascent(ctx.fonts["title"], _FS_LABEL)
+    c.drawString(left, lb, "N° NFS-e / CHAVE DE ACESSO DA NFS-e")
+    c.setFont(ctx.fonts["body"], _FS_VALUE)
+    chave_txt = f"{f.numero} / {''.join(ch for ch in f.chave_acesso if ch.isdigit())}"
+    vb = lb - _LABEL_LEADING - _LABEL_VALUE_GAP - _ascent(ctx.fonts["body"], _FS_VALUE)
+    c.drawString(left, vb, _truncate_width(c, chave_txt, qx - left - 0.15 * cm, ctx.fonts["body"], _FS_VALUE))
+
+    chave_bottom = vb - _descent(ctx.fonts["body"], _FS_VALUE) - _ROW_PAD
+    body_top = min(chave_bottom, qy - 0.58 * cm)
+    return body_top
 
 
-def _draw_identificacao(c, width, y, fields, fonts) -> float:
-    y = _block_title(c, width, y, "IDENTIFICAÇÃO DA NFS-e", fonts)
-    y = _kv(c, width, y, "Chave de Acesso", _format_chave(fields.chave_acesso), fonts)
-    y = _kv_row(
-        c,
-        width,
-        y,
-        fonts,
-        ("Nº NFS-e", fields.numero),
-        ("Competência", format_competencia(fields.competencia)),
-        ("Situação", fields.situacao),
-    )
-    y = _kv_row(
-        c,
-        width,
-        y,
-        fonts,
-        ("Data/Hora emissão", format_datetime_br(fields.data_emissao)),
-        ("Nº DPS", fields.numero_dps),
-        ("Série DPS", fields.serie_dps),
-    )
-    y = _kv_row(
-        c,
-        width,
-        y,
-        fonts,
-        ("Data/Hora DPS", format_datetime_br(fields.data_emissao_dps)),
-        ("Emitente", fields.emitente_nfse),
-        ("Finalidade", fields.finalidade),
-    )
-    return y - 0.12 * cm
+def _section_identificacao(ctx: _Ctx, f: DanfseFields) -> None:
+    ctx.y = _block(ctx, "IDENTIFICAÇÃO DA NFS-e")
+    ctx.y = _grid(ctx, [
+        ("NÚMERO DA NFS-e", f.numero),
+        ("COMPETÊNCIA DA NFS-e", format_competencia(f.competencia)),
+        ("DATA E HORA DA EMISSÃO DA NFS-e", format_datetime_br(f.data_emissao)),
+        ("NÚMERO DA DPS", f.numero_dps),
+        ("SÉRIE DA DPS", f.serie_dps),
+        ("DATA E HORA DA EMISSÃO DA DPS", format_datetime_br(f.data_emissao_dps)),
+        ("EMITENTE DA NFS-e", f.emitente_nfse),
+        ("SITUAÇÃO DA NFS-e", f.situacao),
+        ("FINALIDADE", f.finalidade),
+        ("VERSÃO APLICATIVO", f.ver_aplic),
+    ], cols=3)
 
 
-def _draw_prestador(c, width, y, fields, fonts) -> float:
-    y = _block_title(c, width, y, "PRESTADOR / FORNECEDOR", fonts)
-    y = _kv(c, width, y, "Nome", fields.prestador_nome, fonts, stacked=True)
-    y = _kv_row(
-        c,
-        width,
-        y,
-        fonts,
-        ("CNPJ/CPF/NIF", format_document(fields.prestador_doc)),
-        ("IM", fields.prestador_im),
-        ("Município", fields.prestador_municipio),
-    )
-    if fields.prestador_endereco not in {"", "—"}:
-        y = _kv(
-            c,
-            width,
-            y,
-            "Endereço",
-            format_endereco_display(fields.prestador_endereco),
-            fonts,
-            value_maxlen=110,
-            stacked=True,
-        )
-    return y - 0.12 * cm
+def _section_prestador(ctx: _Ctx, f: DanfseFields) -> None:
+    ctx.y = _block(ctx, "PRESTADOR / FORNECEDOR")
+    mun_uf = f"{f.prestador_municipio} / {f.prestador_uf}" if f.prestador_uf else f.prestador_municipio
+    ibge_cep = " / ".join(
+        p for p in (
+            format_ibge(f.prestador_cmun) if f.prestador_cmun else "",
+            format_cep(f.prestador_cep) if f.prestador_cep else "",
+        ) if p
+    ) or "—"
+    ctx.y = _grid(ctx, [
+        ("CNPJ / CPF / NIF", format_document(f.prestador_doc)),
+        ("Indicador Municipal (Inscrição)", f.prestador_im),
+        ("Telefone", f.prestador_fone or "—"),
+        ("E-mail", f.prestador_email or "—"),
+        ("Nome / Nome Empresarial", f.prestador_nome),
+        ("Município / Sigla UF", mun_uf),
+        ("Código IBGE / CEP", ibge_cep),
+    ], cols=4)
+    ctx.y = _full(ctx, "Endereço", format_endereco_curto(f.prestador_endereco))
+    sn = f.op_simp_nac.replace("Optante — ", "Optante - ") if f.op_simp_nac else "—"
+    ctx.y = _grid(ctx, [
+        ("Simples Nacional na Data de Competência", sn),
+        ("Regime de Apuração Tributária pelo SN", f.reg_ap_trib_sn or "—"),
+    ], cols=2)
 
 
-def _draw_tomador(c, width, y, fields, fonts) -> float:
-    y = _block_title(c, width, y, "TOMADOR / ADQUIRENTE", fonts)
-    if fields.tomador_nome in {"", "—"} and fields.tomador_doc in {"", "—"}:
-        y = _kv(
-            c,
-            width,
-            y,
-            "",
-            "TOMADOR/ADQUIRENTE DA OPERAÇÃO NÃO IDENTIFICADO NA NFS-e",
-            fonts,
-        )
-        return y - 0.12 * cm
-    y = _kv(c, width, y, "Nome", fields.tomador_nome, fonts, stacked=True)
-    y = _kv_row(
-        c,
-        width,
-        y,
-        fonts,
-        ("CNPJ/CPF/NIF", format_document(fields.tomador_doc)),
-        ("IM", fields.tomador_im or "—"),
-        ("", ""),
-    )
-    if fields.tomador_endereco:
-        y = _kv(
-            c,
-            width,
-            y,
-            "Endereço",
-            format_endereco_display(fields.tomador_endereco),
-            fonts,
-            value_maxlen=110,
-            stacked=True,
-        )
-    return y - 0.12 * cm
+def _section_tomador(ctx: _Ctx, f: DanfseFields) -> None:
+    ctx.y = _block(ctx, "TOMADOR / ADQUIRENTE")
+    if f.tomador_nome in {"", "—"} and f.tomador_doc in {"", "—"}:
+        ctx.y = _full(ctx, "", "TOMADOR / ADQUIRENTE DA OPERAÇÃO NÃO IDENTIFICADO NA NFS-e")
+        return
+    mun = f.tomador_municipio or format_ibge(f.tomador_cmun) if f.tomador_cmun else "—"
+    mun_uf = f"{mun} / {f.tomador_uf}" if f.tomador_uf else mun
+    ibge_cep = " / ".join(
+        p for p in (
+            format_ibge(f.tomador_cmun) if f.tomador_cmun else "",
+            format_cep(f.tomador_cep) if f.tomador_cep else "",
+        ) if p
+    ) or "—"
+    ctx.y = _grid(ctx, [
+        ("CNPJ / CPF / NIF", format_document(f.tomador_doc)),
+        ("Indicador Municipal (Inscrição)", f.tomador_im or "—"),
+        ("Telefone", "—"),
+        ("E-mail", f.tomador_email or "—"),
+        ("Nome / Nome Empresarial", f.tomador_nome),
+        ("Município / Sigla UF", mun_uf),
+        ("Código IBGE / CEP", ibge_cep),
+    ], cols=4)
+    ctx.y = _full(ctx, "Endereço", format_endereco_curto(f.tomador_endereco or "—"))
 
 
-def _draw_servico(c, width, y, fields, fonts) -> float:
-    y = _block_title(c, width, y, "SERVIÇO PRESTADO", fonts)
-    y = _kv_row(
-        c,
-        width,
-        y,
-        fonts,
-        ("Cód. trib. nacional", fields.codigo_servico),
-        ("Local da prestação", fields.local_prestacao),
-        ("", ""),
-    )
-    y = _kv(c, width, y, "Descrição", fields.descricao_servico, fonts, value_maxlen=120, stacked=True)
-    return y - 0.12 * cm
+def _section_dest_inter(ctx: _Ctx, f: DanfseFields) -> None:
+    ctx.y = _block(ctx, "DESTINATÁRIO / INTERMEDIÁRIO")
+    dest = f.destinatario_nome or "DESTINATÁRIO DA OPERAÇÃO NÃO IDENTIFICADO NA NFS-e"
+    inter = f.intermediario_nome or "INTERMEDIÁRIO DA OPERAÇÃO NÃO IDENTIFICADO NA NFS-e"
+    ctx.y = _line(ctx, dest)
+    ctx.y = _line(ctx, inter)
 
 
-def _draw_valores(c, width, y, fields, fonts) -> float:
-    y = _block_title(c, width, y, "VALORES", fonts)
-    y = _kv_row(
-        c,
-        width,
-        y,
-        fonts,
-        ("Valor do serviço", format_money_br(fields.valor_servico)),
-        ("Valor ISSQN", format_money_br(fields.valor_iss)),
-        ("", ""),
-    )
-    # Sombreamento campo valor líquido (NT §2.2.3)
-    left = _MARGIN + 0.1 * cm
-    usable = width - 2 * _MARGIN - 0.2 * cm
-    c.setFillColor(_GRAY_HEADER)
-    c.rect(left, y - 0.85 * cm, usable, 0.78 * cm, fill=1, stroke=0)
-    c.setFillColor(black)
-    y = _kv(
-        c,
-        width,
-        y,
-        "Valor líquido da NFS-e",
-        format_money_br(fields.valor_liquido),
-        fonts,
-        stacked=True,
-    )
-    return y - 0.12 * cm
+def _section_servico(ctx: _Ctx, f: DanfseFields) -> None:
+    ctx.y = _block(ctx, "SERVIÇO PRESTADO")
+    cod = format_codigo_trib_nacional(f.codigo_servico)
+    trib_mun = f.codigo_trib_municipal or "-"
+    local = f.local_prestacao
+    if f.local_prestacao_uf:
+        local = f"{local} / {f.local_prestacao_uf} / -"
+    ctx.y = _grid(ctx, [
+        ("Código de Tributação Nacional/Municipal", f"{cod} / {trib_mun}"),
+        ("Código da NBS", f.codigo_nbs or "—"),
+        ("Local da Prestação / Sigla UF / País", local),
+    ], cols=3)
+    ctx.y = _full(ctx, "Descrição do Serviço", f.descricao_servico)
 
 
-def _draw_complementares(c, width, y, fields, fonts) -> None:
-    y = _block_title(c, width, y, "INFORMAÇÕES COMPLEMENTARES", fonts)
-    fed = format_money_br(fields.approx_federais) if fields.approx_federais else "—"
-    est = format_money_br(fields.approx_estaduais) if fields.approx_estaduais else "—"
-    mun = format_money_br(fields.approx_municipais) if fields.approx_municipais else "—"
-    trib = f"Federais: {fed} | Estaduais: {est} | Municipais: {mun}"
-    sn = format_percent_br(fields.approx_sn_percent)
+def _section_trib_mun(ctx: _Ctx, f: DanfseFields) -> None:
+    ctx.y = _block(ctx, "TRIBUTAÇÃO MUNICIPAL (ISSQN)")
+    incid = f.municipio_incidencia
+    if f.prestador_uf:
+        incid = f"{incid} / {f.prestador_uf} / -"
+    ctx.y = _grid(ctx, [
+        ("Tipo de Tributação do ISSQN", f.trib_issqn),
+        ("Município / Sigla UF / País de Incidência do ISSQN", incid),
+        ("BC ISSQN", _dash(f.iss_bc)),
+        ("Alíquota Aplicada", format_percent_br(f.iss_aliquota) or "—"),
+        ("Retenção do ISSQN", f.tp_ret_issqn),
+        ("ISSQN Apurado", _dash(f.iss_valor or f.valor_iss)),
+    ], cols=3)
+
+
+def _section_trib_fed(ctx: _Ctx, f: DanfseFields) -> None:
+    ctx.y = _block(ctx, "TRIBUTAÇÃO FEDERAL (EXCETO CBS)")
+    ctx.y = _grid(ctx, [
+        ("IRRF", _dash(f.irrf)),
+        ("Contribuição Previdenciária - Retida", _dash(f.inss)),
+        ("PIS - Débito Apuração Própria", _dash(f.pis)),
+        ("COFINS - Débito Apuração Própria", _dash(f.cofins)),
+        ("Contribuições Sociais - Retidas", _dash(f.csll)),
+    ], cols=5)
+
+
+def _section_trib_ibscbs(ctx: _Ctx, f: DanfseFields) -> None:
+    ctx.y = _block(ctx, "TRIBUTAÇÃO IBS/CBS")
+    cst_class = f"{f.cst_ibs_cbs or '-'} / {f.c_class_trib or '-'}"
+    ctx.y = _grid(ctx, [
+        ("CST / cClassTrib", cst_class),
+        ("Indicador de Operação", f.c_ind_op or "—"),
+        ("Base de Cálculo Após Exclusões e Reduções", _dash(f.ibs_bc)),
+        ("Alíquota - IBS UF / IBS Mun", f"{format_percent_br(f.ibs_aliq_uf) or '-'} / {format_percent_br(f.ibs_aliq_mun) or '-'}"),
+        ("Valor Total Apurado - IBS", _dash(f.ibs_valor)),
+        ("Alíquota - CBS", format_percent_br(f.cbs_aliquota) or "—"),
+        ("Valor Total Apurado - CBS", _dash(f.cbs_valor)),
+        ("Total do IBS/CBS", "R$ 0,00"),
+    ], cols=4)
+
+
+def _section_valores(ctx: _Ctx, f: DanfseFields) -> None:
+    ctx.y = _block(ctx, "VALOR TOTAL DA NFS-e")
+    ctx.y = _grid(ctx, [
+        ("VALOR DA OPERAÇÃO / SERVIÇO", _money(f.valor_servico)),
+        ("Desconto Incondicionado", _dash(f.desconto_incond)),
+        ("Desconto Condicionado", _dash(f.desconto_cond)),
+        ("Total das Retenções (ISSQN / Federais)", "—"),
+    ], cols=4)
+    left, usable = ctx.left, ctx.usable
+    rh = _row_height(ctx, extra_label_lines=0)
+    ctx.c.setFillColor(_GRAY_HEADER)
+    ctx.c.rect(left - 0.04 * cm, ctx.y - rh, usable + 0.08 * cm, rh - 0.02 * cm, fill=1, stroke=0)
+    ctx.c.setFillColor(black)
+    ctx.y = _grid(ctx, [
+        ("VALOR LÍQUIDO DA NFS-e", _money(f.valor_liquido)),
+        ("VALOR LÍQUIDO DA NFS-e + IBS/CBS", "R$ 0,00"),
+    ], cols=2)
+
+
+def _section_complementares(ctx: _Ctx, f: DanfseFields) -> None:
+    ctx.y = _block(ctx, "INFORMAÇÕES COMPLEMENTARES")
+    parts: list[str] = []
+    if f.informacoes_complementares:
+        parts.append(f.informacoes_complementares)
+    sn = format_percent_br(f.approx_sn_percent)
+    trib_txt = "Totais aproximados dos Tributos cfe. Lei n° 12.741/2012: Federais: -; Estaduais: -; Municipais: -;"
     if sn:
-        trib = f"{trib} | Simples Nacional: {sn}"
-    _kv(
-        c,
-        width,
-        y,
-        "Totais aproximados de tributos (Lei 12.741/2012)",
-        trib,
-        fonts,
-        value_maxlen=120,
-        stacked=True,
-    )
+        trib_txt = f"{trib_txt} Simples Nacional: {sn}"
+    parts.append(trib_txt)
+    _full(ctx, "", " ".join(parts))
 
 
-def _block_title(c, width, y, title: str, fonts: dict[str, str]) -> float:
-    left = _MARGIN + 0.1 * cm
-    usable = width - 2 * _MARGIN - 0.2 * cm
-    h = 0.48 * cm
+def _ascent(font: str, size: float) -> float:
+    try:
+        return pdfmetrics.getAscent(font) / 1000.0 * size
+    except Exception:  # noqa: BLE001
+        return size * 0.72
+
+
+def _descent(font: str, size: float) -> float:
+    try:
+        return abs(pdfmetrics.getDescent(font)) / 1000.0 * size
+    except Exception:  # noqa: BLE001
+        return size * 0.2
+
+
+def _block(ctx: _Ctx, title: str) -> float:
+    """Desenha barra de seção; ctx.y passa a ser o TOPO da área de conteúdo abaixo."""
+    c, y_top, left, usable = ctx.c, ctx.y, ctx.left, ctx.usable
+    block_bottom = y_top - _BLOCK_H
     c.setFillColor(_GRAY_HEADER)
     c.setStrokeColor(black)
-    c.setLineWidth(0.5)
-    c.rect(left, y - h, usable, h, fill=1, stroke=1)
+    c.setLineWidth(0.4)
+    c.rect(left - 0.04 * cm, block_bottom, usable + 0.08 * cm, _BLOCK_H, fill=1, stroke=1)
     c.setFillColor(black)
-    c.setFont(fonts["title"], 8)
-    c.drawString(left + 0.15 * cm, y - h + 0.14 * cm, title)
-    return y - h - 0.18 * cm
+    c.setFont(ctx.fonts["title"], _FS_BLOCK)
+    title_baseline = block_bottom + (_BLOCK_H - _ascent(ctx.fonts["title"], _FS_BLOCK)) / 2 + 0.02 * cm
+    c.drawString(left + 0.06 * cm, title_baseline, title)
+    ctx.y = block_bottom - _BLOCK_PAD
+    return ctx.y
 
 
-def _kv(
-    c,
-    width,
-    y,
-    label: str,
-    value: str,
-    fonts: dict[str, str],
-    *,
-    value_maxlen: int = 95,
-    stacked: bool | None = None,
-) -> float:
-    """Label + valor com folga vertical (evita colisão — autorizada e cancelada)."""
-    left = _MARGIN + 0.2 * cm
-    usable = width - 2 * _MARGIN - 0.4 * cm
-    value_txt = _clip(value, value_maxlen)
-    if not label:
-        c.setFont(fonts["body"], 7)
-        c.drawString(left, y, value_txt)
-        return y - 0.42 * cm
+def _label_block_height(ctx: _Ctx | None = None, *, extra_label_lines: int = 0) -> float:
+    font = ctx.fonts["title"] if ctx else "DanfseArial-Bold"
+    n = 1 + extra_label_lines
+    return _ascent(font, _FS_LABEL) + (n - 1) * _LABEL_LEADING + _descent(font, _FS_LABEL) * 0.35
 
-    # Label longo ou stacked explícito → valor na linha de baixo.
-    use_stack = stacked if stacked is not None else (
-        len(label) > 28 or c.stringWidth(label, fonts["title"], 7) > 4.8 * cm
+
+def _row_height(ctx: _Ctx | None = None, *, extra_label_lines: int = 0) -> float:
+    body = ctx.fonts["body"] if ctx else "DanfseArial"
+    return (
+        _label_block_height(ctx, extra_label_lines=extra_label_lines)
+        + _LABEL_VALUE_GAP
+        + _ascent(body, _FS_VALUE)
+        + _descent(body, _FS_VALUE) * 0.35
+        + _ROW_PAD
     )
-    if use_stack:
-        c.setFont(fonts["title"], 7)
-        c.drawString(left, y, label)
-        c.setFont(fonts["body"], 8)
-        c.drawString(left, y - 0.36 * cm, value_txt)
-        return y - 0.72 * cm
-
-    c.setFont(fonts["title"], 7)
-    c.drawString(left, y, label)
-    c.setFont(fonts["body"], 8)
-    c.drawString(left + 5.4 * cm, y, value_txt)
-    return y - 0.48 * cm
 
 
-def _kv_row(c, width, y, fonts, *pairs: tuple[str, str]) -> float:
-    left = _MARGIN + 0.2 * cm
-    usable = width - 2 * _MARGIN - 0.4 * cm
-    cols = [p for p in pairs if p[0] or p[1]]
-    if not cols:
-        return y
-    col_w = usable / max(len(cols), 1)
-    for i, (label, value) in enumerate(cols):
-        x = left + i * col_w
-        if label:
-            c.setFont(fonts["title"], 6)
-            c.drawString(x, y, label)
-            c.setFont(fonts["body"], 8)
-            c.drawString(x, y - 0.38 * cm, _clip(value, 32))
-    return y - 0.78 * cm
+def _grid(ctx: _Ctx, cells: list[tuple[str, str]], *, cols: int) -> float:
+    if not cells:
+        return ctx.y
+    left, usable, y_top = ctx.left, ctx.usable, ctx.y
+    col_w = usable / cols
+    row_cells = [cells[i : i + cols] for i in range(0, len(cells), cols)]
+    for row in row_cells:
+        max_extra = 0
+        prepared: list[tuple[list[str], str]] = []
+        for label, value in row:
+            label_lines = _wrap_lines(
+                ctx.c, label, col_w - 0.06 * cm, ctx.fonts["title"], _FS_LABEL, max_lines=2
+            )
+            max_extra = max(max_extra, len(label_lines) - 1)
+            val = _truncate_width(ctx.c, value, col_w - 0.06 * cm, ctx.fonts["body"], _FS_VALUE)
+            prepared.append((label_lines, val))
+
+        rh = _row_height(ctx, extra_label_lines=max_extra)
+        label_h = _label_block_height(ctx, extra_label_lines=max_extra)
+        label_base = y_top - _ascent(ctx.fonts["title"], _FS_LABEL)
+        val_base = y_top - label_h - _LABEL_VALUE_GAP - _ascent(ctx.fonts["body"], _FS_VALUE)
+
+        for i, (label_lines, val) in enumerate(prepared):
+            x = left + i * col_w
+            for li, ll in enumerate(label_lines):
+                ctx.c.setFont(ctx.fonts["title"], _FS_LABEL)
+                ctx.c.drawString(x, label_base - li * _LABEL_LEADING, ll)
+            ctx.c.setFont(ctx.fonts["body"], _FS_VALUE)
+            ctx.c.drawString(x, val_base, val)
+
+        y_top -= rh
+    ctx.y = y_top
+    return y_top
 
 
-def _draw_cancelled_watermark(c, width, height, fonts) -> None:
-    """Marca d'água diagonal K35 atrás do texto (NT §2.5.1)."""
+def _truncate_width(c, text: str, max_w: float, font: str, size: float) -> str:
+    t = (text or "—").strip() or "—"
+    c.setFont(font, size)
+    if c.stringWidth(t, font, size) <= max_w:
+        return t
+    ell = "…"
+    while t and c.stringWidth(t + ell, font, size) > max_w:
+        t = t[:-1]
+    return (t + ell) if t else ell
+
+
+def _full(ctx: _Ctx, label: str, value: str) -> float:
+    y_top, left, usable = ctx.y, ctx.left, ctx.usable
+    if label:
+        lb = y_top - _ascent(ctx.fonts["title"], _FS_LABEL)
+        ctx.c.setFont(ctx.fonts["title"], _FS_LABEL)
+        ctx.c.drawString(left, lb, label)
+        vb = y_top - _label_block_height(ctx) - _LABEL_VALUE_GAP - _ascent(ctx.fonts["body"], _FS_VALUE)
+    else:
+        vb = y_top - _ascent(ctx.fonts["body"], _FS_VALUE)
+    ctx.c.setFont(ctx.fonts["body"], _FS_VALUE)
+    ctx.c.drawString(left, vb, _truncate_width(ctx.c, value, usable, ctx.fonts["body"], _FS_VALUE))
+    ctx.y = vb - _descent(ctx.fonts["body"], _FS_VALUE) - _ROW_PAD
+    return ctx.y
+
+
+def _line(ctx: _Ctx, text: str) -> float:
+    y_top = ctx.y
+    vb = y_top - _ascent(ctx.fonts["body"], _FS_VALUE)
+    ctx.c.setFont(ctx.fonts["body"], _FS_VALUE)
+    ctx.c.drawString(ctx.left, vb, _truncate_width(ctx.c, text, ctx.usable, ctx.fonts["body"], _FS_VALUE))
+    ctx.y = vb - _descent(ctx.fonts["body"], _FS_VALUE) - _ROW_PAD
+    return ctx.y
+
+
+def _fit(text: str, max_chars: int, *, font: str = "DanfseArial") -> str:
+    t = (text or "—").strip() or "—"
+    if len(t) <= max_chars:
+        return t
+    return t[: max(1, max_chars - 1)] + "…"
+
+
+def _dash(v: str) -> str:
+    return "—" if not v or v in {"—", "-"} else _money(v)
+
+
+def _money(v: str) -> str:
+    if not v or v in {"—", "-"}:
+        return "—"
+    return format_money_br(v)
+
+
+def _watermark(c, w, h, fonts) -> None:
     c.saveState()
-    # Cinza K35 com alfa — permanece legível sob títulos/valores.
     c.setFillColor(Color(0.65, 0.65, 0.65, alpha=0.45))
-    c.setFont(fonts["title"], 48)
-    c.translate(width / 2, height / 2)
+    c.setFont(fonts["title"], 44)
+    c.translate(w / 2, h / 2)
     c.rotate(45)
     c.drawCentredString(0, 0, "CANCELADA")
     c.restoreState()
@@ -428,7 +481,7 @@ def _draw_cancelled_watermark(c, width, height, fonts) -> None:
 def _qr_image(payload: str):
     from reportlab.lib.utils import ImageReader
 
-    qr = qrcode.QRCode(version=None, box_size=8, border=1)
+    qr = qrcode.QRCode(version=None, box_size=6, border=1)
     qr.add_data(payload)
     qr.make(fit=True)
     img = qr.make_image(fill_color="black", back_color="white")
@@ -438,51 +491,46 @@ def _qr_image(payload: str):
     return ImageReader(bio)
 
 
-def _format_chave(chave: str) -> str:
-    digits = "".join(ch for ch in chave if ch.isdigit())
-    if len(digits) == 50:
-        return " ".join(digits[i : i + 5] for i in range(0, 50, 5))
-    return chave
-
-
-def _clip(value: str, max_len: int) -> str:
-    value = value or ""
-    if len(value) <= max_len:
-        return value
-    return value[: max_len - 1] + "…"
-
-
-def _draw_wrapped(
-    c,
-    text: str,
-    *,
-    x: float,
-    y: float,
-    max_width: float,
-    font: str,
-    size: int,
-    leading: float,
-    align: str = "left",
-    center_x: float | None = None,
-) -> None:
+def _wrap_lines(c, text: str, max_w: float, font: str, size: float, *, max_lines: int = 3) -> list[str]:
     c.setFont(font, size)
-    words = text.split()
+    words = (text or "").split()
+    if not words:
+        return [""]
     lines: list[str] = []
-    current = ""
+    cur = ""
     for word in words:
-        trial = f"{current} {word}".strip()
-        if c.stringWidth(trial, font, size) <= max_width:
-            current = trial
+        trial = f"{cur} {word}".strip()
+        if c.stringWidth(trial, font, size) <= max_w:
+            cur = trial
         else:
-            if current:
-                lines.append(current)
-            current = word
-    if current:
-        lines.append(current)
+            if cur:
+                lines.append(cur)
+            cur = word
+    if cur:
+        lines.append(cur)
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        lines[-1] = _truncate_width(c, lines[-1], max_w, font, size)
+    return lines
+
+
+def _wrap(c, text, *, x, y, w, font, size, leading, cx=None) -> None:
+    c.setFont(font, size)
+    words, cur, lines = text.split(), "", []
+    for word in words:
+        trial = f"{cur} {word}".strip()
+        if c.stringWidth(trial, font, size) <= w:
+            cur = trial
+        else:
+            if cur:
+                lines.append(cur)
+            cur = word
+    if cur:
+        lines.append(cur)
     cy = y
     for line in lines[:3]:
-        if align == "center" and center_x is not None:
-            c.drawCentredString(center_x, cy, line)
+        if cx is not None:
+            c.drawCentredString(cx, cy, line)
         else:
             c.drawString(x, cy, line)
         cy -= leading
@@ -492,5 +540,5 @@ def xml_is_well_formed(xml_bytes: bytes) -> bool:
     try:
         safe_fromstring(xml_bytes)
         return True
-    except Exception:  # noqa: BLE001 — lxml XMLSyntaxError e similares
+    except Exception:  # noqa: BLE001
         return False

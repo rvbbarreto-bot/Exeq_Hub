@@ -10,7 +10,13 @@ from zoneinfo import ZoneInfo
 from lxml import etree
 
 from apps.issuance.models import NfIssue
+from integrations.nfse.emission_text import resolve_emission_text
 from apps.master_data.models import Customer, TaxRegime
+from integrations.nfse.trib_fields import (
+    resolve_iss_rate_decimal,
+    resolve_op_simp_nac,
+    resolve_p_aliq,
+)
 from integrations.nfse.dps_contract import DpsContractError, assert_dps_structure
 
 NFSE_NS = "http://www.sped.fazenda.gov.br/nfse"
@@ -82,7 +88,7 @@ def to_sefin_dps_dict(
 
     iss_retained = bool(params.get("iss_retained", False))
     tipo_retencao = int(params.get("tipo_retencao_iss") or (2 if iss_retained else 1))
-    op_simp = 3 if provider.tax_regime == TaxRegime.SIMPLES else 1
+    op_simp = resolve_op_simp_nac(params=params, tax_regime=provider.tax_regime)
     trib_issqn = int(params.get("tributacao_iss") or 1)
     reg_esp = int(
         params.get("regime_especial_tributacao")
@@ -122,18 +128,38 @@ def to_sefin_dps_dict(
 
     toma = _tomador_dps(customer, fallback_ibge=issue.ibge_code)
 
+    descricao, info_compl = resolve_emission_text(issue)
+
     trib: dict[str, Any] = {
         "tribMun": {
             "tribISSQN": trib_issqn,
             "tpRetISSQN": tipo_retencao,
         }
     }
+    p_aliq = resolve_p_aliq(
+        params=params, op_simp_nac=op_simp, tipo_retencao=tipo_retencao
+    )
+    if p_aliq is not None:
+        trib["tribMun"]["pAliq"] = p_aliq
     if op_simp == 3:
         trib["totTrib"] = {
             "pTotTribSN": f"{Decimal(str(params.get('percentual_total_tributos_simples_nacional') or '6.0')).quantize(Decimal('0.01'))}"
         }
     else:
         trib["totTrib"] = {"indTotTrib": str(params.get("indicador_total_tributacao") or "0")}
+
+    serv_block: dict[str, Any] = {
+        "locPrest": {"cLocPrestacao": c_loc},
+        "cServ": {
+            "cTribNac": codigo_trib[:6].zfill(6),
+            "xDescServ": descricao,
+        },
+    }
+    c_trib_mun = (params.get("c_trib_mun") or "").strip()
+    if c_trib_mun:
+        serv_block["cServ"]["cTribMun"] = str(c_trib_mun)
+    if info_compl:
+        serv_block["infoCompl"] = {"xInfComp": info_compl}
 
     return {
         "infDPS": {
@@ -148,13 +174,7 @@ def to_sefin_dps_dict(
             "cLocEmi": c_loc,
             "prest": prest,
             "toma": toma,
-            "serv": {
-                "locPrest": {"cLocPrestacao": c_loc},
-                "cServ": {
-                    "cTribNac": codigo_trib[:6].zfill(6),
-                    "xDescServ": (service.description or "Servico")[:2000],
-                },
-            },
+            "serv": serv_block,
             "valores": {
                 "vServPrest": {"vServ": f"{amount}"},
                 "trib": trib,
@@ -313,6 +333,10 @@ def _append_serv(parent: etree._Element, serv: dict[str, Any]) -> None:
     if c_serv.get("cTribMun"):
         _txt(c_el, "cTribMun", str(c_serv["cTribMun"]))
     _txt(c_el, "xDescServ", str(c_serv.get("xDescServ") or "Servico"))
+    info_compl = serv.get("infoCompl") or {}
+    if info_compl.get("xInfComp"):
+        ic_el = etree.SubElement(el, f"{{{NFSE_NS}}}infoCompl")
+        _txt(ic_el, "xInfComp", str(info_compl["xInfComp"]))
 
 
 def _append_valores(parent: etree._Element, valores: dict[str, Any]) -> None:

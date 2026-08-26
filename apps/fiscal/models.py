@@ -117,6 +117,12 @@ class MunicipalTaxRule(TenantOwnedModel):
     simples_codigo_tributacao = models.SmallIntegerField(
         null=True, blank=True, verbose_name="Código tributação SN"
     )
+    c_trib_mun = models.CharField(
+        max_length=16,
+        blank=True,
+        default="",
+        verbose_name="Código tributação municipal (cTribMun)",
+    )
     valid_from = models.DateField(verbose_name="Válido de")
     valid_to = models.DateField(null=True, blank=True, verbose_name="Válido até")
     priority = models.IntegerField(default=100, verbose_name="Prioridade")

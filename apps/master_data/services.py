@@ -57,6 +57,17 @@ def create_customer(
 
 def create_service(*, tenant, service_code: str, description: str, **extra):
     from apps.master_data.models import ServiceCatalogItem
+    from apps.master_data.service_validation import normalize_ctn_iss
+
+    ctn_raw = extra.get("codigo_tributacao_nacional_iss")
+    if ctn_raw is not None and str(ctn_raw).strip():
+        extra["codigo_tributacao_nacional_iss"] = normalize_ctn_iss(str(ctn_raw))
+    operation_kind = extra.get(
+        "operation_kind", ServiceCatalogItem.OperationKind.SERVICO_ISS
+    )
+    if operation_kind == ServiceCatalogItem.OperationKind.LOCACAO_BEM:
+        extra["codigo_tributacao_nacional_iss"] = ""
+        extra["lc116_item"] = ""
 
     return ServiceCatalogItem.objects.create(
         tenant=tenant,
@@ -106,9 +117,11 @@ def ensure_services_for_wizard(*, tenant, limit: int = 500) -> list:
     from apps.master_data.models import ServiceCatalogItem
 
     def active():
-        return ServiceCatalogItem.objects.filter(tenant=tenant, is_active=True).order_by(
-            "service_code"
-        )
+        return ServiceCatalogItem.objects.filter(
+            tenant=tenant,
+            is_active=True,
+            operation_kind=ServiceCatalogItem.OperationKind.SERVICO_ISS,
+        ).order_by("service_code")
 
     qs = active()
     if qs.exists():
@@ -261,6 +274,7 @@ def apply_lookup_to_entity(
     entity.situacao_cadastral = result.situacao_cadastral
     entity.data_abertura = result.data_abertura
     entity.cnae_principal = result.cnae_principal
+    entity.cnaes_secundarios = list(result.cnaes_secundarios or [])
     entity.natureza_juridica = result.natureza_juridica
     entity.porte = result.porte
     entity.address = address
@@ -355,6 +369,7 @@ def cadastral_fields_from_result(result: CadastralLookupResult) -> dict[str, Any
         "situacao_cadastral": result.situacao_cadastral,
         "data_abertura": result.data_abertura,
         "cnae_principal": result.cnae_principal,
+        "cnaes_secundarios": list(result.cnaes_secundarios or []),
         "natureza_juridica": result.natureza_juridica,
         "porte": result.porte,
         "address": address,

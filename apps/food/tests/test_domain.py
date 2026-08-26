@@ -84,6 +84,21 @@ def test_create_order_whatsapp_idempotent(tenant_a, customer, product):
 
 
 @pytest.mark.django_db
+def test_create_order_accepts_string_product_id(tenant_a, customer, product):
+    """Hub POST envia product_id como string no form HTML."""
+    order = create_order(
+        tenant=tenant_a,
+        customer_id=customer.id,
+        channel=FoodOrder.Channel.COUNTER,
+        lines=[{"product_id": str(product.id), "quantity": "1"}],
+        idempotency_key="hub-str-product-id",
+        await_pix=True,
+    )
+    assert order.lines.count() == 1
+    assert order.lines.get().product_id == product.id
+
+
+@pytest.mark.django_db
 def test_create_order_counter_paid_deducts_stock(tenant_a, customer, product):
     order = create_order(
         tenant=tenant_a,

@@ -19,6 +19,16 @@ def test_legacy_app_and_cadastros_redirect_to_hub(client):
 
 
 @pytest.mark.django_db
+def test_ensure_platform_admin_lab_defaults():
+    call_command("ensure_platform_admin")
+    User = get_user_model()
+    admin = User.objects.get(email="admin@local")
+    assert admin.name == "admin"
+    assert admin.is_superuser and admin.is_staff and admin.is_platform_admin
+    assert admin.check_password("admin")
+
+
+@pytest.mark.django_db
 def test_ensure_platform_admin_wipe_only_exeq_admin(tenant_a, user_ana, membership_admin):
     assert TenantMembership.objects.filter(user=user_ana).exists()
     call_command(

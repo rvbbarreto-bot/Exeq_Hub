@@ -68,6 +68,7 @@ def ensure_published_rule(
                 cofins_rate=old.cofins_rate,
                 iss_retained=old.iss_retained,
                 simples_codigo_tributacao=old.simples_codigo_tributacao,
+                c_trib_mun=getattr(old, "c_trib_mun", "") or "",
                 valid_from=old.valid_from,
                 valid_to=old.valid_to,
                 priority=old.priority,

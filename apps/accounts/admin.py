@@ -3,6 +3,7 @@ from django.http import HttpResponseRedirect
 from django.template.response import TemplateResponse
 from django.urls import path, reverse
 
+from apps.accounts.admin_user_forms import UserAddForm, UserChangeForm, UserResetPasswordForm
 from apps.accounts.models import (
     CertificateAudit,
     DigitalCertificate,
@@ -181,6 +182,74 @@ class UserAdmin(admin.ModelAdmin):
     list_display = ("email", "name", "is_active", "is_platform_admin")
     search_fields = ("email", "name")
     exclude = ("password",)
+
+    def get_form(self, request, obj=None, **kwargs):
+        if obj is None:
+            kwargs.setdefault("form", UserAddForm)
+        else:
+            kwargs.setdefault("form", UserChangeForm)
+        return super().get_form(request, obj, **kwargs)
+
+    def get_readonly_fields(self, request, obj=None):
+        if obj is not None:
+            return ("reset_password_link",)
+        return ()
+
+    @admin.display(description="Senha")
+    def reset_password_link(self, obj: User) -> str:
+        from django.utils.html import format_html
+
+        url = reverse("admin:accounts_user_reset_password", args=[obj.pk])
+        return format_html(
+            '<a class="button" href="{}">Redefinir senha</a>',
+            url,
+        )
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom = [
+            path(
+                "<path:object_id>/reset-password/",
+                self.admin_site.admin_view(self.reset_password_view),
+                name="accounts_user_reset_password",
+            ),
+        ]
+        return custom + urls
+
+    def reset_password_view(self, request, object_id):
+        user = self.get_object(request, object_id)
+        if user is None:
+            return self._get_obj_not_found_redirect(
+                request, self.model._meta, object_id
+            )
+
+        form = UserResetPasswordForm(request.POST or None)
+        if request.method == "POST" and form.is_valid():
+            user.set_password(form.cleaned_data["password1"])
+            user.save(update_fields=["password"])
+            messages.success(request, f"Senha de {user.email} atualizada.")
+            return HttpResponseRedirect(
+                reverse("admin:accounts_user_change", args=[user.pk])
+            )
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": f"Redefinir senha — {user.email}",
+            "user": user,
+            "form": form,
+            "opts": self.model._meta,
+        }
+        return TemplateResponse(
+            request,
+            "admin/accounts/user/reset_password.html",
+            context,
+        )
+
+    def save_model(self, request, obj, form, change):
+        if not change and isinstance(form, UserAddForm):
+            form.save()
+            return
+        super().save_model(request, obj, form, change)
 
 
 @admin.register(TenantRole)

@@ -1,5 +1,6 @@
 from django.contrib import admin
 
+from apps.food.admin_pilot import FoodPilotAdminMixin
 from apps.food.models import (
     FoodBom,
     FoodBomComponent,
@@ -13,6 +14,8 @@ from apps.food.models import (
     FoodMarketplaceConnection,
     FoodOrder,
     FoodOrderLine,
+    FoodPayment,
+    FoodPaymentEvent,
     FoodProduct,
     FoodProductionOrder,
     FoodPurchase,
@@ -28,7 +31,7 @@ from apps.food.models import (
 from shared.money import format_brl_from_cents
 
 
-class FoodAdminMixin:
+class FoodAdminMixin(FoodPilotAdminMixin):
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if db_field.name == "tenant":
             kwargs["label"] = "Empresa"
@@ -116,6 +119,42 @@ class FoodOrderAdmin(FoodAdminMixin, admin.ModelAdmin):
     inlines = [FoodOrderLineInline]
     readonly_fields = ("subtotal_cents", "total_cents", "paid_at")
     total_brl = _cents_display("Total", "total_cents")
+
+
+class FoodPaymentEventInline(admin.TabularInline):
+    model = FoodPaymentEvent
+    extra = 0
+    readonly_fields = ("provider", "event_id", "payload", "created_at")
+    can_delete = False
+
+
+@admin.register(FoodPayment)
+class FoodPaymentAdmin(FoodAdminMixin, admin.ModelAdmin):
+    list_display = (
+        "id",
+        "order",
+        "provider",
+        "method",
+        "status",
+        "amount_brl",
+        "paid_at",
+        "empresa",
+    )
+    list_filter = ("provider", "method", "status")
+    search_fields = ("idempotency_key", "provider_payment_id", "order__id")
+    raw_id_fields = ("order", "charge")
+    readonly_fields = ("paid_at",)
+    inlines = [FoodPaymentEventInline]
+    amount_brl = _cents_display("Valor", "amount_cents")
+
+
+@admin.register(FoodPaymentEvent)
+class FoodPaymentEventAdmin(FoodAdminMixin, admin.ModelAdmin):
+    list_display = ("event_id", "provider", "payment", "created_at", "empresa")
+    list_filter = ("provider",)
+    search_fields = ("event_id", "payment__id")
+    raw_id_fields = ("payment",)
+    readonly_fields = ("provider", "event_id", "payload", "created_at")
 
 
 @admin.register(FoodCampaign)

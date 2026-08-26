@@ -68,6 +68,26 @@ def published_catalog(*, tenant) -> TaxRuleCatalog | None:
     ).first()
 
 
+def _iss_emittable_services(
+    services: list[ServiceCatalogItem],
+) -> list[ServiceCatalogItem]:
+    return [
+        s
+        for s in services
+        if getattr(s, "operation_kind", ServiceCatalogItem.OperationKind.SERVICO_ISS)
+        != ServiceCatalogItem.OperationKind.LOCACAO_BEM
+    ]
+
+
+def assert_service_nfse_allowed(*, service: ServiceCatalogItem | None) -> None:
+    if service is None:
+        return
+    if service.operation_kind == ServiceCatalogItem.OperationKind.LOCACAO_BEM:
+        raise FiscalReadinessError(
+            f"Serviço {service.service_code} é locação de bem — não emite NFS-e/ISS."
+        )
+
+
 def has_published_rule(
     *,
     tenant,
@@ -75,6 +95,7 @@ def has_published_rule(
     ibge_code: str,
     service_code: str,
     competence_date: date | None = None,
+    service: ServiceCatalogItem | None = None,
 ) -> MunicipalTaxRule | None:
     catalog = published_catalog(tenant=tenant)
     if catalog is None:
@@ -84,23 +105,23 @@ def has_published_rule(
     if len(ibge) != 7 or not code:
         return None
     day = competence_date or date.today()
-    qs = MunicipalTaxRule.objects.filter(
+
+    from apps.fiscal.tax_engine import _base_rule_qs, _service_code_candidates
+
+    base = _base_rule_qs(
         tenant=tenant,
         catalog=catalog,
         fiscal_profile=fiscal_profile,
         ibge_code=ibge,
-        service_code=code,
         tax_regime=fiscal_profile.tax_regime,
-        valid_from__lte=day,
+        competence_date=day,
     )
-    # valid_to null or >= day
-    from django.db.models import Q
-
-    return (
-        qs.filter(Q(valid_to__isnull=True) | Q(valid_to__gte=day))
-        .order_by("priority", "-valid_from")
-        .first()
-    )
+    candidates = _service_code_candidates(service_code=code, service=service)
+    for candidate in candidates:
+        rule = base.filter(service_code=candidate).first()
+        if rule is not None:
+            return rule
+    return None
 
 
 def assert_emit_rule_cover(
@@ -110,17 +131,20 @@ def assert_emit_rule_cover(
     ibge_code: str,
     service_code: str,
     competence_date: date | None = None,
+    service: ServiceCatalogItem | None = None,
 ) -> MunicipalTaxRule:
     if fiscal_profile is None:
         raise FiscalReadinessError(
             "Cadastre um perfil fiscal antes de emitir (N1 go-live)."
         )
+    assert_service_nfse_allowed(service=service)
     rule = has_published_rule(
         tenant=tenant,
         fiscal_profile=fiscal_profile,
         ibge_code=ibge_code,
         service_code=service_code,
         competence_date=competence_date,
+        service=service,
     )
     if rule is None:
         ibge = "".join(ch for ch in (ibge_code or "") if ch.isdigit())[:7] or "—"
@@ -150,6 +174,7 @@ def coverage_matrix(
             "service_code"
         )
     )
+    services = _iss_emittable_services(services)
     profiles = profiles or list(
         FiscalProfile.objects.filter(tenant=tenant, status="active").order_by("name")
     )
@@ -162,7 +187,6 @@ def coverage_matrix(
         ibge = provider_ibge(p)
         if ibge:
             ibges.append((ibge, p))
-    # sem provider com IBGE: ainda mostra serviços sem município
     if not ibges:
         for svc in services:
             for prof in profiles:
@@ -187,6 +211,7 @@ def coverage_matrix(
                     ibge_code=ibge,
                     service_code=svc.service_code,
                     competence_date=day,
+                    service=svc,
                 )
                 cells.append(
                     CoverageCell(
@@ -250,17 +275,22 @@ def fiscal_readiness(
         )
     )
 
-    services = list(
+    all_services = list(
         ServiceCatalogItem.objects.filter(tenant=tenant, is_active=True).order_by(
             "service_code"
         )
     )
+    iss_services = _iss_emittable_services(all_services)
     checks.append(
         ReadinessCheck(
             code="services",
-            ok=bool(services),
-            label="Serviços ativos no portfólio",
-            detail=f"{len(services)} serviço(s)" if services else "Cadastre serviços",
+            ok=bool(iss_services),
+            label="Serviços ativos no portfólio (ISS)",
+            detail=(
+                f"{len(iss_services)} serviço(s) ISS"
+                if iss_services
+                else "Cadastre serviços tributáveis"
+            ),
         )
     )
 
@@ -277,15 +307,11 @@ def fiscal_readiness(
     cells = coverage_matrix(
         tenant=tenant,
         providers=providers,
-        services=services,
+        services=iss_services,
         profiles=profiles,
         competence_date=competence_date,
     )
-    # Cobertura “pronto”: cada (serviço × IBGE do prestador) precisa de regra em
-    # pelo menos um perfil ativo (senão a matriz marca ok=False em todas as linhas).
     missing = [c for c in cells if not c.ok]
-    # pronto operacional: existe ao menos um caminho (serviço+ibge+perfil) completo
-    # e nenhum serviço do portfólio fica sem regra em todos os perfis para um IBGE
     by_key: dict[tuple[str, str], list[CoverageCell]] = {}
     for c in cells:
         if not c.ibge_code:

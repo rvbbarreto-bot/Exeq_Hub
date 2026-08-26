@@ -108,6 +108,40 @@ def _refresh_forensic_after_emit(issue: NfIssue, *, layout: str) -> None:
     issue.save(update_fields=["resolved_params", "updated_at"])
 
 
+def _persist_emission_text(
+    issue: NfIssue,
+    *,
+    descricao_servico: str = "",
+    informacoes_complementares: str = "",
+) -> None:
+    from integrations.nfse.emission_text import normalize_emission_fields
+
+    payload = dict(issue.internal_payload or {})
+    emission = normalize_emission_fields(
+        descricao_servico=descricao_servico,
+        informacoes_complementares=informacoes_complementares,
+    )
+    if emission:
+        payload["emission"] = emission
+    else:
+        payload.pop("emission", None)
+    issue.internal_payload = payload or None
+    issue.save(update_fields=["internal_payload", "updated_at"])
+
+
+def _merge_emission_into_params(issue: NfIssue, payload: dict) -> dict:
+    from integrations.nfse.emission_text import normalize_emission_fields
+
+    draft = (issue.internal_payload or {}).get("emission") or {}
+    merged = dict(payload)
+    for key, value in normalize_emission_fields(
+        descricao_servico=draft.get("descricao_servico") or "",
+        informacoes_complementares=draft.get("informacoes_complementares") or "",
+    ).items():
+        merged[key] = value
+    return merged
+
+
 def _apply_nf_issue_fields(
     issue: NfIssue,
     *,
@@ -118,6 +152,8 @@ def _apply_nf_issue_fields(
     ibge_code: str,
     competence_date,
     amount_cents: int,
+    descricao_servico: str = "",
+    informacoes_complementares: str = "",
 ) -> NfIssue:
     issue.provider = provider
     issue.customer = customer
@@ -138,6 +174,11 @@ def _apply_nf_issue_fields(
             "updated_at",
         ]
     )
+    _persist_emission_text(
+        issue,
+        descricao_servico=descricao_servico,
+        informacoes_complementares=informacoes_complementares,
+    )
     return issue
 
 
@@ -154,6 +195,8 @@ def save_nf_draft(
     competence_date,
     amount_cents: int,
     draft: NfIssue | None = None,
+    descricao_servico: str = "",
+    informacoes_complementares: str = "",
 ) -> NfIssue:
     """
     Persiste NFS-e em status rascunho (sem tributação, fila ou envio).
@@ -181,6 +224,8 @@ def save_nf_draft(
             ibge_code=ibge_code,
             competence_date=competence_date,
             amount_cents=amount_cents,
+            descricao_servico=descricao_servico,
+            informacoes_complementares=informacoes_complementares,
         )
 
     existing = (
@@ -200,13 +245,15 @@ def save_nf_draft(
             ibge_code=ibge_code,
             competence_date=competence_date,
             amount_cents=amount_cents,
+            descricao_servico=descricao_servico,
+            informacoes_complementares=informacoes_complementares,
         )
 
     from apps.accounts.plan_limits import assert_can_create_nf_this_month
 
     assert_can_create_nf_this_month(tenant)
 
-    return NfIssue.objects.create(
+    issue = NfIssue.objects.create(
         tenant=tenant,
         idempotency_key=idempotency_key,
         status=NfIssue.Status.DRAFT,
@@ -218,6 +265,12 @@ def save_nf_draft(
         competence_date=competence_date,
         amount_cents=amount_cents,
     )
+    _persist_emission_text(
+        issue,
+        descricao_servico=descricao_servico,
+        informacoes_complementares=informacoes_complementares,
+    )
+    return issue
 
 
 @transaction.atomic
@@ -247,6 +300,19 @@ def submit_nf_draft(issue: NfIssue, *, actor: str = "api") -> NfIssue:
 
     transition(issue, to_status=NfIssue.Status.PENDING_TAX, actor=actor)
 
+    from apps.master_data.models import ServiceCatalogItem
+
+    if service.operation_kind == ServiceCatalogItem.OperationKind.LOCACAO_BEM:
+        issue.rejection_code = "OPERATION_KIND_BLOCKED"
+        issue.save(update_fields=["rejection_code", "updated_at"])
+        transition(
+            issue,
+            to_status=NfIssue.Status.REJECTED,
+            actor=actor,
+            metadata={"code": "OPERATION_KIND_BLOCKED"},
+        )
+        return issue
+
     try:
         rule, resolve_meta = resolve_tax_rule_detailed(
             tenant=tenant,
@@ -274,6 +340,11 @@ def submit_nf_draft(issue: NfIssue, *, actor: str = "api") -> NfIssue:
         iss_payload["codigo_tributacao_nacional_iss"] = (
             service.codigo_tributacao_nacional_iss
         )
+    from apps.fiscal.compliance_hints import service_cnae_compliance_warnings
+
+    compliance = service_cnae_compliance_warnings(provider=issue.provider, service=service)
+    if compliance:
+        iss_payload["compliance_hints"] = compliance
 
     route = resolve_nfse_route(
         ibge_code=ibge_code,
@@ -316,7 +387,7 @@ def submit_nf_draft(issue: NfIssue, *, actor: str = "api") -> NfIssue:
             )
             return issue
 
-    payload = rtc_ctx["params"]
+    payload = _merge_emission_into_params(issue, rtc_ctx["params"])
     FiscalRuleSnapshot.objects.create(
         tenant=tenant,
         nf_issue=issue,
@@ -354,6 +425,8 @@ def create_nf_issue(
     ibge_code: str,
     competence_date,
     amount_cents: int,
+    descricao_servico: str = "",
+    informacoes_complementares: str = "",
 ) -> NfIssue:
     existing = NfIssue.objects.filter(
         tenant=tenant,
@@ -377,6 +450,8 @@ def create_nf_issue(
         competence_date=competence_date,
         amount_cents=amount_cents,
         draft=draft,
+        descricao_servico=descricao_servico,
+        informacoes_complementares=informacoes_complementares,
     )
     return submit_nf_draft(issue, actor="api")
 

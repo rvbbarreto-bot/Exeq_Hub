@@ -13,6 +13,8 @@ from django.db.models import Exists, OuterRef, Q
 from django.http import HttpRequest, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views import View
 from django.views.decorators.http import require_GET, require_http_methods
 
@@ -112,6 +114,7 @@ def _greeting_user(user) -> str:
     return f"{prefix}, {first}"
 
 
+@method_decorator(ensure_csrf_cookie, name="dispatch")
 class HubLoginView(View):
     template_name = "hub_v4/login.html"
 
@@ -228,6 +231,9 @@ class NfseDetailView(View):
         from apps.issuance.sefin_summary import sefin_integration_summary
 
         sefin = sefin_integration_summary(issue)
+        from integrations.nfse.emission_text import resolve_emission_text
+
+        descricao_nota, info_compl = resolve_emission_text(issue)
         return render(
             request,
             "hub_v4/nfse/detail.html",
@@ -235,6 +241,8 @@ class NfseDetailView(View):
                 "nav": "nfse",
                 "page_title": f"NFS-e · {issue.focus_ref or str(issue.id)[:8]}",
                 "issue": issue,
+                "descricao_nota": descricao_nota,
+                "informacoes_complementares": info_compl,
                 "timeline": issue_timeline(issue),
                 "events": events,
                 "artifacts": artifacts,
@@ -384,8 +392,9 @@ class NfseWizardView(View):
                         role,
                         request=request,
                         draft=self._draft_from_post(request, tenant),
+                        form_post=request.POST,
+                        wizard_initial_step=3,
                     ),
-                    "form": request.POST,
                 },
             )
 
@@ -410,9 +419,17 @@ class NfseWizardView(View):
                         )
                         or "",
                         competence_date=payload.get("competence_date"),
+                        service=payload.get("service"),
                     )
                 except FiscalReadinessError as exc:
                     raise ValueError(str(exc)) from exc
+                from apps.fiscal.compliance_hints import service_cnae_compliance_warnings
+
+                for hint in service_cnae_compliance_warnings(
+                    provider=payload.get("provider"),
+                    service=payload.get("service"),
+                ):
+                    messages.warning(request, hint)
                 issue = create_nf_issue(**{
                     k: v
                     for k, v in payload.items()
@@ -427,6 +444,8 @@ class NfseWizardView(View):
                         "ibge_code",
                         "competence_date",
                         "amount_cents",
+                        "descricao_servico",
+                        "informacoes_complementares",
                     }
                 })
             pid = request.POST.get("provider_id")
@@ -443,8 +462,9 @@ class NfseWizardView(View):
                         role,
                         request=request,
                         draft=self._draft_from_post(request, tenant),
+                        form_post=request.POST,
+                        wizard_initial_step=3,
                     ),
-                    "form": request.POST,
                 },
             )
         except Exception as exc:
@@ -458,8 +478,9 @@ class NfseWizardView(View):
                         role,
                         request=request,
                         draft=self._draft_from_post(request, tenant),
+                        form_post=request.POST,
+                        wizard_initial_step=3,
                     ),
-                    "form": request.POST,
                 },
             )
 
@@ -493,7 +514,15 @@ class NfseWizardView(View):
             .first()
         )
 
-    def _context(self, tenant, role, request=None, draft=None):
+    def _context(
+        self,
+        tenant,
+        role,
+        request=None,
+        draft=None,
+        form_post=None,
+        wizard_initial_step: int = 0,
+    ):
         customers = list(
             Customer.objects.filter(tenant=tenant, is_active=True).order_by("name")[:200]
         )
@@ -543,6 +572,67 @@ class NfseWizardView(View):
             amount_display = f"{Decimal(draft.amount_cents) / Decimal(100):.2f}".replace(
                 ".", ","
             )
+        draft_emission = (
+            (draft.internal_payload or {}).get("emission")
+            if draft and isinstance(draft.internal_payload, dict)
+            else {}
+        ) or {}
+        draft_service_desc = draft_emission.get("descricao_servico") or (
+            draft.service.description if draft else ""
+        )
+        draft_info_compl = draft_emission.get("informacoes_complementares") or ""
+        selected_customer_id = str(draft.customer_id) if draft else ""
+        selected_service_id = str(draft.service_id) if draft else ""
+        selected_profile_id = (
+            str(draft.fiscal_profile_id) if draft and draft.fiscal_profile_id else ""
+        )
+        draft_competence = (
+            draft.competence_date.isoformat() if draft else date.today().isoformat()
+        )
+        draft_ibge = draft.ibge_code if draft else ""
+        idempotency_key = draft.idempotency_key if draft else f"hub-v4-{uuid.uuid4()}"
+        draft_id = str(draft.id) if draft else ""
+
+        from apps.fiscal.multimunicipio import list_published_ibge_codes, provider_default_ibge
+
+        published_ibge = list_published_ibge_codes(tenant=tenant)
+        if not draft_ibge and providers:
+            first = providers[0]
+            draft_ibge = provider_default_ibge(first)
+
+        if form_post is not None:
+            post_amount = (form_post.get("amount") or "").strip()
+            if post_amount:
+                amount_display = post_amount
+            post_customer = (form_post.get("customer_id") or "").strip()
+            if post_customer:
+                selected_customer_id = post_customer
+            post_service = (form_post.get("service_id") or "").strip()
+            if post_service:
+                selected_service_id = post_service
+            post_profile = (form_post.get("fiscal_profile_id") or "").strip()
+            if post_profile:
+                selected_profile_id = post_profile
+            post_comp = (form_post.get("competence_date") or "").strip()
+            if post_comp:
+                draft_competence = post_comp
+            post_ibge = (form_post.get("ibge_code") or "").strip()
+            if post_ibge:
+                draft_ibge = post_ibge
+            post_desc = (form_post.get("service_description") or "").strip()
+            if post_desc:
+                draft_service_desc = post_desc
+            draft_info_compl = (form_post.get("informacoes_complementares") or "").strip()
+            post_provider = (form_post.get("provider_id") or "").strip()
+            if post_provider:
+                active_id = post_provider
+            post_idem = (form_post.get("idempotency_key") or "").strip()
+            if post_idem:
+                idempotency_key = post_idem
+            post_draft_id = (form_post.get("draft_id") or "").strip()
+            if post_draft_id:
+                draft_id = post_draft_id
+
         return {
             "nav": "nfse",
             "page_title": "Continuar rascunho" if draft else "Emitir NFS-e",
@@ -556,22 +646,20 @@ class NfseWizardView(View):
             "profiles_data": profiles_json,
             "role_code": role,
             "today": date.today().isoformat(),
-            "idempotency_key": (
-                draft.idempotency_key if draft else f"hub-v4-{uuid.uuid4()}"
-            ),
+            "idempotency_key": idempotency_key,
             "draft": draft,
-            "draft_id": str(draft.id) if draft else "",
-            "selected_customer_id": str(draft.customer_id) if draft else "",
-            "selected_service_id": str(draft.service_id) if draft else "",
-            "selected_profile_id": str(draft.fiscal_profile_id)
-            if draft and draft.fiscal_profile_id
-            else "",
-            "draft_competence": draft.competence_date.isoformat()
-            if draft
-            else date.today().isoformat(),
+            "draft_id": draft_id,
+            "selected_customer_id": selected_customer_id,
+            "selected_service_id": selected_service_id,
+            "selected_profile_id": selected_profile_id,
+            "draft_competence": draft_competence,
             "draft_amount": amount_display,
-            "draft_ibge": draft.ibge_code if draft else "",
+            "draft_ibge": draft_ibge,
+            "draft_service_desc": draft_service_desc,
+            "draft_info_compl": draft_info_compl,
+            "wizard_initial_step": wizard_initial_step,
             "regime_simples": TaxRegime.SIMPLES,
+            "published_ibge": published_ibge,
         }
 
     def _parse_wizard_payload(self, request, tenant) -> dict:
@@ -594,23 +682,19 @@ class NfseWizardView(View):
                 "Cadastre um perfil fiscal antes de emitir."
             )
 
-        raw_amount = (request.POST.get("amount") or "0").strip()
-        if "," in raw_amount:
-            raw_amount = raw_amount.replace(".", "").replace(",", ".")
-        try:
-            amount = Decimal(raw_amount)
-        except InvalidOperation as exc:
-            raise ValueError("Valor inválido") from exc
-        cents = int((amount * 100).quantize(Decimal("1")))
-        if cents < 1:
-            raise ValueError("Valor deve ser positivo")
+        from apps.hub_v4.forms import parse_brl_amount_cents
+
+        cents = parse_brl_amount_cents(
+            request.POST.get("amount") or "",
+            field_label="Valor",
+        )
 
         competence = request.POST.get("competence_date") or date.today().isoformat()
-        ibge = (
-            (request.POST.get("ibge_code") or "").strip()
-            or (provider.address or {}).get("codigo_ibge")
-            or (provider.address or {}).get("codigo_municipio_ibge")
-            or "3504107"
+        from apps.fiscal.multimunicipio import resolve_wizard_ibge_code
+
+        ibge = resolve_wizard_ibge_code(
+            post_ibge=request.POST.get("ibge_code") or "",
+            provider=provider,
         )
         draft = self._draft_from_post(request, tenant)
         idem = (
@@ -618,6 +702,12 @@ class NfseWizardView(View):
             or request.POST.get("idempotency_key")
             or f"hub-v4-{uuid.uuid4()}"
         )
+        descricao = (request.POST.get("service_description") or "").strip()
+        if not descricao:
+            descricao = service.description
+        if not descricao:
+            raise ValueError("Informe a descrição do serviço na nota.")
+        info_compl = (request.POST.get("informacoes_complementares") or "").strip()
         return {
             "tenant": tenant,
             "idempotency_key": idem,
@@ -629,6 +719,8 @@ class NfseWizardView(View):
             "competence_date": date.fromisoformat(competence),
             "amount_cents": cents,
             "draft": draft,
+            "descricao_servico": descricao,
+            "informacoes_complementares": info_compl,
         }
 
 
@@ -1889,6 +1981,8 @@ class FiscalCsvImportView(View):
         messages.success(
             request,
             f"CSV importado: {len(result['applied_service_codes'])} regra(s) "
+            f"em {len(result.get('ibge_codes') or [])} município(s) "
+            f"({', '.join(result.get('ibge_codes') or [])}) "
             f"(catálogo v{result['catalog_version']}).",
         )
         return redirect("hub-v4-fiscal-readiness")

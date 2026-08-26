@@ -5,6 +5,7 @@
 <div
   data-wizard
   data-lookup-url="{% url 'hub-v4-nfse-lookup' %}"
+  data-initial-step="{{ wizard_initial_step|default:0 }}"
 >
   {{ customers_data|json_script:"hub-customers-data" }}
   {{ services_data|json_script:"hub-services-data" }}
@@ -100,7 +101,6 @@
             <option value="{{ s.id }}"
               data-lc116="{{ s.lc116_item|default:s.service_code }}"
               data-code="{{ s.service_code }}"
-              data-description="{{ s.description }}"
               {% if selected_service_id and s.id|stringformat:"s" == selected_service_id %}selected{% endif %}>
               {{ s.service_code }} · {{ s.description|truncatechars:80 }}
             </option>
@@ -124,9 +124,17 @@
                  placeholder="Preenchido pelo serviço" title="Código LC 116 do serviço selecionado">
         </div>
         <div class="field full">
-          <label for="id_service_desc">Descrição</label>
-          <textarea id="id_service_desc" rows="5" readonly class="is-readonly field-service-desc"
-                    placeholder="Descrição completa do serviço selecionado"></textarea>
+          <label for="id_service_desc">Descrição do serviço na nota *</label>
+          <textarea id="id_service_desc" name="service_description" rows="5" maxlength="1000"
+                    class="field-service-desc" required data-validate="required"
+                    placeholder="Discriminação enviada na NFS-e (xDescServ). Ajuste por nota se necessário.">{% if draft_service_desc %}{{ draft_service_desc }}{% endif %}</textarea>
+          <p class="hint-line">Preenchida pelo catálogo; você pode editar nesta emissão (até 1.000 caracteres, sem quebras de linha).</p>
+        </div>
+        <div class="field full">
+          <label for="id_info_compl">Informações complementares</label>
+          <textarea id="id_info_compl" name="informacoes_complementares" rows="4" maxlength="2000"
+                    placeholder="Observações, referências de contrato, dados adicionais (opcional)">{% if draft_info_compl %}{{ draft_info_compl }}{% endif %}</textarea>
+          <p class="hint-line">Opcional — aparece no DANFSe e no XML (xInfComp), até 2.000 caracteres.</p>
         </div>
         <div class="field">
           <label for="id_competence_date">Competência *</label>
@@ -153,7 +161,9 @@
           <label for="id_provider_id">Emitir como (empresa / CNPJ) *</label>
           <select id="id_provider_id" name="provider_id" required data-validate="required">
             {% for p in providers %}
-            <option value="{{ p.id }}" {% if active_provider_id and p.id|stringformat:"s" == active_provider_id %}selected{% elif not active_provider_id and forloop.first %}selected{% endif %}>
+            <option value="{{ p.id }}"
+              data-ibge="{% if p.address.codigo_ibge %}{{ p.address.codigo_ibge }}{% elif p.address.codigo_municipio_ibge %}{{ p.address.codigo_municipio_ibge }}{% endif %}"
+              {% if active_provider_id and p.id|stringformat:"s" == active_provider_id %}selected{% elif not active_provider_id and forloop.first %}selected{% endif %}>
               {{ p.legal_name }} · {{ p.document }}
             </option>
             {% empty %}
@@ -193,11 +203,22 @@
           {% endif %}
         </div>
         <div class="field">
-          <label for="id_ibge">IBGE município</label>
-          <input id="id_ibge" name="ibge_code" maxlength="7" placeholder="3504107"
+          <label for="id_ibge">IBGE município da prestação *</label>
+          <input id="id_ibge" name="ibge_code" maxlength="7" inputmode="numeric"
+                 pattern="[0-9]{7}" placeholder="3504107"
                  value="{{ draft_ibge }}"
+                 required data-validate="ibge"
+                 list="published-ibge-list"
                  aria-describedby="ibge-help">
-          <p id="ibge-help" class="hint-line">Município específico pode exigir campos extras no motor fiscal.</p>
+          <datalist id="published-ibge-list">
+            {% for m in published_ibge %}
+            <option value="{{ m.ibge_code }}">{{ m.label }}</option>
+            {% endfor %}
+          </datalist>
+          <p id="ibge-help" class="hint-line">
+            Local da prestação do serviço (7 dígitos). Pode ser diferente da sede do prestador.
+            {% if published_ibge %}Sugestões da matriz fiscal publicada.{% endif %}
+          </p>
         </div>
       </div>
 
@@ -228,9 +249,17 @@
     {# —— Etapa 4 · Revisão —— #}
     <div class="wizard-pane" data-wizard-pane data-step="3">
       <div class="section-label" style="margin-top:0;">Revisão</div>
-      <div class="review-grid" aria-live="polite">
-        <div class="review-item"><span>Tomador</span><strong data-review="tomador">—</strong></div>
-        <div class="review-item"><span>Serviço</span><strong data-review="servico">—</strong></div>
+      <div class="review-grid" id="nfse-review-grid" aria-live="polite">
+        <div class="review-item review-item--wide"><span>Tomador</span><strong data-review="tomador">—</strong></div>
+        <div class="review-item review-item--wide"><span>Serviço (catálogo)</span><strong data-review="servico">—</strong></div>
+        <div class="review-item review-item--stack review-item--text">
+          <span>Descrição na nota</span>
+          <div class="review-text" data-review="descricao">{% if draft_service_desc %}{{ draft_service_desc }}{% else %}—{% endif %}</div>
+        </div>
+        <div class="review-item review-item--stack review-item--text" id="review-info-compl-wrap">
+          <span>Informações complementares</span>
+          <div class="review-text{% if not draft_info_compl %} review-text--empty{% endif %}" data-review="info_compl">{% if draft_info_compl %}{{ draft_info_compl }}{% else %}(não informado){% endif %}</div>
+        </div>
         <div class="review-item"><span>Tributação</span><strong data-review="tributacao">—</strong></div>
         <div class="review-item"><span>Valor</span><strong data-review="valor">—</strong></div>
         <div class="review-item"><span>Competência</span><strong data-review="competencia">—</strong></div>
@@ -255,7 +284,9 @@
     <p style="margin:0;"><strong>Tomador:</strong> <span data-sum-tomador>—</span></p>
     <p style="margin:4px 0;"><strong>Valor:</strong> <span data-sum-amount>—</span></p>
     <p style="margin:0 0 4px;"><strong>Competência:</strong> <span data-sum-comp>—</span></p>
-    <p style="margin:0;"><strong>Serviço:</strong> <span data-sum-servico>—</span></p>
+    <p style="margin:0 0 4px;"><strong>Serviço:</strong> <span data-sum-servico>—</span></p>
+    <p style="margin:0 0 4px;"><strong>Descrição:</strong> <span data-sum-descricao>—</span></p>
+    <p style="margin:0;" id="modal-info-compl-line" hidden><strong>Compl.:</strong> <span data-sum-info-compl>—</span></p>
     <div class="actions">
       <button type="button" class="btn btn-ghost" data-modal-cancel>Cancelar</button>
       <button type="button" class="btn btn-primary" data-modal-confirm>Emitir</button>

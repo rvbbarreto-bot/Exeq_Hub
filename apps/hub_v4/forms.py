@@ -230,6 +230,7 @@ def save_tax_rule_from_post(*, tenant, post):
 
 def save_service_from_post(*, tenant, post, obj=None):
     from apps.master_data.models import ServiceCatalogItem
+    from apps.master_data.service_validation import normalize_ctn_iss
 
     code = (post.get("service_code") or "").strip()
     description = (post.get("description") or "").strip()
@@ -238,8 +239,17 @@ def save_service_from_post(*, tenant, post, obj=None):
     if not description:
         raise ValueError("Informe a descrição do serviço.")
     lc116 = (post.get("lc116_item") or "").strip()
-    nacional = (post.get("codigo_tributacao_nacional_iss") or "").strip()
+    nacional_raw = (post.get("codigo_tributacao_nacional_iss") or "").strip()
+    operation_kind = (
+        post.get("operation_kind") or ServiceCatalogItem.OperationKind.SERVICO_ISS
+    ).strip()
+    if operation_kind not in {c.value for c in ServiceCatalogItem.OperationKind}:
+        operation_kind = ServiceCatalogItem.OperationKind.SERVICO_ISS
     is_active = (post.get("is_active") or "1") in {"1", "true", "on", "yes"}
+    nacional = normalize_ctn_iss(nacional_raw) if nacional_raw else ""
+    if operation_kind == ServiceCatalogItem.OperationKind.LOCACAO_BEM:
+        lc116 = ""
+        nacional = ""
 
     if obj is None:
         if ServiceCatalogItem.objects.filter(tenant=tenant, service_code=code).exists():
@@ -250,6 +260,7 @@ def save_service_from_post(*, tenant, post, obj=None):
             description=description,
             lc116_item=lc116,
             codigo_tributacao_nacional_iss=nacional,
+            operation_kind=operation_kind,
             is_active=is_active,
         )
 
@@ -263,27 +274,52 @@ def save_service_from_post(*, tenant, post, obj=None):
     obj.description = description
     obj.lc116_item = lc116
     obj.codigo_tributacao_nacional_iss = nacional
+    obj.operation_kind = operation_kind
     obj.is_active = is_active
     obj.save()
     return obj
 
 
-def _parse_brl_to_cents(raw: str) -> int:
+def parse_brl_amount_cents(
+    raw: str,
+    *,
+    field_label: str = "Valor",
+    allow_zero: bool = False,
+) -> int:
+    """Converte '20,00' / '1.500,00' / 'R$ 20,00' em centavos."""
     from decimal import Decimal, InvalidOperation
 
-    text = (raw or "0").strip()
+    text = (raw or "").strip().replace("\u00a0", " ")
+    for token in ("R$", "r$"):
+        text = text.replace(token, "")
+    text = text.strip()
     if not text:
-        return 0
+        raise ValueError(f"Informe o {field_label.lower()} da nota.")
     if "," in text:
         text = text.replace(".", "").replace(",", ".")
     try:
         amount = Decimal(text)
     except InvalidOperation as exc:
-        raise ValueError("Preço unitário inválido") from exc
+        raise ValueError(
+            f"{field_label} inválido. Use o formato 20,00 ou 1500,00."
+        ) from exc
     cents = int((amount * 100).quantize(Decimal("1")))
     if cents < 0:
-        raise ValueError("Preço unitário não pode ser negativo")
+        raise ValueError(f"O {field_label.lower()} não pode ser negativo.")
+    if cents < 1 and not (allow_zero and cents == 0):
+        raise ValueError(f"O {field_label.lower()} deve ser positivo.")
     return cents
+
+
+def _parse_brl_to_cents(raw: str) -> int:
+    text = (raw or "").strip()
+    if not text:
+        return 0
+    return parse_brl_amount_cents(
+        text,
+        field_label="Preço unitário",
+        allow_zero=True,
+    )
 
 
 def _parse_percent_to_bp(raw: str) -> int:

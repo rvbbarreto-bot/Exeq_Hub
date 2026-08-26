@@ -34,8 +34,18 @@
   <div class="form-grid">
     <div><span style="color:var(--text-muted);font-size:.8rem;">Valor</span><div><strong>{{ issue.amount_cents|cents_brl }}</strong></div></div>
     <div><span style="color:var(--text-muted);font-size:.8rem;">Competência</span><div>{{ issue.competence_date|date:"d/m/Y" }}</div></div>
-    <div><span style="color:var(--text-muted);font-size:.8rem;">Serviço</span><div>{{ issue.service.description }}</div></div>
+    <div><span style="color:var(--text-muted);font-size:.8rem;">Serviço (catálogo)</span><div>{{ issue.service.service_code }} · {{ issue.service.description }}</div></div>
     <div><span style="color:var(--text-muted);font-size:.8rem;">IBGE</span><div>{{ issue.ibge_code }}</div></div>
+    <div class="full">
+      <span style="color:var(--text-muted);font-size:.8rem;">Descrição na nota</span>
+      <div style="white-space:pre-wrap;word-break:break-word;line-height:1.45;">{{ descricao_nota }}</div>
+    </div>
+    {% if informacoes_complementares %}
+    <div class="full">
+      <span style="color:var(--text-muted);font-size:.8rem;">Informações complementares</span>
+      <div style="white-space:pre-wrap;word-break:break-word;line-height:1.45;">{{ informacoes_complementares }}</div>
+    </div>
+    {% endif %}
     {% if issue.rejection_code %}
     <div class="full"><span style="color:var(--text-muted);font-size:.8rem;">Rejeição</span><div>{{ issue.rejection_code }}</div></div>
     {% endif %}

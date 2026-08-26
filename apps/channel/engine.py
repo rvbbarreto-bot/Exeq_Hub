@@ -407,6 +407,7 @@ def _emit(session: ChannelSession, flow: dict) -> str:
             ibge_code=flow["ibge_code"],
             service_code=service.service_code,
             competence_date=date.fromisoformat(flow["competence_date"]),
+            service=service,
         )
     except FiscalReadinessError as exc:
         session.status = ChannelSession.Status.CANCELLED

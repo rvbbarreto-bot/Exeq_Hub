@@ -27,6 +27,13 @@ def hub_user(db):
 
 
 @pytest.mark.django_db
+def test_hub_login_sets_csrf_cookie(client):
+    r = client.get(reverse("hub-v4-login"))
+    assert r.status_code == 200
+    assert "csrftoken" in r.cookies
+
+
+@pytest.mark.django_db
 def test_hub_v4_login_and_dashboard(client, hub_user):
     tenant, user = hub_user
     r = client.get(reverse("hub-v4-dashboard"))
@@ -112,3 +119,26 @@ def test_hub_v4_nav_labels_no_artefatos_menu(client, hub_user):
     assert "Integrações" in html
     assert "Preferências" in html
     assert "/admin/" not in html
+
+
+@pytest.mark.django_db
+def test_hub_logout_and_tenant_label(client, hub_user):
+    tenant, user = hub_user
+    client.post(
+        reverse("hub-v4-login"),
+        {
+            "tenant_slug": tenant.slug,
+            "email": user.email,
+            "password": "Secret123!",
+        },
+    )
+    dash = client.get(reverse("hub-v4-dashboard"))
+    assert dash.status_code == 200
+    body = dash.content.decode()
+    assert tenant.slug in body
+    assert "Sair" in body
+
+    out = client.post(reverse("hub-v4-logout"))
+    assert out.status_code == 302
+    assert reverse("hub-v4-login") in out["Location"]
+    assert client.get(reverse("hub-v4-dashboard")).status_code == 302

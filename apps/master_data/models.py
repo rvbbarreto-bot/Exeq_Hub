@@ -26,6 +26,11 @@ class CadastralEnrichmentMixin(models.Model):
     cnae_principal = models.CharField(
         max_length=255, blank=True, default="", verbose_name="CNAE principal"
     )
+    cnaes_secundarios = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name="CNAEs secundários",
+    )
     natureza_juridica = models.CharField(
         max_length=255, blank=True, default="", verbose_name="Natureza jurídica"
     )
@@ -118,6 +123,10 @@ class Customer(CadastralEnrichmentMixin, TenantOwnedModel):
 
 
 class ServiceCatalogItem(TenantOwnedModel):
+    class OperationKind(models.TextChoices):
+        SERVICO_ISS = "servico_iss", "Serviço tributável ISS"
+        LOCACAO_BEM = "locacao_bem", "Locação de bem (sem NFS-e)"
+
     service_code = models.CharField(max_length=32, verbose_name="Código do serviço")
     description = models.TextField(verbose_name="Descrição")
     lc116_item = models.CharField(
@@ -128,6 +137,12 @@ class ServiceCatalogItem(TenantOwnedModel):
         blank=True,
         default="",
         verbose_name="Código tributação nacional ISS",
+    )
+    operation_kind = models.CharField(
+        max_length=32,
+        choices=OperationKind.choices,
+        default=OperationKind.SERVICO_ISS,
+        verbose_name="Tipo de operação",
     )
     is_active = models.BooleanField(default=True, verbose_name="Ativo")
 

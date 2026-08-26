@@ -61,6 +61,17 @@
     var form = qs("#form-nfse-wizard", wiz);
     var current = 0;
     var lookupUrl = wiz.getAttribute("data-lookup-url") || "";
+    var servicesIndex = {};
+    parseJsonScript("hub-services-data").forEach(function (svc) {
+      if (svc && svc.id) servicesIndex[String(svc.id)] = svc;
+    });
+
+    function serviceFromSelect(sel) {
+      if (!sel || sel.selectedIndex < 0) return null;
+      var opt = sel.options[sel.selectedIndex];
+      if (!opt || !opt.value) return null;
+      return servicesIndex[String(opt.value)] || null;
+    }
 
     function selectedText(sel) {
       if (!sel || sel.selectedIndex < 0) return "—";
@@ -82,18 +93,26 @@
       qs("#id_customer_phone").value = opt.getAttribute("data-phone") || "";
     }
 
-    function fillServiceFields() {
+    function fillServiceFields(fromChange) {
       var sel = qs("#id_service_id", form);
       if (!sel) return;
       var opt = sel.options[sel.selectedIndex];
+      var descEl = form && form.elements.service_description;
       if (!opt || !opt.value) {
         qs("#id_lc116").value = "";
-        qs("#id_service_desc").value = "";
+        if (descEl) descEl.value = "";
         return;
       }
       qs("#id_lc116").value =
         opt.getAttribute("data-lc116") || opt.getAttribute("data-code") || "";
-      qs("#id_service_desc").value = opt.getAttribute("data-description") || "";
+      if (descEl) {
+        var svc = serviceFromSelect(sel);
+        var catalogDesc =
+          (svc && svc.description) || opt.getAttribute("data-description") || "";
+        if (fromChange || !String(descEl.value || "").trim()) {
+          descEl.value = catalogDesc;
+        }
+      }
     }
 
     function updateTaxPanels() {
@@ -124,23 +143,64 @@
       }
     }
 
+    function formField(name) {
+      if (!form || !form.elements) return "";
+      var el = form.elements[name];
+      if (!el || el.disabled) return "";
+      return String(el.value || "").trim();
+    }
+
+    function selectedServiceDescription() {
+      var sel = qs("#id_service_id", form);
+      var svc = serviceFromSelect(sel);
+      if (svc && svc.description) return String(svc.description).trim();
+      if (!sel || sel.selectedIndex < 0) return "";
+      var opt = sel.options[sel.selectedIndex];
+      if (!opt || !opt.value) return "";
+      return (opt.getAttribute("data-description") || "").trim();
+    }
+
+    function setReviewText(key, text, emptyLabel) {
+      var el =
+        qs('[data-review="' + key + '"]', form) ||
+        qs('[data-review="' + key + '"]');
+      if (!el) return;
+      var hasText = Boolean(text);
+      el.textContent = hasText ? text : emptyLabel || "—";
+      el.classList.toggle("review-text--empty", !hasText);
+    }
+
+    function truncateText(text, max) {
+      if (!text) return "—";
+      if (text.length <= max) return text;
+      return text.slice(0, max - 1) + "…";
+    }
+
     function updateReview() {
+      fillServiceFields(false);
       var tomador = selectedText(qs("#id_customer_id", form));
       var servico = selectedText(qs("#id_service_id", form));
       var perfil = selectedText(qs("#id_fiscal_profile_id", form));
-      var amount = (qs("#id_amount", form) || {}).value || "—";
-      var comp = (qs("#id_competence_date", form) || {}).value || "—";
+      var amount = formField("amount") || "—";
+      var compDate = formField("competence_date") || "—";
+      var descricao =
+        formField("service_description") || selectedServiceDescription();
+      var infoCompl = formField("informacoes_complementares");
       var map = {
         tomador: tomador,
         servico: servico,
         tributacao: perfil,
         valor: amount ? "R$ " + amount : "—",
-        competencia: comp,
+        competencia: compDate,
       };
       Object.keys(map).forEach(function (k) {
-        var el = qs('[data-review="' + k + '"]');
+        var el =
+          qs('[data-review="' + k + '"]', form) ||
+          qs('[data-review="' + k + '"]');
         if (el) el.textContent = map[k];
       });
+      setReviewText("descricao", descricao, "—");
+      setReviewText("info_compl", infoCompl, "(não informado)");
     }
 
     function validateStep(n) {
@@ -168,6 +228,11 @@
           showError("Informe o valor da nota.");
           return false;
         }
+        var desc = form.elements.service_description;
+        if (!desc || !String(desc.value || "").trim()) {
+          showError("Informe a descrição do serviço na nota.");
+          return false;
+        }
       }
       if (n === 2) {
         var p = qs("#id_provider_id", form);
@@ -175,12 +240,27 @@
           showError("Selecione o prestador.");
           return false;
         }
+        var ibge = qs("#id_ibge", form);
+        var ibgeVal = ibge ? String(ibge.value || "").replace(/\D/g, "") : "";
+        if (!ibgeVal || ibgeVal.length !== 7) {
+          showError("Informe o IBGE do município da prestação (7 dígitos).");
+          return false;
+        }
       }
       return true;
     }
 
-    function go(n) {
-      if (n < 0 || n >= panes.length) return;
+    function validateThrough(targetIndex) {
+      for (var i = 0; i < targetIndex; i++) {
+        if (!validateStep(i)) {
+          showStep(i);
+          return false;
+        }
+      }
+      return true;
+    }
+
+    function showStep(n) {
       current = n;
       panes.forEach(function (p, i) {
         p.classList.toggle("is-active", i === n);
@@ -193,6 +273,19 @@
       });
       if (n === 3) updateReview();
       showError("");
+    }
+
+    function go(n) {
+      if (n < 0 || n >= panes.length) return;
+      if (n > current) {
+        for (var i = 0; i < n; i++) {
+          if (!validateStep(i)) {
+            showStep(i);
+            return;
+          }
+        }
+      }
+      showStep(n);
     }
 
     qsa("[data-wizard-next]", wiz).forEach(function (btn) {
@@ -208,17 +301,40 @@
     });
     steps.forEach(function (s, i) {
       s.addEventListener("click", function () {
-        if (i > current && !validateStep(current)) return;
+        if (i === current) return;
         go(i);
+      });
+    });
+
+    ["service_description", "informacoes_complementares"].forEach(function (name) {
+      var el = form && form.elements[name];
+      if (!el) return;
+      el.addEventListener("input", function () {
+        if (current === 3) updateReview();
       });
     });
 
     var custSel = qs("#id_customer_id", form);
     if (custSel) custSel.addEventListener("change", fillCustomerFieldsFromSelect);
     var svcSel = qs("#id_service_id", form);
-    if (svcSel) svcSel.addEventListener("change", fillServiceFields);
+    if (svcSel) svcSel.addEventListener("change", function () { fillServiceFields(true); });
     var profileSel = qs("#id_fiscal_profile_id", form);
     if (profileSel) profileSel.addEventListener("change", updateTaxPanels);
+    var provSel = qs("#id_provider_id", form);
+    var ibgeInput = qs("#id_ibge", form);
+    if (provSel && ibgeInput) {
+      provSel.addEventListener("change", function () {
+        var opt = provSel.options[provSel.selectedIndex];
+        var defIbge = opt && opt.getAttribute("data-ibge");
+        if (defIbge && (!ibgeInput.value || ibgeInput.dataset.autoFilled === "1")) {
+          ibgeInput.value = String(defIbge).replace(/\D/g, "").slice(0, 7);
+          ibgeInput.dataset.autoFilled = "1";
+        }
+      });
+      ibgeInput.addEventListener("input", function () {
+        ibgeInput.dataset.autoFilled = "0";
+      });
+    }
 
     /* Lookup AJAX */
     var btnLookup = qs("#btn-lookup-doc");
@@ -294,10 +410,7 @@
     var draftBtn = qs("[data-save-draft]", wiz);
     if (draftBtn && form) {
       draftBtn.addEventListener("click", function () {
-        if (!validateStep(0) || !validateStep(1) || !validateStep(2)) {
-          if (!validateStep(0)) go(0);
-          else if (!validateStep(1)) go(1);
-          else go(2);
+        if (!validateThrough(3)) {
           return;
         }
         var actionEl = form.querySelector('[name="wizard_action"]');
@@ -317,8 +430,7 @@
         }
         if (form.querySelector('[name="confirm_emit"]').value !== "1") {
           e.preventDefault();
-          if (!validateStep(0) || !validateStep(1) || !validateStep(2)) {
-            go(0);
+          if (!validateThrough(3)) {
             return;
           }
           updateReview();
@@ -332,6 +444,17 @@
           var sumS = qs("[data-sum-servico]");
           if (sumS)
             sumS.textContent = selectedText(qs("#id_service_id", form));
+          var sumDesc = qs("[data-sum-descricao]");
+          if (sumDesc) {
+            var descText =
+              formField("service_description") || selectedServiceDescription();
+            sumDesc.textContent = truncateText(descText, 160);
+          }
+          var infoCompl = formField("informacoes_complementares");
+          var sumInfo = qs("[data-sum-info-compl]");
+          var infoLine = qs("#modal-info-compl-line", modal);
+          if (sumInfo) sumInfo.textContent = truncateText(infoCompl, 120);
+          if (infoLine) infoLine.hidden = !infoCompl;
           modal.classList.add("is-open");
           var focusBtn = qs("[data-modal-confirm]", modal);
           if (focusBtn) focusBtn.focus();
@@ -354,9 +477,13 @@
     }
 
     fillCustomerFieldsFromSelect();
-    fillServiceFields();
+    fillServiceFields(false);
     updateTaxPanels();
-    go(0);
+    var initialStep = parseInt(wiz.getAttribute("data-initial-step") || "0", 10);
+    if (isNaN(initialStep) || initialStep < 0 || initialStep >= panes.length) {
+      initialStep = 0;
+    }
+    showStep(initialStep);
   }
 
   /* Doc tabs */

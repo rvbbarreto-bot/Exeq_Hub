@@ -3,8 +3,13 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from apps.issuance.models import NfIssue
+from integrations.nfse.emission_text import resolve_emission_text
 from apps.master_data.models import Customer, TaxRegime
+from integrations.nfse.trib_fields import (
+    resolve_iss_rate_decimal,
+    resolve_op_simp_nac,
+    should_emit_municipal_iss_rate,
+)
 
 
 def to_focus_nfse(issue: NfIssue) -> dict[str, Any]:
@@ -14,10 +19,11 @@ def to_focus_nfse(issue: NfIssue) -> dict[str, Any]:
     service = issue.service
     params = issue.resolved_params or {}
     amount = (Decimal(issue.amount_cents) / Decimal(100)).quantize(Decimal("0.01"))
-    iss_rate = Decimal(str(params.get("iss_rate") or "0"))
+    iss_rate = resolve_iss_rate_decimal(params)
     aliquota = (iss_rate * Decimal(100)).quantize(Decimal("0.0001"))
     iss_retained = bool(params.get("iss_retained", False))
     item_lista = service.lc116_item or service.service_code
+    descricao, _info_compl = resolve_emission_text(issue)
 
     body: dict[str, Any] = {
         "data_emissao": issue.competence_date.isoformat(),
@@ -33,7 +39,7 @@ def to_focus_nfse(issue: NfIssue) -> dict[str, Any]:
             "valor_servicos": float(amount),
             "iss_retido": iss_retained,
             "item_lista_servico": item_lista,
-            "discriminacao": service.description,
+            "discriminacao": descricao,
             "codigo_municipio": issue.ibge_code,
             "aliquota": float(aliquota),
         },
@@ -48,7 +54,7 @@ def to_focus_nfsen(issue: NfIssue) -> dict[str, Any]:
     service = issue.service
     params = issue.resolved_params or {}
     amount = (Decimal(issue.amount_cents) / Decimal(100)).quantize(Decimal("0.01"))
-    iss_rate = Decimal(str(params.get("iss_rate") or "0"))
+    iss_rate = resolve_iss_rate_decimal(params)
     aliquota = float((iss_rate * Decimal(100)).quantize(Decimal("0.0001")))
     codigo_trib = (
         params.get("codigo_tributacao_nacional_iss")
@@ -57,15 +63,17 @@ def to_focus_nfsen(issue: NfIssue) -> dict[str, Any]:
         or service.service_code
     )
     iss_retained = bool(params.get("iss_retained", False))
+    descricao, info_compl = resolve_emission_text(issue)
     # 1=não retido · 2=retido tomador · 3=retido intermediário (tpRetISSQN / tribMun)
     tipo_retencao = int(params.get("tipo_retencao_iss") or (2 if iss_retained else 1))
+    op_simp = resolve_op_simp_nac(params=params, tax_regime=provider.tax_regime)
 
     body: dict[str, Any] = {
         "data_emissao": f"{issue.competence_date.isoformat()}T12:00:00-0300",
         "data_competencia": issue.competence_date.isoformat(),
         "codigo_municipio_emissora": issue.ibge_code,
         "cnpj_prestador": provider.document,
-        "codigo_opcao_simples_nacional": _simples_option(provider.tax_regime),
+        "codigo_opcao_simples_nacional": op_simp,
         "regime_tributario_simples_nacional": (
             1 if provider.tax_regime == TaxRegime.SIMPLES else 3
         ),
@@ -76,20 +84,22 @@ def to_focus_nfsen(issue: NfIssue) -> dict[str, Any]:
         ),
         "codigo_municipio_prestacao": issue.ibge_code,
         "codigo_tributacao_nacional_iss": str(codigo_trib),
-        "descricao_servico": service.description,
+        "descricao_servico": descricao,
         "valor_servico": float(amount),
         "tributacao_iss": int(params.get("tributacao_iss") or 1),
         "tipo_retencao_iss": tipo_retencao,
     }
+    if info_compl:
+        body["informacoes_complementares"] = info_compl
     # SEFIN E0625: ME/EPP SN (opSimpNac=3) sem retenção não informa alíquota
-    if tipo_retencao != 1 or body["codigo_opcao_simples_nacional"] != 3:
+    if should_emit_municipal_iss_rate(op_simp_nac=op_simp, tipo_retencao=tipo_retencao):
         body["percentual_aliquota_relativa_municipio"] = aliquota
     elif params.get("percentual_aliquota_relativa_municipio") is not None:
         body["percentual_aliquota_relativa_municipio"] = float(
             params["percentual_aliquota_relativa_municipio"]
         )
     # SEFIN E0712: ME/EPP não usa indTotTrib — usa pTotTribSN (Focus)
-    if body["codigo_opcao_simples_nacional"] == 3:
+    if op_simp == 3:
         body["percentual_total_tributos_simples_nacional"] = float(
             params.get("percentual_total_tributos_simples_nacional") or 6.0
         )
@@ -131,7 +141,8 @@ def _merge_rtc_focus_fields(body: dict[str, Any], params: dict) -> dict[str, Any
 
 def _sanitize_nfsen_sn(body: dict[str, Any]) -> dict[str, Any]:
     """Remove campos proibidos pela SEFIN para ME/EPP Simples Nacional."""
-    if int(body.get("codigo_opcao_simples_nacional") or 0) != 3:
+    op_simp = int(body.get("codigo_opcao_simples_nacional") or 0)
+    if op_simp != 3:
         return body
     body.pop("indicador_total_tributacao", None)
     if int(body.get("tipo_retencao_iss") or 0) == 1:
@@ -145,13 +156,6 @@ def build_focus_body(issue: NfIssue, *, layout: str) -> dict[str, Any]:
     if layout == "nfsen":
         return to_focus_nfsen(issue)
     return to_focus_nfse(issue)
-
-
-def _simples_option(tax_regime: str) -> int:
-    # Alinhado ao JSON Focus Atibaia: 3 = ME/EPP Simples Nacional
-    if tax_regime == TaxRegime.SIMPLES:
-        return 3
-    return 1
 
 
 def _tomador_flat(customer: Customer, *, fallback_ibge: str) -> dict[str, Any]:

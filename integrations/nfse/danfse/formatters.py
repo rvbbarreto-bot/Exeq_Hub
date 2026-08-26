@@ -79,15 +79,17 @@ def format_datetime_br(value: str) -> str:
 
 
 def format_competencia(value: str) -> str:
-    """Competência NFS-e: preferir MM/AAAA."""
+    """Competência NFS-e: MM/AAAA ou data completa quando dCompet é ISO."""
     raw = (value or "").strip()
     if not raw or raw in {"—", "-"}:
         return "—"
+    if re.match(r"^\d{4}-\d{2}-\d{2}", raw):
+        return format_datetime_br(raw)
     digits = "".join(ch for ch in raw if ch.isdigit())
-    if len(digits) == 6:  # YYYYMM
+    if len(digits) == 6:
         return f"{digits[4:6]}/{digits[:4]}"
-    if len(digits) == 8:  # YYYYMMDD
-        return f"{digits[4:6]}/{digits[:4]}"
+    if len(digits) == 8:
+        return f"{digits[6:8]}/{digits[4:6]}/{digits[:4]}"
     m = re.match(r"^(\d{4})-(\d{2})(?:-\d{2})?", raw)
     if m:
         return f"{m.group(2)}/{m.group(1)}"
@@ -95,6 +97,29 @@ def format_competencia(value: str) -> str:
     if m2:
         return raw
     return raw
+
+
+def format_ibge(value: str) -> str:
+    digits = "".join(ch for ch in (value or "") if ch.isdigit()).zfill(7)[-7:]
+    if len(digits) == 7:
+        return f"{digits[:2]}.{digits[2:]}"
+    return value or "—"
+
+
+def format_endereco_curto(value: str) -> str:
+    """Endereço logradouro+número+bairro (sem IBGE/CEP/UF)."""
+    if not value:
+        return "—"
+    main = value.split(" / ")[0].strip()
+    return main.replace(" — ", ", ").replace("—", ", ")
+
+
+def format_codigo_trib_nacional(value: str) -> str:
+    """Formata cTribNac 6 dígitos como XX.XX.XX (layout gov)."""
+    digits = "".join(ch for ch in (value or "") if ch.isdigit())
+    if len(digits) == 6:
+        return f"{digits[:2]}.{digits[2:4]}.{digits[4:]}"
+    return value or "—"
 
 
 def format_endereco_display(value: str) -> str:

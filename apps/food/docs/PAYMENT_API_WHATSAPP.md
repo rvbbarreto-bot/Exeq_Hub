@@ -1,5 +1,8 @@
 # Food — Pagamento via API (contrato WhatsApp)
 
+> Guia completo de entrega, configuração e roteiro QA: [FOOD_PAYMENTS_DELIVERY_QA.md](./FOOD_PAYMENTS_DELIVERY_QA.md)  
+> **Roteiro passo a passo Fase A (stub):** [QA_FASE_A_STUB_ROTEIRO.md](./QA_FASE_A_STUB_ROTEIRO.md)
+
 Contrato para integradores emitirem Pix e obterem texto pronto para WhatsApp **sem alterar `apps/channel` na v1**.
 
 ## Configuração tenant

@@ -1,4 +1,4 @@
-"""Checklist visual / estrutural M1 — NT 008/2026 v1.02 (Anexo I)."""
+"""Checklist visual / estrutural M1/M4 — NT 008/2026 v1.02 (Anexo I)."""
 
 from __future__ import annotations
 
@@ -7,12 +7,12 @@ from pathlib import Path
 
 from integrations.nfse.danfse.fields import extract_danfse_fields
 from integrations.nfse.danfse.formatters import (
+    format_codigo_trib_nacional,
     format_competencia,
     format_money_br,
 )
 from integrations.nfse.danfse.render import LAYOUT_VERSION, _LOGO_PATH, render_danfse_pdf
 
-# Itens mensuráveis do plano §3.1 + NT §2.2/2.4/2.5 (G-PDF polish → ≥80% M1).
 CHECKLIST_ITEMS = (
     "pdf_valido",
     "pagina_unica_a4",
@@ -27,9 +27,14 @@ CHECKLIST_ITEMS = (
     "numero_nfse",
     "competencia",
     "data_emissao",
+    "situacao_nfse_gerada",
     "bloco_prestador",
     "bloco_tomador",
     "bloco_servico",
+    "bloco_tributacao_municipal",
+    "bloco_tributacao_federal",
+    "bloco_tributacao_ibscbs",
+    "bloco_valor_total",
     "valor_liquido",
     "totais_aproximados",
     "watermark_cancelada",
@@ -47,7 +52,6 @@ class ChecklistResult:
 
     @property
     def ok_m4(self) -> bool:
-        """Meta visual M4 (≥95% checklist NT)."""
         return self.coverage >= 0.95 and self.passed.get("pdf_valido", False)
 
 
@@ -74,6 +78,7 @@ def evaluate_danfse_checklist(xml_bytes: bytes, *, cancelled: bool = False) -> C
         or "Simples Nacional" in text
         or bool(fields.approx_federais or fields.approx_sn_percent)
     )
+    codigo_fmt = format_codigo_trib_nacional(fields.codigo_servico)
     checks = {
         "pdf_valido": pdf.startswith(b"%PDF"),
         "pagina_unica_a4": len(reader.pages) == 1
@@ -96,9 +101,18 @@ def evaluate_danfse_checklist(xml_bytes: bytes, *, cancelled: bool = False) -> C
             or format_competencia(fields.competencia) in text
         ),
         "data_emissao": fields.data_emissao not in {"", "—"},
+        "situacao_nfse_gerada": (cancelled or fields.cancelled)
+        or ("NFS-e Gerada" in text or "Cancelada" in text),
         "bloco_prestador": "PRESTADOR" in text and fields.prestador_nome.split()[0] in text,
         "bloco_tomador": "TOMADOR" in text,
-        "bloco_servico": "SERVI" in text and fields.codigo_servico in text,
+        "bloco_servico": "SERVI" in text
+        and (fields.codigo_servico in text or codigo_fmt in text),
+        "bloco_tributacao_municipal": "TRIBUTAÇÃO MUNICIPAL" in text.upper()
+        or "ISSQN" in text,
+        "bloco_tributacao_federal": "TRIBUTAÇÃO FEDERAL" in text.upper()
+        or "IRRF" in text,
+        "bloco_tributacao_ibscbs": "IBS" in text and "CBS" in text,
+        "bloco_valor_total": "VALOR TOTAL" in text.upper(),
         "valor_liquido": fields.valor_liquido not in {"", "—"}
         and (
             fields.valor_liquido in text

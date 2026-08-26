@@ -77,7 +77,8 @@ def test_hub_food_orders_list_and_detail(client, hub_food):
     assert r.status_code == 200
     body = r.content.decode()
     assert "Pedidos" in body
-    assert "Inteligência" in body
+    assert "Produtos" in body
+    assert "Compras" not in body
     assert hub_food["customer"].name in body
 
     detail = client.get(reverse("hub-v4-food-order-detail", args=[order.id]))
@@ -88,7 +89,6 @@ def test_hub_food_orders_list_and_detail(client, hub_food):
 @pytest.mark.django_db
 def test_hub_food_purchase_create_and_receive(client, hub_food):
     _login(client, hub_food)
-    # create purchase via form
     r = client.post(
         reverse("hub-v4-food-purchase-new"),
         {
@@ -102,28 +102,17 @@ def test_hub_food_purchase_create_and_receive(client, hub_food):
             "idempotency_key": "hub-purch-test-1",
         },
     )
-    assert r.status_code == 302
-    purchase = FoodPurchase.objects.get(
+    assert r.status_code == 404
+    assert not FoodPurchase.objects.filter(
         tenant=hub_food["tenant"], idempotency_key="hub-purch-test-1"
-    )
-    assert purchase.total_cents == 800  # 10 * 80 cents
-    assert purchase.status == FoodPurchase.Status.ORDERED
-
-    r2 = client.post(
-        reverse("hub-v4-food-purchases"),
-        {"action": "receive", "purchase_id": str(purchase.id)},
-    )
-    assert r2.status_code == 302
-    purchase.refresh_from_db()
-    assert purchase.status == FoodPurchase.Status.RECEIVED
+    ).exists()
 
 
 @pytest.mark.django_db
 def test_hub_food_intelligence_and_production_pages(client, hub_food):
     _login(client, hub_food)
     intel = client.get(reverse("hub-v4-food-intelligence"))
-    assert intel.status_code == 200
-    assert "Resumo" in intel.content.decode()
+    assert intel.status_code == 404
 
     prod = client.get(reverse("hub-v4-food-production"))
     assert prod.status_code == 200
@@ -167,18 +156,10 @@ def test_hub_food_retention_create_and_tick(client, hub_food):
             "steps_text": "0|Oi {name} volte",
         },
     )
-    assert r.status_code == 302
-    assert FoodRetentionRule.objects.filter(
+    assert r.status_code == 404
+    assert not FoodRetentionRule.objects.filter(
         tenant=hub_food["tenant"], name="Inativos Hub"
     ).exists()
-    page = client.get(reverse("hub-v4-food-retention"))
-    assert page.status_code == 200
-    assert "Inativos Hub" in page.content.decode()
-    tick = client.post(
-        reverse("hub-v4-food-retention"),
-        {"action": "tick"},
-    )
-    assert tick.status_code == 302
 
 
 @pytest.mark.django_db
@@ -187,7 +168,6 @@ def test_hub_food_marketplace_upsert_and_sync(client, hub_food, settings):
 
     settings.MARKETPLACE_HTTP_MODE = "stub"
     _login(client, hub_food)
-    # create connection via hub (stub without stub_orders yet)
     r = client.post(
         reverse("hub-v4-food-marketplace"),
         {
@@ -198,37 +178,10 @@ def test_hub_food_marketplace_upsert_and_sync(client, hub_food, settings):
             "is_active": "1",
         },
     )
-    assert r.status_code == 302
-    conn = FoodMarketplaceConnection.objects.get(
+    assert r.status_code == 404
+    assert not FoodMarketplaceConnection.objects.filter(
         tenant=hub_food["tenant"], merchant_ref="hub-loja"
-    )
-    conn.settings = {
-        **(conn.settings or {}),
-        "stub_orders": [
-            {
-                "external_order_id": "HUB-MP-1",
-                "customer_name": "MP Hub",
-                "customer_phone": "+5511977776666",
-                "lines": [
-                    {
-                        "sku": hub_food["product"].sku,
-                        "quantity": "1",
-                        "unit_price_cents": 100,
-                    }
-                ],
-                "paid": True,
-            }
-        ],
-    }
-    conn.save(update_fields=["settings", "updated_at"])
-    sync = client.post(
-        reverse("hub-v4-food-marketplace"),
-        {"action": "sync", "connection_id": str(conn.id)},
-    )
-    assert sync.status_code == 302
-    assert FoodOrder.objects.filter(
+    ).exists()
+    assert not FoodOrder.objects.filter(
         tenant=hub_food["tenant"], channel_ref="HUB-MP-1"
     ).exists()
-    page = client.get(reverse("hub-v4-food-marketplace"))
-    assert page.status_code == 200
-    assert "hub-loja" in page.content.decode()

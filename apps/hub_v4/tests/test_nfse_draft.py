@@ -175,16 +175,93 @@ def test_wizard_save_and_reload_draft(client, draft_ctx):
             "competence_date": "2026-08-01",
             "amount": "199,90",
             "ibge_code": "3504107",
+            "service_description": "Consultoria agosto 2026",
+            "informacoes_complementares": "Contrato 42",
         },
     )
     assert r.status_code == 302
     issue = NfIssue.objects.get(tenant=draft_ctx["tenant"], idempotency_key="hub-draft-ui-1")
     assert issue.status == NfIssue.Status.DRAFT
+    assert issue.internal_payload["emission"]["descricao_servico"] == "Consultoria agosto 2026"
+    assert issue.internal_payload["emission"]["informacoes_complementares"] == "Contrato 42"
     assert "draft=" in r.url
 
     reload = client.get(reverse("hub-v4-nfse-wizard"), {"draft": str(issue.id)})
     assert reload.status_code == 200
     html = reload.content.decode()
     assert "Rascunho" in html
+    assert "Consultoria agosto 2026" in html
+    assert "Contrato 42" in html
+    assert "data-review=\"descricao\"" in html
+    assert "review-text" in html
     assert str(draft_ctx["customer"].id) in html
     assert "199,90" in html or "199.90" in html
+
+    detail = client.get(reverse("hub-v4-nfse-detail", kwargs={"pk": issue.id}))
+    assert detail.status_code == 200
+    detail_html = detail.content.decode()
+    assert "Descrição na nota" in detail_html
+    assert "Consultoria agosto 2026" in detail_html
+    assert "Informações complementares" in detail_html
+    assert "Contrato 42" in detail_html
+
+
+@pytest.mark.django_db
+def test_wizard_emit_rejects_missing_amount(client, draft_ctx):
+    _login(client, draft_ctx)
+    r = client.post(
+        reverse("hub-v4-nfse-wizard"),
+        {
+            "wizard_action": "emit",
+            "confirm_emit": "1",
+            "idempotency_key": "hub-emit-missing-amount",
+            "customer_id": str(draft_ctx["customer"].id),
+            "service_id": str(draft_ctx["service"].id),
+            "provider_id": str(draft_ctx["provider"].id),
+            "fiscal_profile_id": str(draft_ctx["profile"].id),
+            "competence_date": "2026-08-20",
+            "amount": "",
+            "ibge_code": "3504107",
+            "service_description": "Contabilidade mensal",
+        },
+    )
+    assert r.status_code == 200
+    html = r.content.decode()
+    assert "Informe o valor" in html
+    assert 'data-initial-step="3"' in html
+    assert "Contabilidade mensal" in html
+
+
+@pytest.mark.django_db
+def test_wizard_emit_with_emission_fields(client, draft_ctx, settings):
+    settings.NF_SYNC_PROCESSING = True
+    settings.CELERY_TASK_ALWAYS_EAGER = True
+    _login(client, draft_ctx)
+    r = client.post(
+        reverse("hub-v4-nfse-wizard"),
+        {
+            "wizard_action": "emit",
+            "confirm_emit": "1",
+            "idempotency_key": "hub-emit-emission-fields",
+            "customer_id": str(draft_ctx["customer"].id),
+            "service_id": str(draft_ctx["service"].id),
+            "provider_id": str(draft_ctx["provider"].id),
+            "fiscal_profile_id": str(draft_ctx["profile"].id),
+            "competence_date": "2026-08-20",
+            "amount": "20,00",
+            "ibge_code": "3504107",
+            "service_description": "Contabilidade ref. agosto/2026",
+            "informacoes_complementares": "Contrato 99",
+        },
+    )
+    assert r.status_code in {302, 200}
+    issue = NfIssue.objects.filter(
+        tenant=draft_ctx["tenant"], idempotency_key="hub-emit-emission-fields"
+    ).first()
+    assert issue is not None
+    assert issue.amount_cents == 2000
+    issue.refresh_from_db()
+    assert issue.resolved_params.get("descricao_servico") == (
+        "Contabilidade ref. agosto/2026"
+    )
+    assert issue.resolved_params.get("informacoes_complementares") == "Contrato 99"

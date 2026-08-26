@@ -12,7 +12,7 @@
     <div class="login-card">
       <h1>EXEQ Hub</h1>
       <p class="sub">Contabilidade multi-CNPJ · operação fiscal</p>
-      <form method="post" action="">
+      <form method="post" action="{% url 'hub-v4-login' %}">
         {% csrf_token %}
         <div class="field">
           <label for="tenant_slug">Escritório (slug)</label>

@@ -1,0 +1,45 @@
+{% extends "hub_v4/base.html" %}
+
+{% block page_actions %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-food-products' %}">Lista</a>
+{% endblock %}
+
+{% block content %}
+{% include "hub_v4/food/_subnav.html" %}
+<form method="post" class="card">
+  {% csrf_token %}
+  <div class="form-grid">
+    <label>
+      <span>SKU</span>
+      <input name="sku" value="{{ form.sku }}" required placeholder="PATE-01" />
+    </label>
+    <label class="full">
+      <span>Nome</span>
+      <input name="name" value="{{ form.name }}" required />
+    </label>
+    <label>
+      <span>Preço (R$)</span>
+      <input name="price" value="{{ form.price|default:'0,00' }}" required placeholder="12,50" />
+    </label>
+    <label>
+      <span>Custo (R$)</span>
+      <input name="cost" value="{{ form.cost|default:'0,00' }}" placeholder="5,00" />
+    </label>
+    <label>
+      <span>Unidade</span>
+      <input name="unit" value="{{ form.unit|default:'un' }}" />
+    </label>
+    <label>
+      <span>Categoria</span>
+      <input name="category" value="{{ form.category }}" />
+    </label>
+    <label>
+      <span>Estoque inicial</span>
+      <input name="initial_stock" value="{{ form.initial_stock|default:'0' }}" />
+    </label>
+  </div>
+  <div style="margin-top:16px;">
+    <button class="btn btn-primary" type="submit">Salvar produto</button>
+  </div>
+</form>
+{% endblock %}

@@ -226,6 +226,13 @@ def resolve_tax_rule_detailed(
 
 
 def rule_to_payload(rule: MunicipalTaxRule, *, resolve_meta: dict | None = None) -> dict:
+    from apps.fiscal.atibaia_ctribmun import resolve_c_trib_mun
+
+    c_trib_mun = resolve_c_trib_mun(
+        ibge_code=rule.ibge_code,
+        service_code=rule.service_code,
+        rule_c_trib_mun=getattr(rule, "c_trib_mun", "") or "",
+    )
     payload = {
         "rule_id": str(rule.id),
         "ibge_code": rule.ibge_code,
@@ -239,6 +246,8 @@ def rule_to_payload(rule: MunicipalTaxRule, *, resolve_meta: dict | None = None)
         "simples_codigo_tributacao": rule.simples_codigo_tributacao,
         "priority": rule.priority,
     }
+    if c_trib_mun:
+        payload["c_trib_mun"] = c_trib_mun
     if resolve_meta:
         payload["resolve_meta"] = resolve_meta
     return payload

@@ -126,6 +126,7 @@ def test_n2_import_csv(fiscal_n1_ctx):
         tenant=ctx["tenant"], profile=ctx["profile"], csv_text=csv_text
     )
     assert len(result["applied_service_codes"]) == 2
+    assert set(result.get("ibge_codes") or []) == {"3504107"}
     rule = has_published_rule(
         tenant=ctx["tenant"],
         fiscal_profile=ctx["profile"],

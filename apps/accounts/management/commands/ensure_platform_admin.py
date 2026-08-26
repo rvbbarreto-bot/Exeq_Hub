@@ -7,9 +7,9 @@ from django.core.management.base import BaseCommand
 
 from apps.accounts.models import TenantMembership
 
-DEFAULT_EMAIL = "exeq_admin@exeq.local"
-DEFAULT_NAME = "Exeq_admin"
-DEFAULT_PASSWORD = "ExeqAdmin#2026!"
+DEFAULT_EMAIL = "admin@local"
+DEFAULT_NAME = "admin"
+DEFAULT_PASSWORD = "admin"
 
 
 class Command(BaseCommand):

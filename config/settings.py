@@ -69,7 +69,7 @@ ROOT_URLCONF = "config.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        "DIRS": [BASE_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -238,6 +238,11 @@ ALLOW_ENV_INTER_CREDENTIALS_FALLBACK = (
 )
 PAYMENT_HTTP_MODE = env("PAYMENT_HTTP_MODE", "stub")  # stub | http
 PAYMENT_DEFAULT_PROVIDER = env("PAYMENT_DEFAULT_PROVIDER", "inter")  # inter|asaas|c6
+# Food Mercado Pago — override isolado do billing (FOOD_MP_HTTP_MODE vazio → PAYMENT_HTTP_MODE)
+FOOD_MP_HTTP_MODE = env("FOOD_MP_HTTP_MODE", "")
+FOOD_MP_WEBHOOK_SECRET = env("FOOD_MP_WEBHOOK_SECRET", "")
+MERCADOPAGO_ACCESS_TOKEN = env("MERCADOPAGO_ACCESS_TOKEN", "")
+MERCADOPAGO_PUBLIC_KEY = env("MERCADOPAGO_PUBLIC_KEY", "")
 # Food marketplace (iFood / aiqfome) — stub | http
 MARKETPLACE_HTTP_MODE = env("MARKETPLACE_HTTP_MODE", "stub")
 MARKETPLACE_HTTP_TIMEOUT = float(env("MARKETPLACE_HTTP_TIMEOUT", "15") or "15")

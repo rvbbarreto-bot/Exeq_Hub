@@ -179,6 +179,9 @@ run_py -m pip install -q -r requirements.txt
 log "migrate"
 run_py manage.py migrate --noinput
 
+log "admin plataforma (lab: admin@local / admin)"
+run_py manage.py ensure_platform_admin
+
 log "django check"
 run_py manage.py check
 
