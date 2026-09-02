@@ -14,6 +14,11 @@ urlpatterns = [
         views.nfse_lookup_customer,
         name="hub-v4-nfse-lookup",
     ),
+    path(
+        "nbs/search/",
+        views.hub_nbs_search,
+        name="hub-v4-nbs-search",
+    ),
     path("nfse/<uuid:pk>/", views.NfseDetailView.as_view(), name="hub-v4-nfse-detail"),
     path(
         "nfse/<uuid:pk>/documentos/",

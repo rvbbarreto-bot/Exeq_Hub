@@ -20,14 +20,20 @@ def normalize_emission_fields(
     *,
     descricao_servico: str = "",
     informacoes_complementares: str = "",
+    codigo_nbs: str = "",
 ) -> dict[str, str]:
+    from apps.master_data.nbs_import import normalize_nbs_code
+
     out: dict[str, str] = {}
     desc = _collapse_ws(descricao_servico)[:MAX_DESCRICAO_SERVICO]
     comp = _collapse_ws(informacoes_complementares)[:MAX_INFORMACOES_COMPLEMENTARES]
+    nbs = normalize_nbs_code(codigo_nbs)
     if desc:
         out["descricao_servico"] = desc
     if comp:
         out["informacoes_complementares"] = comp
+    if len(nbs) == 9:
+        out["codigo_nbs"] = nbs
     return out
 
 

@@ -207,6 +207,39 @@ def test_wizard_save_and_reload_draft(client, draft_ctx):
 
 
 @pytest.mark.django_db
+def test_wizard_save_draft_persists_nbs_override(client, draft_ctx):
+    draft_ctx["service"].codigo_nbs = "111111111"
+    draft_ctx["service"].save(update_fields=["codigo_nbs"])
+    _login(client, draft_ctx)
+    r = client.post(
+        reverse("hub-v4-nfse-wizard"),
+        {
+            "wizard_action": "save_draft",
+            "confirm_emit": "0",
+            "idempotency_key": "hub-draft-nbs-1",
+            "customer_id": str(draft_ctx["customer"].id),
+            "service_id": str(draft_ctx["service"].id),
+            "provider_id": str(draft_ctx["provider"].id),
+            "fiscal_profile_id": str(draft_ctx["profile"].id),
+            "competence_date": "2026-08-01",
+            "amount": "100,00",
+            "ibge_code": "3504107",
+            "service_description": "Consultoria",
+            "codigo_nbs": "115013000",
+        },
+    )
+    assert r.status_code == 302
+    issue = NfIssue.objects.get(
+        tenant=draft_ctx["tenant"], idempotency_key="hub-draft-nbs-1"
+    )
+    assert issue.internal_payload["emission"]["codigo_nbs"] == "115013000"
+
+    reload = client.get(reverse("hub-v4-nfse-wizard"), {"draft": str(issue.id)})
+    assert reload.status_code == 200
+    assert "115013000" in reload.content.decode()
+
+
+@pytest.mark.django_db
 def test_wizard_emit_rejects_missing_amount(client, draft_ctx):
     _login(client, draft_ctx)
     r = client.post(

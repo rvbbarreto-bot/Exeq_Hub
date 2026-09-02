@@ -10,6 +10,7 @@
   {{ customers_data|json_script:"hub-customers-data" }}
   {{ services_data|json_script:"hub-services-data" }}
   {{ profiles_data|json_script:"hub-profiles-data" }}
+  {{ emit_coverage_keys|json_script:"hub-emit-coverage" }}
   <div class="wizard-steps" role="tablist" aria-label="Etapas da emissão">
     <button type="button" class="step is-active" data-wizard-step aria-current="step">1 · Tomador</button>
     <button type="button" class="step" data-wizard-step>2 · Serviço</button>
@@ -101,6 +102,8 @@
             <option value="{{ s.id }}"
               data-lc116="{{ s.lc116_item|default:s.service_code }}"
               data-code="{{ s.service_code }}"
+              data-nbs="{{ s.codigo_nbs|default:'' }}"
+              data-description="{{ s.description|escape }}"
               {% if selected_service_id and s.id|stringformat:"s" == selected_service_id %}selected{% endif %}>
               {{ s.service_code }} · {{ s.description|truncatechars:80 }}
             </option>
@@ -122,6 +125,14 @@
           <label for="id_lc116">Código LC116</label>
           <input id="id_lc116" type="text" readonly class="is-readonly field-lc116"
                  placeholder="Preenchido pelo serviço" title="Código LC 116 do serviço selecionado">
+        </div>
+        <div class="field full">
+          <label for="id_codigo_nbs">Código NBS</label>
+          <input id="id_codigo_nbs" name="codigo_nbs" type="text" maxlength="9"
+                 class="mono field-nbs-code" inputmode="numeric"
+                 placeholder="9 dígitos — preenchido pelo serviço"
+                 value="{{ draft_codigo_nbs|default:'' }}">
+          <p class="hint-line">Opcional no MVP; editável por nota. Catálogo NBS importado no admin/comando.</p>
         </div>
         <div class="field full">
           <label for="id_service_desc">Descrição do serviço na nota *</label>

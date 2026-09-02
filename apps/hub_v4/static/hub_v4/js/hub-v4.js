@@ -65,6 +65,8 @@
     parseJsonScript("hub-services-data").forEach(function (svc) {
       if (svc && svc.id) servicesIndex[String(svc.id)] = svc;
     });
+    var profilesData = parseJsonScript("hub-profiles-data");
+    var emitCoverage = new Set(parseJsonScript("hub-emit-coverage"));
 
     function serviceFromSelect(sel) {
       if (!sel || sel.selectedIndex < 0) return null;
@@ -76,6 +78,24 @@
     function selectedText(sel) {
       if (!sel || sel.selectedIndex < 0) return "—";
       return sel.options[sel.selectedIndex].text || "—";
+    }
+
+    function resolveProfileId() {
+      var sel = qs("#id_fiscal_profile_id", form);
+      if (sel && sel.value) return String(sel.value);
+      if (profilesData.length && profilesData[0].id) {
+        return String(profilesData[0].id);
+      }
+      return "";
+    }
+
+    function hasEmitRuleCoverage() {
+      var svc = qs("#id_service_id", form);
+      var ibge = qs("#id_ibge", form);
+      var pid = resolveProfileId();
+      var ibgeVal = ibge ? String(ibge.value || "").replace(/\D/g, "").slice(0, 7) : "";
+      if (!svc || !svc.value || !pid || ibgeVal.length !== 7) return true;
+      return emitCoverage.has(pid + "|" + ibgeVal + "|" + svc.value);
     }
 
     function fillCustomerFieldsFromSelect() {
@@ -101,12 +121,21 @@
       if (!opt || !opt.value) {
         qs("#id_lc116").value = "";
         if (descEl) descEl.value = "";
+        var nbsEl = qs("#id_codigo_nbs", form);
+        if (nbsEl) nbsEl.value = "";
         return;
       }
       qs("#id_lc116").value =
         opt.getAttribute("data-lc116") || opt.getAttribute("data-code") || "";
+      var svc = serviceFromSelect(sel);
+      var nbsEl = qs("#id_codigo_nbs", form);
+      if (nbsEl) {
+        var svcNbs = (svc && svc.codigo_nbs) || opt.getAttribute("data-nbs") || "";
+        if (fromChange || !String(nbsEl.value || "").trim()) {
+          nbsEl.value = svcNbs;
+        }
+      }
       if (descEl) {
-        var svc = serviceFromSelect(sel);
         var catalogDesc =
           (svc && svc.description) || opt.getAttribute("data-description") || "";
         if (fromChange || !String(descEl.value || "").trim()) {
@@ -244,6 +273,23 @@
         var ibgeVal = ibge ? String(ibge.value || "").replace(/\D/g, "") : "";
         if (!ibgeVal || ibgeVal.length !== 7) {
           showError("Informe o IBGE do município da prestação (7 dígitos).");
+          return false;
+        }
+        if (!hasEmitRuleCoverage()) {
+          var svcOpt =
+            qs("#id_service_id", form) &&
+            qs("#id_service_id", form).options[
+              qs("#id_service_id", form).selectedIndex
+            ];
+          var svcCode =
+            (svcOpt && (svcOpt.getAttribute("data-code") || svcOpt.text)) || "serviço";
+          showError(
+            "Sem regra ISS publicada para " +
+              svcCode +
+              " no IBGE " +
+              ibgeVal +
+              ". Complete a matriz em Fiscal → Pronto p/ emitir ou Regras ISS."
+          );
           return false;
         }
       }

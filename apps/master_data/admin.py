@@ -9,6 +9,8 @@ from apps.master_data.models import (
     Customer,
     NationalServiceCatalogVersion,
     NationalServiceItem,
+    NbsCatalogVersion,
+    NbsItem,
     Provider,
     ServiceCatalogItem,
 )
@@ -19,6 +21,7 @@ from apps.master_data.national_service_import import (
     materialize_national_services_for_tenant,
     publish_national_service_version,
 )
+from apps.master_data.nbs_import import publish_nbs_version
 
 
 @admin.register(Provider)
@@ -306,6 +309,62 @@ class NationalServiceItemAdmin(admin.ModelAdmin):
         "description",
         "lc116_hint",
     )
+
+    @admin.display(description="Descrição")
+    def short_description(self, obj):
+        text = obj.description or ""
+        return text if len(text) <= 80 else text[:77] + "…"
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(NbsCatalogVersion)
+class NbsCatalogVersionAdmin(admin.ModelAdmin):
+    list_display = (
+        "version_label",
+        "status",
+        "row_count",
+        "source_filename",
+        "imported_at",
+        "published_at",
+        "items_link",
+    )
+    list_filter = ("status",)
+    search_fields = ("version_label", "source_filename", "notes")
+    readonly_fields = (
+        "source_filename",
+        "sheet_name",
+        "row_count",
+        "imported_at",
+        "published_at",
+    )
+    actions = ("action_publish",)
+
+    @admin.display(description="Códigos")
+    def items_link(self, obj):
+        url = (
+            reverse("admin:master_data_nbsitem_changelist")
+            + f"?version__id__exact={obj.pk}"
+        )
+        return format_html('<a href="{}">{} itens</a>', url, obj.row_count)
+
+    @admin.action(description="Publicar versões selecionadas")
+    def action_publish(self, request, queryset):
+        for version in queryset.order_by("imported_at"):
+            publish_nbs_version(version)
+        self.message_user(request, "Versão(ões) NBS publicada(s).", messages.SUCCESS)
+
+
+@admin.register(NbsItem)
+class NbsItemAdmin(admin.ModelAdmin):
+    list_display = ("codigo", "short_description", "is_active", "version")
+    list_filter = ("version", "is_active")
+    search_fields = ("codigo", "description")
+    readonly_fields = ("version", "codigo", "description", "is_active")
 
     @admin.display(description="Descrição")
     def short_description(self, obj):

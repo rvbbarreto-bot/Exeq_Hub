@@ -145,6 +145,35 @@ def test_dps_paliq_non_simples_always():
     assert payload["infDPS"]["serv"]["cServ"]["cTribMun"] == "107"
 
 
+def test_dps_cnbs_from_service_and_override():
+    issue = _issue()
+    issue.service.codigo_nbs = "115013000"
+    payload = to_sefin_dps_dict(issue, tp_amb=2, serie=1, n_dps=15)
+    assert payload["infDPS"]["serv"]["cServ"]["cNBS"] == "115013000"
+    xml = to_sefin_dps_xml(issue, tp_amb=2, serie=1, n_dps=15)
+    assert b"cNBS" in xml
+    assert b"115013000" in xml
+
+
+def test_dps_cnbs_override_in_draft_beats_service():
+    issue = _issue()
+    issue.service.codigo_nbs = "111111111"
+    issue.internal_payload = {"emission": {"codigo_nbs": "115022000"}}
+    payload = to_sefin_dps_dict(issue, tp_amb=2, serie=1, n_dps=16)
+    assert payload["infDPS"]["serv"]["cServ"]["cNBS"] == "115022000"
+
+
+def test_dps_omits_cnbs_when_absent():
+    issue = _issue()
+    issue.service.codigo_nbs = ""
+    issue.service.nbs_item = None
+    issue.internal_payload = None
+    payload = to_sefin_dps_dict(issue, tp_amb=2, serie=1, n_dps=17)
+    assert "cNBS" not in payload["infDPS"]["serv"]["cServ"]
+    xml = to_sefin_dps_xml(issue, tp_amb=2, serie=1, n_dps=17)
+    assert b"cNBS" not in xml
+
+
 def test_dps_c_trib_mun_from_params():
     issue = _issue(
         resolved_params={

@@ -138,6 +138,21 @@ class ServiceCatalogItem(TenantOwnedModel):
         default="",
         verbose_name="Código tributação nacional ISS",
     )
+    codigo_nbs = models.CharField(
+        max_length=9,
+        blank=True,
+        default="",
+        verbose_name="Código NBS",
+        help_text="Nomenclatura Brasileira de Serviços (9 dígitos, sem pontuação).",
+    )
+    nbs_item = models.ForeignKey(
+        "master_data.NbsItem",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="service_catalog_items",
+        verbose_name="Item NBS (catálogo)",
+    )
     operation_kind = models.CharField(
         max_length=32,
         choices=OperationKind.choices,
@@ -230,6 +245,71 @@ class NationalServiceItem(models.Model):
         ]
         indexes = [
             models.Index(fields=["codigo"], name="idx_national_service_codigo"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.codigo} — {self.description[:60]}"
+
+
+class NbsCatalogVersion(models.Model):
+    """Versão importada da Lista NBS (Anexo B NFS-e Nacional)."""
+
+    class Status(models.TextChoices):
+        DRAFT = "draft", "Rascunho"
+        PUBLISHED = "published", "Publicada"
+        SUPERSEDED = "superseded", "Substituída"
+
+    version_label = models.CharField(
+        max_length=64, unique=True, verbose_name="Rótulo da versão"
+    )
+    source_filename = models.CharField(
+        max_length=255, blank=True, default="", verbose_name="Arquivo origem"
+    )
+    sheet_name = models.CharField(
+        max_length=64, blank=True, default="LISTA.NBS_v2.0", verbose_name="Aba"
+    )
+    status = models.CharField(
+        max_length=16, choices=Status.choices, default=Status.DRAFT, verbose_name="Status"
+    )
+    row_count = models.PositiveIntegerField(default=0, verbose_name="Qtd. códigos")
+    notes = models.TextField(blank=True, default="", verbose_name="Observações")
+    imported_at = models.DateTimeField(auto_now_add=True, verbose_name="Importado em")
+    published_at = models.DateTimeField(null=True, blank=True, verbose_name="Publicado em")
+
+    class Meta:
+        verbose_name = "Versão catálogo NBS"
+        verbose_name_plural = "Versões catálogo NBS"
+        ordering = ["-imported_at"]
+
+    def __str__(self) -> str:
+        return f"{self.version_label} ({self.status})"
+
+
+class NbsItem(models.Model):
+    """Código NBS da lista federal (global, não tenant)."""
+
+    version = models.ForeignKey(
+        NbsCatalogVersion,
+        on_delete=models.CASCADE,
+        related_name="items",
+        verbose_name="Versão",
+    )
+    codigo = models.CharField(max_length=9, verbose_name="Código NBS")
+    description = models.TextField(verbose_name="Descrição")
+    is_active = models.BooleanField(default=True, verbose_name="Ativo")
+
+    class Meta:
+        verbose_name = "Código NBS"
+        verbose_name_plural = "Códigos NBS"
+        ordering = ["codigo"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["version", "codigo"],
+                name="uq_nbs_version_codigo",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["codigo"], name="idx_nbs_codigo"),
         ]
 
     def __str__(self) -> str:

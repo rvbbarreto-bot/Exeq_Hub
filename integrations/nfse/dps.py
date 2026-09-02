@@ -155,6 +155,14 @@ def to_sefin_dps_dict(
             "xDescServ": descricao,
         },
     }
+    from apps.master_data.nbs_resolution import resolve_codigo_nbs
+
+    draft = (issue.internal_payload or {}).get("emission") or {}
+    codigo_nbs = resolve_codigo_nbs(
+        service=service, params=params, draft_emission=draft if isinstance(draft, dict) else {}
+    )
+    if codigo_nbs:
+        serv_block["cServ"]["cNBS"] = codigo_nbs
     c_trib_mun = (params.get("c_trib_mun") or "").strip()
     if c_trib_mun:
         serv_block["cServ"]["cTribMun"] = str(c_trib_mun)
@@ -332,6 +340,8 @@ def _append_serv(parent: etree._Element, serv: dict[str, Any]) -> None:
     _txt(c_el, "cTribNac", str(c_serv.get("cTribNac") or ""))
     if c_serv.get("cTribMun"):
         _txt(c_el, "cTribMun", str(c_serv["cTribMun"]))
+    if c_serv.get("cNBS"):
+        _txt(c_el, "cNBS", str(c_serv["cNBS"]))
     _txt(c_el, "xDescServ", str(c_serv.get("xDescServ") or "Servico"))
     info_compl = serv.get("infoCompl") or {}
     if info_compl.get("xInfComp"):

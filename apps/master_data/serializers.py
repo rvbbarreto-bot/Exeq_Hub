@@ -93,12 +93,14 @@ class ServiceCatalogItemSerializer(serializers.ModelSerializer):
             "description",
             "lc116_item",
             "codigo_tributacao_nacional_iss",
+            "codigo_nbs",
+            "nbs_item",
             "display_label",
             "is_active",
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "display_label", "created_at", "updated_at")
+        read_only_fields = ("id", "display_label", "nbs_item", "created_at", "updated_at")
 
     def get_display_label(self, obj) -> str:
         from apps.master_data.national_service_import import service_catalog_display_label

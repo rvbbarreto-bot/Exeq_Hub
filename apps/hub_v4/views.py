@@ -355,6 +355,23 @@ def nfse_lookup_customer(request: HttpRequest):
         return JsonResponse({"ok": False, "error": str(exc)}, status=400)
 
 
+@require_http_methods(["GET"])
+def hub_nbs_search(request: HttpRequest):
+    """Busca NBS (catálogo global) para autocomplete Hub."""
+    tenant, user, role, redir = require_hub(request)
+    if redir:
+        return JsonResponse({"ok": False, "error": "Não autenticado"}, status=401)
+    from apps.master_data.nbs_import import search_nbs
+
+    q = request.GET.get("q") or ""
+    try:
+        limit = int(request.GET.get("limit") or 20)
+    except (TypeError, ValueError):
+        limit = 20
+    results = search_nbs(query=q, limit=limit)
+    return JsonResponse({"ok": True, "results": results})
+
+
 class NfseWizardView(View):
     template_name = "hub_v4/nfse/wizard.html"
 
@@ -446,6 +463,7 @@ class NfseWizardView(View):
                         "amount_cents",
                         "descricao_servico",
                         "informacoes_complementares",
+                        "codigo_nbs",
                     }
                 })
             pid = request.POST.get("provider_id")
@@ -553,6 +571,7 @@ class NfseWizardView(View):
                 "code": s.service_code,
                 "lc116": s.lc116_item or "",
                 "description": s.description,
+                "codigo_nbs": s.codigo_nbs or "",
             }
             for s in services
         ]
@@ -581,6 +600,9 @@ class NfseWizardView(View):
             draft.service.description if draft else ""
         )
         draft_info_compl = draft_emission.get("informacoes_complementares") or ""
+        draft_codigo_nbs = draft_emission.get("codigo_nbs") or (
+            draft.service.codigo_nbs if draft else ""
+        )
         selected_customer_id = str(draft.customer_id) if draft else ""
         selected_service_id = str(draft.service_id) if draft else ""
         selected_profile_id = (
@@ -594,6 +616,7 @@ class NfseWizardView(View):
         draft_id = str(draft.id) if draft else ""
 
         from apps.fiscal.multimunicipio import list_published_ibge_codes, provider_default_ibge
+        from apps.fiscal.readiness import build_emit_coverage_keys, provider_ibge
 
         published_ibge = list_published_ibge_codes(tenant=tenant)
         if not draft_ibge and providers:
@@ -623,6 +646,9 @@ class NfseWizardView(View):
             if post_desc:
                 draft_service_desc = post_desc
             draft_info_compl = (form_post.get("informacoes_complementares") or "").strip()
+            post_nbs = (form_post.get("codigo_nbs") or "").strip()
+            if post_nbs:
+                draft_codigo_nbs = post_nbs
             post_provider = (form_post.get("provider_id") or "").strip()
             if post_provider:
                 active_id = post_provider
@@ -632,6 +658,30 @@ class NfseWizardView(View):
             post_draft_id = (form_post.get("draft_id") or "").strip()
             if post_draft_id:
                 draft_id = post_draft_id
+
+        ibge_codes: set[str] = set()
+        for row in published_ibge:
+            code = (row.get("ibge_code") or "").strip()
+            if code:
+                ibge_codes.add(code)
+        for prov in providers:
+            prov_ibge = provider_ibge(prov)
+            if prov_ibge:
+                ibge_codes.add(prov_ibge)
+        if draft_ibge:
+            ibge_codes.add("".join(ch for ch in draft_ibge if ch.isdigit())[:7])
+
+        emit_coverage_keys = build_emit_coverage_keys(
+            tenant=tenant,
+            services=services,
+            profiles=profiles or list(
+                FiscalProfile.objects.filter(tenant=tenant).order_by("name")[:50]
+            ),
+            ibge_codes=sorted(ibge_codes),
+            competence_date=date.fromisoformat(draft_competence)
+            if draft_competence
+            else date.today(),
+        )
 
         return {
             "nav": "nfse",
@@ -657,9 +707,11 @@ class NfseWizardView(View):
             "draft_ibge": draft_ibge,
             "draft_service_desc": draft_service_desc,
             "draft_info_compl": draft_info_compl,
+            "draft_codigo_nbs": draft_codigo_nbs,
             "wizard_initial_step": wizard_initial_step,
             "regime_simples": TaxRegime.SIMPLES,
             "published_ibge": published_ibge,
+            "emit_coverage_keys": emit_coverage_keys,
         }
 
     def _parse_wizard_payload(self, request, tenant) -> dict:
@@ -708,6 +760,9 @@ class NfseWizardView(View):
         if not descricao:
             raise ValueError("Informe a descrição do serviço na nota.")
         info_compl = (request.POST.get("informacoes_complementares") or "").strip()
+        codigo_nbs = (request.POST.get("codigo_nbs") or "").strip()
+        if not codigo_nbs:
+            codigo_nbs = service.codigo_nbs or ""
         return {
             "tenant": tenant,
             "idempotency_key": idem,
@@ -721,6 +776,7 @@ class NfseWizardView(View):
             "draft": draft,
             "descricao_servico": descricao,
             "informacoes_complementares": info_compl,
+            "codigo_nbs": codigo_nbs,
         }
 
 

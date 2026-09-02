@@ -68,6 +68,20 @@ def create_service(*, tenant, service_code: str, description: str, **extra):
     if operation_kind == ServiceCatalogItem.OperationKind.LOCACAO_BEM:
         extra["codigo_tributacao_nacional_iss"] = ""
         extra["lc116_item"] = ""
+        extra["codigo_nbs"] = ""
+        extra.pop("nbs_item", None)
+
+    nbs_raw = extra.get("codigo_nbs")
+    if nbs_raw is not None and str(nbs_raw).strip():
+        from apps.master_data.nbs_import import normalize_nbs_code, resolve_nbs_item
+
+        code = normalize_nbs_code(str(nbs_raw))
+        extra["codigo_nbs"] = code
+        item = resolve_nbs_item(codigo=code) if len(code) == 9 else None
+        extra["nbs_item"] = item
+    elif "codigo_nbs" in extra and not str(extra.get("codigo_nbs") or "").strip():
+        extra["codigo_nbs"] = ""
+        extra["nbs_item"] = None
 
     return ServiceCatalogItem.objects.create(
         tenant=tenant,

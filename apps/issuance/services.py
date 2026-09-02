@@ -113,6 +113,7 @@ def _persist_emission_text(
     *,
     descricao_servico: str = "",
     informacoes_complementares: str = "",
+    codigo_nbs: str = "",
 ) -> None:
     from integrations.nfse.emission_text import normalize_emission_fields
 
@@ -120,6 +121,7 @@ def _persist_emission_text(
     emission = normalize_emission_fields(
         descricao_servico=descricao_servico,
         informacoes_complementares=informacoes_complementares,
+        codigo_nbs=codigo_nbs,
     )
     if emission:
         payload["emission"] = emission
@@ -137,6 +139,7 @@ def _merge_emission_into_params(issue: NfIssue, payload: dict) -> dict:
     for key, value in normalize_emission_fields(
         descricao_servico=draft.get("descricao_servico") or "",
         informacoes_complementares=draft.get("informacoes_complementares") or "",
+        codigo_nbs=draft.get("codigo_nbs") or "",
     ).items():
         merged[key] = value
     return merged
@@ -154,6 +157,7 @@ def _apply_nf_issue_fields(
     amount_cents: int,
     descricao_servico: str = "",
     informacoes_complementares: str = "",
+    codigo_nbs: str = "",
 ) -> NfIssue:
     issue.provider = provider
     issue.customer = customer
@@ -178,6 +182,7 @@ def _apply_nf_issue_fields(
         issue,
         descricao_servico=descricao_servico,
         informacoes_complementares=informacoes_complementares,
+        codigo_nbs=codigo_nbs,
     )
     return issue
 
@@ -197,6 +202,7 @@ def save_nf_draft(
     draft: NfIssue | None = None,
     descricao_servico: str = "",
     informacoes_complementares: str = "",
+    codigo_nbs: str = "",
 ) -> NfIssue:
     """
     Persiste NFS-e em status rascunho (sem tributação, fila ou envio).
@@ -226,6 +232,7 @@ def save_nf_draft(
             amount_cents=amount_cents,
             descricao_servico=descricao_servico,
             informacoes_complementares=informacoes_complementares,
+            codigo_nbs=codigo_nbs,
         )
 
     existing = (
@@ -247,6 +254,7 @@ def save_nf_draft(
             amount_cents=amount_cents,
             descricao_servico=descricao_servico,
             informacoes_complementares=informacoes_complementares,
+            codigo_nbs=codigo_nbs,
         )
 
     from apps.accounts.plan_limits import assert_can_create_nf_this_month
@@ -269,6 +277,7 @@ def save_nf_draft(
         issue,
         descricao_servico=descricao_servico,
         informacoes_complementares=informacoes_complementares,
+        codigo_nbs=codigo_nbs,
     )
     return issue
 
@@ -427,6 +436,7 @@ def create_nf_issue(
     amount_cents: int,
     descricao_servico: str = "",
     informacoes_complementares: str = "",
+    codigo_nbs: str = "",
 ) -> NfIssue:
     existing = NfIssue.objects.filter(
         tenant=tenant,
@@ -452,6 +462,7 @@ def create_nf_issue(
         draft=draft,
         descricao_servico=descricao_servico,
         informacoes_complementares=informacoes_complementares,
+        codigo_nbs=codigo_nbs,
     )
     return submit_nf_draft(issue, actor="api")
 

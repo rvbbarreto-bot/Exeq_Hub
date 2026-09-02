@@ -247,9 +247,16 @@ def save_service_from_post(*, tenant, post, obj=None):
         operation_kind = ServiceCatalogItem.OperationKind.SERVICO_ISS
     is_active = (post.get("is_active") or "1") in {"1", "true", "on", "yes"}
     nacional = normalize_ctn_iss(nacional_raw) if nacional_raw else ""
+    nbs_raw = (post.get("codigo_nbs") or "").strip()
+    from apps.master_data.nbs_import import normalize_nbs_code, resolve_nbs_item
+
+    nbs_code = normalize_nbs_code(nbs_raw) if nbs_raw else ""
+    nbs_item = resolve_nbs_item(codigo=nbs_code) if len(nbs_code) == 9 else None
     if operation_kind == ServiceCatalogItem.OperationKind.LOCACAO_BEM:
         lc116 = ""
         nacional = ""
+        nbs_code = ""
+        nbs_item = None
 
     if obj is None:
         if ServiceCatalogItem.objects.filter(tenant=tenant, service_code=code).exists():
@@ -260,6 +267,8 @@ def save_service_from_post(*, tenant, post, obj=None):
             description=description,
             lc116_item=lc116,
             codigo_tributacao_nacional_iss=nacional,
+            codigo_nbs=nbs_code,
+            nbs_item=nbs_item,
             operation_kind=operation_kind,
             is_active=is_active,
         )
@@ -274,6 +283,8 @@ def save_service_from_post(*, tenant, post, obj=None):
     obj.description = description
     obj.lc116_item = lc116
     obj.codigo_tributacao_nacional_iss = nacional
+    obj.codigo_nbs = nbs_code
+    obj.nbs_item = nbs_item
     obj.operation_kind = operation_kind
     obj.is_active = is_active
     obj.save()
