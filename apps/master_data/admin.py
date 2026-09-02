@@ -21,7 +21,7 @@ from apps.master_data.national_service_import import (
     materialize_national_services_for_tenant,
     publish_national_service_version,
 )
-from apps.master_data.nbs_import import publish_nbs_version
+from apps.master_data.nbs_import import NbsImportError, import_nbs_xlsx, publish_nbs_version
 
 
 @admin.register(Provider)
@@ -76,6 +76,28 @@ class AnexoBImportForm(forms.Form):
         initial=True,
         label="Publicar como versão ativa",
         help_text="Substitui a versão publicada anterior (fica 'Substituída').",
+    )
+
+
+class NbsImportForm(forms.Form):
+    version_label = forms.CharField(
+        max_length=64,
+        label="Rótulo da versão",
+        help_text="Ex.: NBS_v2.0-2026-01-22 — único no sistema.",
+    )
+    xlsx_file = forms.FileField(
+        label="Arquivo XLSX (Anexo B — NBS)",
+        help_text="Aba LISTA.NBS* — Lista NBS nacional.",
+    )
+    notes = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 2}),
+        label="Observações",
+    )
+    publish = forms.BooleanField(
+        required=False,
+        initial=True,
+        label="Publicar como versão ativa",
     )
 
 
@@ -343,6 +365,79 @@ class NbsCatalogVersionAdmin(admin.ModelAdmin):
         "published_at",
     )
     actions = ("action_publish",)
+    change_list_template = "admin/master_data/nbscatalogversion/change_list.html"
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom = [
+            path(
+                "import-anexo-b-nbs/",
+                self.admin_site.admin_view(self.import_nbs_view),
+                name="master_data_nbscatalogversion_import_nbs",
+            ),
+        ]
+        return custom + urls
+
+    def changelist_view(self, request, extra_context=None):
+        extra_context = extra_context or {}
+        extra_context["import_nbs_url"] = reverse(
+            "admin:master_data_nbscatalogversion_import_nbs"
+        )
+        return super().changelist_view(request, extra_context=extra_context)
+
+    def import_nbs_view(self, request):
+        if not request.user.is_staff:
+            messages.error(request, "Sem permissão.")
+            return HttpResponseRedirect(
+                reverse("admin:master_data_nbscatalogversion_changelist")
+            )
+
+        form = NbsImportForm(request.POST or None, request.FILES or None)
+        if request.method == "POST" and form.is_valid():
+            from pathlib import Path
+            import tempfile
+
+            upload = form.cleaned_data["xlsx_file"]
+            suffix = Path(upload.name).suffix or ".xlsx"
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                for chunk in upload.chunks():
+                    tmp.write(chunk)
+                tmp_path = Path(tmp.name)
+            try:
+                version = import_nbs_xlsx(
+                    path=tmp_path,
+                    version_label=form.cleaned_data["version_label"],
+                    publish=bool(form.cleaned_data.get("publish")),
+                    notes=form.cleaned_data.get("notes") or "",
+                )
+            except NbsImportError as exc:
+                messages.error(request, str(exc))
+            else:
+                messages.success(
+                    request,
+                    f"Importação NBS OK: versão {version.version_label} "
+                    f"({version.row_count} códigos, status={version.status}).",
+                )
+                return HttpResponseRedirect(
+                    reverse(
+                        "admin:master_data_nbscatalogversion_change",
+                        args=[version.pk],
+                    )
+                )
+            finally:
+                tmp_path.unlink(missing_ok=True)
+
+        context = {
+            **self.admin_site.each_context(request),
+            "opts": self.model._meta,
+            "form": form,
+            "title": "Importar Anexo B — Lista NBS",
+        }
+        return TemplateResponse(
+            request,
+            "admin/master_data/nbscatalogversion/import_nbs.html",
+            context,
+        )
 
     @admin.display(description="Códigos")
     def items_link(self, obj):

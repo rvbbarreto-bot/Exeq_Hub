@@ -738,6 +738,29 @@ table.data tr:last-child td { border-bottom: 0; }
 /* Wizard + Documents refinements */
 .step-lead { color: var(--text-muted); margin: 0 0 14px; font-size: .9rem; }
 .hint-line { color: var(--text-muted); font-size: .82rem; margin: 4px 0 0; }
+.nbs-picker-filter {
+  width: 100%;
+  margin-bottom: 8px;
+}
+.nbs-picker-list {
+  width: 100%;
+  min-height: 11rem;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: .82rem;
+  line-height: 1.35;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--surface);
+  padding: 4px;
+}
+.nbs-picker-list option {
+  padding: 6px 8px;
+  white-space: normal;
+}
+.nbs-picker-list:focus {
+  outline: 2px solid var(--accent, #2563eb);
+  outline-offset: 1px;
+}
 .wizard-nav {
   margin-top: 18px;
   display: flex;

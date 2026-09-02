@@ -1,0 +1,11 @@
+{% extends "admin/change_list.html" %}
+{% load i18n %}
+
+{% block object-tools-items %}
+  {% if import_nbs_url %}
+  <li>
+    <a href="{{ import_nbs_url }}" class="addlink">Importar Anexo B (NBS)</a>
+  </li>
+  {% endif %}
+  {{ block.super }}
+{% endblock %}

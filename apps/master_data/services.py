@@ -135,7 +135,7 @@ def ensure_services_for_wizard(*, tenant, limit: int = 500) -> list:
             tenant=tenant,
             is_active=True,
             operation_kind=ServiceCatalogItem.OperationKind.SERVICO_ISS,
-        ).order_by("service_code")
+        ).select_related("nbs_item").order_by("service_code")
 
     qs = active()
     if qs.exists():

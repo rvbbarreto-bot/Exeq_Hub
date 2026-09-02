@@ -164,6 +164,15 @@ def _find_child(parent: ET.Element | None, *names: str) -> ET.Element | None:
     return None
 
 
+def _service_c_serv(serv: ET.Element | None) -> ET.Element | None:
+    """Bloco cServ dentro de serv (layout DPS) ou o próprio cServ."""
+    if serv is None:
+        return None
+    if _local(serv.tag).lower() == "cserv":
+        return serv
+    return _find_child(serv, "cServ")
+
+
 def _dps_inf(root: ET.Element) -> ET.Element | None:
     dps = _first(root, "DPS")
     if dps is None:
@@ -260,6 +269,7 @@ def extract_danfse_fields(xml_bytes: bytes, *, cancelled: bool = False) -> Danfs
         _first(root, "prest", "prestador"), "regTrib"
     )
     serv = _first(root, "serv", "servico", "cServ")
+    c_serv = _service_c_serv(serv)
     loc_prest = _find_child(serv, "locPrest") if serv is not None else _first(root, "locPrest")
     ibscbs = _first(root, "gIBSCBS", "IBSCBS", "gIBSCBSMono")
 
@@ -304,14 +314,24 @@ def extract_danfse_fields(xml_bytes: bytes, *, cancelled: bool = False) -> Danfs
         valor_servico,
     )
     codigo = (
-        _child_text(serv, "cTribNac", "cServ", "codigo")
+        _child_text(c_serv, "cTribNac")
+        or _child_text(serv, "cTribNac", "cServ", "codigo")
         or _first_text(root, "cTribNac", "codigoTributacaoNacional")
     )
-    cod_trib_mun = _child_text(serv, "cTribMun", "cTribMunicipal") or _first_text(root, "cTribMun")
-    cod_nbs = _child_text(serv, "cNBS", "cNbs") or _first_text(root, "cNBS")
+    cod_trib_mun = (
+        _child_text(c_serv, "cTribMun", "cTribMunicipal")
+        or _child_text(serv, "cTribMun", "cTribMunicipal")
+        or _first_text(root, "cTribMun")
+    )
+    cod_nbs = (
+        _child_text(c_serv, "cNBS", "cNbs")
+        or _child_text(serv, "cNBS", "cNbs")
+        or _first_text(root, "cNBS", "cNbs")
+    )
     x_trib_nac = _first_text(root, "xTribNac")
     descricao = (
-        _child_text(serv, "xDescServ", "xServ", "discriminacao", "descricao")
+        _child_text(c_serv, "xDescServ", "xServ", "discriminacao", "descricao")
+        or _child_text(serv, "xDescServ", "xServ", "discriminacao", "descricao")
         or _first_text(root, "xDescServ", "discriminacao")
         or x_trib_nac
     )

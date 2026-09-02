@@ -572,6 +572,9 @@ class NfseWizardView(View):
                 "lc116": s.lc116_item or "",
                 "description": s.description,
                 "codigo_nbs": s.codigo_nbs or "",
+                "nbs_description": (
+                    s.nbs_item.description if getattr(s, "nbs_item", None) else ""
+                ),
             }
             for s in services
         ]
@@ -603,6 +606,14 @@ class NfseWizardView(View):
         draft_codigo_nbs = draft_emission.get("codigo_nbs") or (
             draft.service.codigo_nbs if draft else ""
         )
+        from apps.master_data.nbs_import import resolve_nbs_item
+
+        draft_nbs_desc = ""
+        if draft_codigo_nbs:
+            nbs_item = resolve_nbs_item(codigo=str(draft_codigo_nbs))
+            draft_nbs_desc = nbs_item.description if nbs_item else ""
+        elif draft and getattr(draft.service, "nbs_item", None):
+            draft_nbs_desc = draft.service.nbs_item.description or ""
         selected_customer_id = str(draft.customer_id) if draft else ""
         selected_service_id = str(draft.service_id) if draft else ""
         selected_profile_id = (
@@ -708,6 +719,7 @@ class NfseWizardView(View):
             "draft_service_desc": draft_service_desc,
             "draft_info_compl": draft_info_compl,
             "draft_codigo_nbs": draft_codigo_nbs,
+            "draft_nbs_desc": draft_nbs_desc,
             "wizard_initial_step": wizard_initial_step,
             "regime_simples": TaxRegime.SIMPLES,
             "published_ibge": published_ibge,
@@ -2125,7 +2137,13 @@ class ServiceFormView(View):
         if redir:
             return redir
         obj = (
-            get_object_or_404(ServiceCatalogItem, pk=pk, tenant=tenant) if pk else None
+            get_object_or_404(
+                ServiceCatalogItem.objects.select_related("nbs_item"),
+                pk=pk,
+                tenant=tenant,
+            )
+            if pk
+            else None
         )
         return render(
             request,
@@ -2143,7 +2161,13 @@ class ServiceFormView(View):
         if redir:
             return redir
         obj = (
-            get_object_or_404(ServiceCatalogItem, pk=pk, tenant=tenant) if pk else None
+            get_object_or_404(
+                ServiceCatalogItem.objects.select_related("nbs_item"),
+                pk=pk,
+                tenant=tenant,
+            )
+            if pk
+            else None
         )
         try:
             saved = save_service_from_post(tenant=tenant, post=request.POST, obj=obj)

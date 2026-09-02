@@ -227,6 +227,36 @@ def coverage_matrix(
     return cells
 
 
+def build_emit_coverage_keys(
+    *,
+    tenant,
+    services: list[ServiceCatalogItem],
+    profiles: list[FiscalProfile],
+    ibge_codes: list[str],
+    competence_date: date | None = None,
+) -> list[str]:
+    """Chaves profile_id|ibge|service_id com regra ISS publicada (wizard NFS-e)."""
+    day = competence_date or date.today()
+    keys: list[str] = []
+    for prof in profiles:
+        pid = str(prof.id)
+        for raw_ibge in ibge_codes:
+            ibge = "".join(ch for ch in (raw_ibge or "") if ch.isdigit())[:7]
+            if len(ibge) != 7:
+                continue
+            for svc in services:
+                if has_published_rule(
+                    tenant=tenant,
+                    fiscal_profile=prof,
+                    ibge_code=ibge,
+                    service_code=svc.service_code,
+                    competence_date=day,
+                    service=svc,
+                ):
+                    keys.append(f"{pid}|{ibge}|{svc.id}")
+    return keys
+
+
 def fiscal_readiness(
     *,
     tenant,

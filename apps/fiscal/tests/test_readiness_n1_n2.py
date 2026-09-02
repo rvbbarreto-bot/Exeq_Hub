@@ -59,6 +59,30 @@ def test_n1_readiness_incomplete_without_rules(fiscal_n1_ctx):
 
 
 @pytest.mark.django_db
+def test_emit_coverage_keys_for_wizard(fiscal_n1_ctx):
+    from apps.fiscal.readiness import build_emit_coverage_keys
+
+    ctx = fiscal_n1_ctx
+    ensure_published_rule(
+        tenant=ctx["tenant"],
+        profile=ctx["profile"],
+        ibge="3504107",
+        municipio_nome="Atibaia",
+        uf="SP",
+        service_code="17.19",
+        iss_rate=Decimal("0.0200"),
+    )
+    keys = build_emit_coverage_keys(
+        tenant=ctx["tenant"],
+        services=[ctx["svc_a"], ctx["svc_b"]],
+        profiles=[ctx["profile"]],
+        ibge_codes=["3504107"],
+    )
+    assert f"{ctx['profile'].id}|3504107|{ctx['svc_a'].id}" in keys
+    assert f"{ctx['profile'].id}|3504107|{ctx['svc_b'].id}" not in keys
+
+
+@pytest.mark.django_db
 def test_n1_assert_blocks_and_passes(fiscal_n1_ctx):
     ctx = fiscal_n1_ctx
     with pytest.raises(FiscalReadinessError):

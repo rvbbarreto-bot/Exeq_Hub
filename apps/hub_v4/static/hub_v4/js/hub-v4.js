@@ -20,6 +20,133 @@
       return [];
     }
   }
+
+  function formatNbsDisplay(code) {
+    var d = String(code || "").replace(/\D/g, "").slice(0, 9);
+    if (d.length !== 9) return String(code || "").trim();
+    return d.charAt(0) + "." + d.slice(1, 5) + "." + d.slice(5, 7) + "." + d.slice(7, 9);
+  }
+
+  function initNbsPicker(root) {
+    qsa("[data-nbs-picker]", root || document).forEach(function (wrap) {
+      if (wrap.dataset.nbsInit === "1") return;
+      wrap.dataset.nbsInit = "1";
+      var codeInput = qs('input[name="codigo_nbs"]', wrap);
+      var filterInput = qs("[data-nbs-picker-filter]", wrap);
+      var selectEl = qs("[data-nbs-picker-select]", wrap);
+      if (!codeInput || !selectEl) return;
+      var searchUrl = wrap.getAttribute("data-nbs-search-url") || "/hub/nbs/search/";
+      var timer = null;
+      var pendingCode = codeInput.value || "";
+
+      function optionLabel(row) {
+        return (
+          (row.display || formatNbsDisplay(row.codigo)) +
+          " — " +
+          (row.description || "")
+        );
+      }
+
+      function ensureOption(code, description) {
+        code = String(code || "").replace(/\D/g, "").slice(0, 9);
+        if (code.length !== 9) return;
+        for (var i = 0; i < selectEl.options.length; i++) {
+          if (selectEl.options[i].value === code) {
+            selectEl.value = code;
+            codeInput.value = code;
+            return;
+          }
+        }
+        var opt = document.createElement("option");
+        opt.value = code;
+        opt.textContent =
+          formatNbsDisplay(code) + (description ? " — " + description : "");
+        selectEl.appendChild(opt);
+        selectEl.value = code;
+        codeInput.value = code;
+      }
+
+      function setCodeOnly(code, description) {
+        code = String(code || "").replace(/\D/g, "").slice(0, 9);
+        if (!code) {
+          codeInput.value = "";
+          selectEl.value = "";
+          return;
+        }
+        pendingCode = code;
+        ensureOption(code, description);
+      }
+
+      wrap.setNbsCode = setCodeOnly;
+
+      function renderOptions(items) {
+        var selected = codeInput.value || pendingCode || "";
+        selectEl.innerHTML = "";
+        var placeholder = document.createElement("option");
+        placeholder.value = "";
+        if (!items.length) {
+          placeholder.textContent =
+            "Nenhum código — importe o catálogo NBS (import_nbs_list)";
+        } else {
+          placeholder.textContent = "— Selecione um código NBS —";
+        }
+        selectEl.appendChild(placeholder);
+        items.forEach(function (row) {
+          var opt = document.createElement("option");
+          opt.value = row.codigo || "";
+          opt.textContent = optionLabel(row);
+          selectEl.appendChild(opt);
+        });
+        if (selected) {
+          ensureOption(selected, wrap.getAttribute("data-nbs-initial-desc") || "");
+        }
+      }
+
+      function loadOptions(q) {
+        fetch(searchUrl + "?q=" + encodeURIComponent(q || "") + "&limit=50", {
+          headers: { Accept: "application/json" },
+          credentials: "same-origin",
+        })
+          .then(function (r) {
+            return r.json();
+          })
+          .then(function (data) {
+            if (data && (data.ok || data.results)) {
+              renderOptions(data.results || []);
+            }
+          })
+          .catch(function () {
+            selectEl.innerHTML =
+              '<option value="">Erro ao carregar lista NBS</option>';
+          });
+      }
+
+      selectEl.addEventListener("change", function () {
+        codeInput.value = selectEl.value || "";
+        pendingCode = codeInput.value;
+      });
+
+      if (filterInput) {
+        filterInput.addEventListener("input", function () {
+          clearTimeout(timer);
+          var q = (filterInput.value || "").trim();
+          timer = setTimeout(function () {
+            loadOptions(q);
+          }, 280);
+        });
+      }
+
+      loadOptions("");
+      if (codeInput.value) {
+        setCodeOnly(
+          codeInput.value,
+          wrap.getAttribute("data-nbs-initial-desc") || ""
+        );
+      }
+    });
+  }
+
+  initNbsPicker(document);
   function showError(msg) {
     var box = qs("#wizard-step-error");
     if (!box) return;
@@ -121,17 +248,28 @@
       if (!opt || !opt.value) {
         qs("#id_lc116").value = "";
         if (descEl) descEl.value = "";
-        var nbsEl = qs("#id_codigo_nbs", form);
-        if (nbsEl) nbsEl.value = "";
+        var nbsWrap = qs("[data-nbs-picker]", form);
+        if (nbsWrap && nbsWrap.setNbsCode) {
+          nbsWrap.setNbsCode("", "");
+        } else {
+          var nbsEl = qs("#id_codigo_nbs", form);
+          if (nbsEl) nbsEl.value = "";
+        }
         return;
       }
       qs("#id_lc116").value =
         opt.getAttribute("data-lc116") || opt.getAttribute("data-code") || "";
       var svc = serviceFromSelect(sel);
-      var nbsEl = qs("#id_codigo_nbs", form);
-      if (nbsEl) {
-        var svcNbs = (svc && svc.codigo_nbs) || opt.getAttribute("data-nbs") || "";
-        if (fromChange || !String(nbsEl.value || "").trim()) {
+      var svcNbs = (svc && svc.codigo_nbs) || opt.getAttribute("data-nbs") || "";
+      var svcNbsDesc = (svc && svc.nbs_description) || "";
+      var nbsWrap = qs("[data-nbs-picker]", form);
+      if (nbsWrap && nbsWrap.setNbsCode) {
+        if (fromChange || !String((qs('input[name="codigo_nbs"]', form) || {}).value || "").trim()) {
+          nbsWrap.setNbsCode(svcNbs, svcNbsDesc);
+        }
+      } else {
+        var nbsEl = qs("#id_codigo_nbs", form);
+        if (nbsEl && (fromChange || !String(nbsEl.value || "").trim())) {
           nbsEl.value = svcNbs;
         }
       }

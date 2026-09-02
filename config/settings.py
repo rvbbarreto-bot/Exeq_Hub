@@ -210,6 +210,8 @@ TAX_RULE_NATIONAL_FALLBACK = (
 )
 # Teto para emissões smoke/fábrica de teste (centavos). R$ 15,00 = 1500 → max 1499.
 NFSE_TEST_MAX_AMOUNT_CENTS = int(env("NFSE_TEST_MAX_AMOUNT_CENTS", "1499") or "1499")
+# Portão cNBS no DPS: off (default) | homolog (só tpAmb=2) | on (produção+homolog).
+NFSE_DPS_CNBS_MODE = (env("NFSE_DPS_CNBS_MODE", "off") or "off").strip().lower()
 WEBHOOK_GATEWAY_SECRET = env("WEBHOOK_GATEWAY_SECRET", "dev-webhook-secret")
 # Fail-closed em DEBUG=False (ou FORCE_SECURE_SECRETS=true). Ver shared/security_checks.py
 FORCE_SECURE_SECRETS = env("FORCE_SECURE_SECRETS", "false").lower() == "true"

@@ -31,16 +31,19 @@
                value="{% if form %}{{ form.codigo_tributacao_nacional_iss }}{% elif obj %}{{ obj.codigo_tributacao_nacional_iss }}{% endif %}"
                placeholder="171901">
       </div>
-      <div class="field">
-        <label for="id_codigo_nbs">Código NBS</label>
-        <input class="mono" id="id_codigo_nbs" name="codigo_nbs" maxlength="9" inputmode="numeric"
-               value="{% if form %}{{ form.codigo_nbs }}{% elif obj %}{{ obj.codigo_nbs }}{% endif %}"
-               placeholder="115013000" autocomplete="off">
-      </div>
-      <div class="field full">
-        <label for="id_nbs_search">Buscar NBS (catálogo)</label>
-        <input id="id_nbs_search" type="search" placeholder="Código ou descrição NBS" autocomplete="off">
-        <div id="nbs-search-results" class="nbs-search-results" hidden></div>
+      <div class="field full" data-nbs-picker data-nbs-search-url="{% url 'hub-v4-nbs-search' %}"
+           data-nbs-initial-desc="{% if obj and obj.nbs_item %}{{ obj.nbs_item.description|escape }}{% endif %}">
+        <label for="id_nbs_select">Código NBS</label>
+        <input type="hidden" id="id_codigo_nbs" name="codigo_nbs"
+               value="{% if form %}{{ form.codigo_nbs }}{% elif obj %}{{ obj.codigo_nbs }}{% endif %}">
+        <input type="search" class="nbs-picker-filter" data-nbs-picker-filter
+               placeholder="Filtrar lista por código ou descrição" autocomplete="off"
+               aria-label="Filtrar códigos NBS">
+        <select id="id_nbs_select" class="nbs-picker-list" size="8" data-nbs-picker-select
+                aria-label="Lista NBS nacional">
+          <option value="">Carregando lista NBS…</option>
+        </select>
+        <p class="hint-line">Selecione na lista (Anexo B). Formato exibido: n.nnnn.nn.nn</p>
       </div>
       <div class="field">
         <label for="id_is_active">Ativo</label>
@@ -56,60 +59,4 @@
     </div>
   </form>
 </div>
-{% endblock %}
-
-{% block scripts %}
-<script>
-(function () {
-  var searchInput = document.getElementById("id_nbs_search");
-  var codeInput = document.getElementById("id_codigo_nbs");
-  var box = document.getElementById("nbs-search-results");
-  if (!searchInput || !box || !codeInput) return;
-  var timer = null;
-  function csrf() {
-    var m = document.cookie.match(/csrftoken=([^;]+)/);
-    return m ? m[1] : "";
-  }
-  function render(items) {
-    box.innerHTML = "";
-    if (!items.length) {
-      box.hidden = true;
-      return;
-    }
-    items.forEach(function (row) {
-      var btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "nbs-search-item";
-      btn.textContent = (row.display || row.codigo) + " — " + row.description;
-      btn.addEventListener("click", function () {
-        codeInput.value = row.codigo || "";
-        box.hidden = true;
-        searchInput.value = row.description || "";
-      });
-      box.appendChild(btn);
-    });
-    box.hidden = false;
-  }
-  function fetchNbs(q) {
-    fetch("/hub/nbs/search/?q=" + encodeURIComponent(q) + "&limit=15", {
-      headers: { Accept: "application/json", "X-CSRFToken": csrf() },
-      credentials: "same-origin",
-    })
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        if (data && data.ok) render(data.results || []);
-      })
-      .catch(function () { box.hidden = true; });
-  }
-  searchInput.addEventListener("input", function () {
-    clearTimeout(timer);
-    var q = (searchInput.value || "").trim();
-    if (q.length < 2) {
-      box.hidden = true;
-      return;
-    }
-    timer = setTimeout(function () { fetchNbs(q); }, 280);
-  });
-})();
-</script>
 {% endblock %}

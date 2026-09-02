@@ -8,6 +8,8 @@ from zoneinfo import ZoneInfo
 import pytest
 from lxml import etree
 
+from django.test import override_settings
+
 from integrations.nfse.dps import (
     DpsBuildError,
     build_dps_id,
@@ -148,9 +150,11 @@ def test_dps_paliq_non_simples_always():
 def test_dps_cnbs_from_service_and_override():
     issue = _issue()
     issue.service.codigo_nbs = "115013000"
-    payload = to_sefin_dps_dict(issue, tp_amb=2, serie=1, n_dps=15)
+    with override_settings(NFSE_DPS_CNBS_MODE="on"):
+        payload = to_sefin_dps_dict(issue, tp_amb=2, serie=1, n_dps=15)
     assert payload["infDPS"]["serv"]["cServ"]["cNBS"] == "115013000"
-    xml = to_sefin_dps_xml(issue, tp_amb=2, serie=1, n_dps=15)
+    with override_settings(NFSE_DPS_CNBS_MODE="on"):
+        xml = to_sefin_dps_xml(issue, tp_amb=2, serie=1, n_dps=15)
     assert b"cNBS" in xml
     assert b"115013000" in xml
 
@@ -159,8 +163,30 @@ def test_dps_cnbs_override_in_draft_beats_service():
     issue = _issue()
     issue.service.codigo_nbs = "111111111"
     issue.internal_payload = {"emission": {"codigo_nbs": "115022000"}}
-    payload = to_sefin_dps_dict(issue, tp_amb=2, serie=1, n_dps=16)
+    with override_settings(NFSE_DPS_CNBS_MODE="on"):
+        payload = to_sefin_dps_dict(issue, tp_amb=2, serie=1, n_dps=16)
     assert payload["infDPS"]["serv"]["cServ"]["cNBS"] == "115022000"
+
+
+def test_dps_cnbs_deferred_when_gate_off_even_with_code():
+    issue = _issue()
+    issue.service.codigo_nbs = "115013000"
+    with override_settings(NFSE_DPS_CNBS_MODE="off"):
+        payload = to_sefin_dps_dict(issue, tp_amb=1, serie=1, n_dps=18)
+    assert "cNBS" not in payload["infDPS"]["serv"]["cServ"]
+    with override_settings(NFSE_DPS_CNBS_MODE="off"):
+        xml = to_sefin_dps_xml(issue, tp_amb=1, serie=1, n_dps=18)
+    assert b"cNBS" not in xml
+
+
+def test_dps_cnbs_homolog_gate_only_tp_amb_2():
+    issue = _issue()
+    issue.service.codigo_nbs = "115013000"
+    with override_settings(NFSE_DPS_CNBS_MODE="homolog"):
+        prod = to_sefin_dps_dict(issue, tp_amb=1, serie=1, n_dps=19)
+        hom = to_sefin_dps_dict(issue, tp_amb=2, serie=1, n_dps=20)
+    assert "cNBS" not in prod["infDPS"]["serv"]["cServ"]
+    assert hom["infDPS"]["serv"]["cServ"]["cNBS"] == "115013000"
 
 
 def test_dps_omits_cnbs_when_absent():

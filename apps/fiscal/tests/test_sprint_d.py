@@ -29,9 +29,14 @@ SPRINT_D_SETTINGS = {
 }
 
 
-def test_resolve_c_trib_mun_atibaia_and_explicit():
-    assert resolve_c_trib_mun(ibge_code="3504107", service_code="01.07") == "107"
-    assert resolve_c_trib_mun(ibge_code="3504107", service_code="99.99") == ""
+def test_resolve_c_trib_mun_explicit_only():
+    assert resolve_c_trib_mun(ibge_code="3504107", service_code="01.07") == ""
+    assert (
+        resolve_c_trib_mun(
+            ibge_code="3504107", service_code="01.07", rule_c_trib_mun="001"
+        )
+        == "001"
+    )
     assert (
         resolve_c_trib_mun(
             ibge_code="3550308", service_code="01.07", rule_c_trib_mun="999"

@@ -156,12 +156,13 @@ def to_sefin_dps_dict(
         },
     }
     from apps.master_data.nbs_resolution import resolve_codigo_nbs
+    from integrations.nfse.nbs_dps_gate import include_cnbs_in_dps
 
     draft = (issue.internal_payload or {}).get("emission") or {}
     codigo_nbs = resolve_codigo_nbs(
         service=service, params=params, draft_emission=draft if isinstance(draft, dict) else {}
     )
-    if codigo_nbs:
+    if codigo_nbs and include_cnbs_in_dps(tp_amb=int(tp_amb)):
         serv_block["cServ"]["cNBS"] = codigo_nbs
     c_trib_mun = (params.get("c_trib_mun") or "").strip()
     if c_trib_mun:

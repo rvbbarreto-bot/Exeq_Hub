@@ -64,6 +64,16 @@ def test_extract_fields_from_prod_sample():
     assert len("".join(ch for ch in fields.chave_acesso if ch.isdigit())) == 50
 
 
+def test_extract_cnbs_from_nested_cserv():
+    fields = extract_danfse_fields(_load("nfse_autorizada_with_nbs.xml"))
+    assert fields.codigo_nbs == "115013000"
+    assert fields.codigo_servico == "010701"
+    pdf = render_danfse_pdf(_load("nfse_autorizada_with_nbs.xml"))
+    reader = PdfReader(BytesIO(pdf))
+    text = " ".join(page.extract_text() or "" for page in reader.pages)
+    assert "1.1501.30.00" in text
+
+
 def test_official_logo_asset_present():
     path = logo_asset_path()
     assert path.is_file()

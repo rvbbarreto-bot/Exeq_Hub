@@ -82,6 +82,7 @@ def _celery_eager(settings):
     settings.NFE_HTTP_DRY_RUN = False
     # Lab CI: stub SEFIN em homolog precisa de semente (produção restrita real ≠ Atibaia).
     settings.SEFIN_ENVIRONMENT = "homolog"
+    settings.NFSE_DPS_CNBS_MODE = "off"
     settings.NFSE_CONVENIO_MODE = "stub"
     settings.NFSE_CONVENIO_HOMOLOG_IBGE_CODES = "3504107"
     settings.NFSE_CONVENIO_DENY_IBGE = ""

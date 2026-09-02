@@ -126,13 +126,18 @@
           <input id="id_lc116" type="text" readonly class="is-readonly field-lc116"
                  placeholder="Preenchido pelo serviço" title="Código LC 116 do serviço selecionado">
         </div>
-        <div class="field full">
-          <label for="id_codigo_nbs">Código NBS</label>
-          <input id="id_codigo_nbs" name="codigo_nbs" type="text" maxlength="9"
-                 class="mono field-nbs-code" inputmode="numeric"
-                 placeholder="9 dígitos — preenchido pelo serviço"
-                 value="{{ draft_codigo_nbs|default:'' }}">
-          <p class="hint-line">Opcional no MVP; editável por nota. Catálogo NBS importado no admin/comando.</p>
+        <div class="field full" data-nbs-picker data-nbs-search-url="{% url 'hub-v4-nbs-search' %}"
+             data-nbs-initial-desc="{{ draft_nbs_desc|default:''|escape }}">
+          <label for="id_nbs_select">Código NBS</label>
+          <input type="hidden" id="id_codigo_nbs" name="codigo_nbs" value="{{ draft_codigo_nbs|default:'' }}">
+          <input type="search" class="nbs-picker-filter" data-nbs-picker-filter
+                 placeholder="Filtrar lista por código ou descrição" autocomplete="off"
+                 aria-label="Filtrar códigos NBS">
+          <select id="id_nbs_select" class="nbs-picker-list" size="8" data-nbs-picker-select
+                  aria-label="Lista NBS nacional">
+            <option value="">Carregando lista NBS…</option>
+          </select>
+          <p class="hint-line">Selecione na lista (Anexo B). Formato exibido: n.nnnn.nn.nn — editável por nota.</p>
         </div>
         <div class="field full">
           <label for="id_service_desc">Descrição do serviço na nota *</label>

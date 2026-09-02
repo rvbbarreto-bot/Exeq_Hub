@@ -247,15 +247,18 @@ def _section_dest_inter(ctx: _Ctx, f: DanfseFields) -> None:
 
 
 def _section_servico(ctx: _Ctx, f: DanfseFields) -> None:
+    from apps.master_data.nbs_import import format_nbs_display_code
+
     ctx.y = _block(ctx, "SERVIÇO PRESTADO")
     cod = format_codigo_trib_nacional(f.codigo_servico)
     trib_mun = f.codigo_trib_municipal or "-"
     local = f.local_prestacao
     if f.local_prestacao_uf:
         local = f"{local} / {f.local_prestacao_uf} / -"
+    nbs_display = format_nbs_display_code(f.codigo_nbs) if f.codigo_nbs else "—"
     ctx.y = _grid(ctx, [
         ("Código de Tributação Nacional/Municipal", f"{cod} / {trib_mun}"),
-        ("Código da NBS", f.codigo_nbs or "—"),
+        ("Código da NBS", nbs_display),
         ("Local da Prestação / Sigla UF / País", local),
     ], cols=3)
     ctx.y = _full(ctx, "Descrição do Serviço", f.descricao_servico)
