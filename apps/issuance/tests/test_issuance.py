@@ -212,6 +212,7 @@ def test_cancel_authorized_calls_provider(tenant_a, emission_setup):
         cancel_nf_issue(
             issue,
             justificativa="Servico cancelado por acordo entre as partes",
+            codigo_cancelamento=9,
         )
     mock_provider.cancelar.assert_called_once()
     kwargs = mock_provider.cancelar.call_args.kwargs
@@ -244,6 +245,7 @@ def test_cancel_not_authorized_blocked(tenant_a, emission_setup):
         cancel_nf_issue(
             issue,
             justificativa="Servico cancelado por acordo entre as partes",
+            codigo_cancelamento=9,
         )
 
 
@@ -268,6 +270,7 @@ def test_cancel_sefin_stub_preserves_xml_and_regenerates_pdf(
     cancel_nf_issue(
         issue,
         justificativa="Cancelamento lab EXEQ Hub apos emissao stub",
+        codigo_cancelamento=1,
     )
     issue.refresh_from_db()
     assert issue.status == NfIssue.Status.CANCELLED
@@ -326,6 +329,7 @@ def test_cancel_sefin_http_builds_signed_evento(tenant_a, emission_setup, settin
         cancel_nf_issue(
             issue,
             justificativa="Cancelamento lab EXEQ Hub via SEFIN HTTP",
+            codigo_cancelamento=1,
         )
 
     fake.registrar_evento.assert_called_once()
@@ -365,7 +369,10 @@ def test_nf_issue_api(api_client, auth_header, tenant_a, emission_setup):
 
     cancel = api_client.post(
         f"/api/v1/nf-issue/{response.data['id']}/cancel/",
-        {"justificativa": "Servico cancelado por acordo entre as partes"},
+        {
+            "justificativa": "Servico cancelado por acordo entre as partes",
+            "codigo_cancelamento": 2,
+        },
         format="json",
         **auth_header,
     )

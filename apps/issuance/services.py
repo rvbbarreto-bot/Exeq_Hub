@@ -772,10 +772,16 @@ def cancel_nf_issue(
     actor: str = "api",
 ) -> NfIssue:
     text = (justificativa or "").strip()
-    if not (15 <= len(text) <= 255):
-        raise CancelJustificationError(
-            "justificativa deve ter entre 15 e 255 caracteres"
-        )
+    from integrations.nfse.cancel_motivos import (
+        parse_codigo_cancelamento,
+        validate_justificativa,
+    )
+
+    try:
+        text = validate_justificativa(text)
+        c_motivo = parse_codigo_cancelamento(codigo_cancelamento)
+    except ValueError as exc:
+        raise CancelJustificationError(str(exc)) from exc
     if issue.status != NfIssue.Status.AUTHORIZED:
         raise InvalidTransitionError(
             f"Só é possível cancelar nota Autorizada. Status atual: {issue.get_status_display()} ({issue.status})"
@@ -796,7 +802,7 @@ def cancel_nf_issue(
     cancel_kwargs: dict = {
         "ref": issue.focus_ref,
         "justificativa": text,
-        "codigo_cancelamento": codigo_cancelamento,
+        "codigo_cancelamento": c_motivo,
     }
     if getattr(provider, "kind", "") == "sefin":
         from django.conf import settings as dj_settings
@@ -815,7 +821,7 @@ def cancel_nf_issue(
             unsigned = build_cancel_evento_from_issue(
                 issue,
                 justificativa=text,
-                codigo_cancelamento=codigo_cancelamento,
+                codigo_cancelamento=c_motivo,
                 tp_amb=tp_amb,
             )
             pfx_bytes, pfx_password = load_primary_pfx_material(
@@ -872,7 +878,7 @@ def cancel_nf_issue(
         metadata={
             "focus_ref": issue.focus_ref,
             "justificativa": text[:80],
-            "codigo_cancelamento": codigo_cancelamento,
+            "codigo_cancelamento": c_motivo,
             "provider": provider.kind,
         },
     )

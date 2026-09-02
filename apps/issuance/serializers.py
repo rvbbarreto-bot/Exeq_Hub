@@ -39,9 +39,17 @@ class NfIssueSerializer(serializers.ModelSerializer):
         )
 
 
+from integrations.nfse.cancel_motivos import NFSE_CANCEL_MOTIVOS
+
+
 class NfIssueCancelSerializer(serializers.Serializer):
-    justificativa = serializers.CharField(min_length=15, max_length=255)
-    codigo_cancelamento = serializers.IntegerField(required=False, allow_null=True)
+    justificativa = serializers.CharField(
+        min_length=15,
+        max_length=150,
+    )
+    codigo_cancelamento = serializers.ChoiceField(
+        choices=[(code, label) for code, label in NFSE_CANCEL_MOTIVOS]
+    )
 
 
 class NfIssueCreateSerializer(serializers.Serializer):

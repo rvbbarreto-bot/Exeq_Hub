@@ -53,7 +53,7 @@ from apps.hub_v4.services import (
 )
 from apps.issuance.exceptions import FiscalProfileRequiredError, InvalidTransitionError
 from apps.issuance.models import NfArtifact, NfIssue, NfIssueEvent
-from apps.issuance.services import create_nf_issue, save_nf_draft
+from apps.issuance.services import cancel_nf_issue, create_nf_issue, save_nf_draft
 from apps.master_data.models import Customer, Provider, ServiceCatalogItem, TaxRegime
 from apps.master_data.services import ensure_services_for_wizard, lookup_document
 from apps.nfe.listing import filter_invoice_queryset
@@ -73,6 +73,7 @@ from integrations.cadastro.exceptions import (
     CadastroNotFoundError,
     CadastroProviderUnavailableError,
 )
+from integrations.nfse.cancel_motivos import NFSE_CANCEL_MOTIVOS
 from shared.exceptions import AuthenticationError
 from shared.validators import validate_cnpj
 from shared.crypto import CryptoError
@@ -249,8 +250,53 @@ class NfseDetailView(View):
                 "docs": docs,
                 "role_code": role,
                 "sefin": sefin,
+                "can_cancel": issue.status == NfIssue.Status.AUTHORIZED
+                and role in WRITE_ROLES,
+                "cancel_motivos": NFSE_CANCEL_MOTIVOS,
             },
         )
+
+
+class NfseCancelView(View):
+    def post(self, request: HttpRequest, pk):
+        tenant, user, role, redir = _require_writer_hub(request)
+        if redir:
+            return redir
+        issue = get_object_or_404(NfIssue, pk=pk, tenant=tenant)
+        from apps.issuance.exceptions import (
+            CancelJustificationError,
+            FocusCancelFailedError,
+        )
+        from integrations.nfse.cancel_motivos import (
+            parse_codigo_cancelamento,
+            validate_justificativa,
+        )
+
+        motivo_raw = request.POST.get("motivo_cancelamento")
+        just_raw = request.POST.get("justificativa") or ""
+        try:
+            c_motivo = parse_codigo_cancelamento(motivo_raw)
+            justificativa = validate_justificativa(just_raw)
+            cancel_nf_issue(
+                issue,
+                justificativa=justificativa,
+                codigo_cancelamento=c_motivo,
+                actor=user.email or "hub",
+            )
+        except (
+            InvalidTransitionError,
+            CancelJustificationError,
+            FocusCancelFailedError,
+            ValueError,
+        ) as exc:
+            messages.error(request, str(exc) or "Falha ao cancelar a NFS-e.")
+            return redirect("hub-v4-nfse-detail", pk=pk)
+        issue.refresh_from_db()
+        if issue.status == NfIssue.Status.CANCELLED:
+            messages.success(request, "NFS-e cancelada com sucesso.")
+        else:
+            messages.warning(request, "Cancelamento solicitado — verifique o status.")
+        return redirect("hub-v4-nfse-detail", pk=pk)
 
 
 class NfseDocumentsView(View):

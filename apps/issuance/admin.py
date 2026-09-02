@@ -376,6 +376,7 @@ class NfIssueAdmin(admin.ModelAdmin):
                 cancel_nf_issue(
                     issue,
                     justificativa=QA_CANCEL_JUSTIFICATIVA,
+                    codigo_cancelamento=1,
                     actor="admin",
                 )
                 messages.success(
@@ -529,6 +530,7 @@ class NfIssueAdmin(admin.ModelAdmin):
                 cancel_nf_issue(
                     issue,
                     justificativa=QA_CANCEL_JUSTIFICATIVA,
+                    codigo_cancelamento=1,
                     actor="admin",
                 )
                 ok += 1

@@ -21,6 +21,11 @@ urlpatterns = [
     ),
     path("nfse/<uuid:pk>/", views.NfseDetailView.as_view(), name="hub-v4-nfse-detail"),
     path(
+        "nfse/<uuid:pk>/cancelar/",
+        views.NfseCancelView.as_view(),
+        name="hub-v4-nfse-cancel",
+    ),
+    path(
         "nfse/<uuid:pk>/documentos/",
         views.NfseDocumentsView.as_view(),
         name="hub-v4-nfse-documents",

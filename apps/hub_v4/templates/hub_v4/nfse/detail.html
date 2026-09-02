@@ -107,6 +107,38 @@
 </div>
 {% endif %}
 
+{% if can_cancel %}
+<div class="card" style="margin-bottom:12px;border-color:var(--danger,#b42318);">
+  <div class="section-label" style="margin-top:0;color:var(--danger,#b42318);">Cancelar NFS-e</div>
+  <p class="hint-line">Ação irreversível na SEFIN. Justificativa entre 15 e 150 caracteres.</p>
+  <form method="post" action="{% url 'hub-v4-nfse-cancel' issue.id %}"
+        id="form-nfse-cancel"
+        onsubmit="return confirm('Confirma o cancelamento desta NFS-e?');">
+    {% csrf_token %}
+    <div class="field full">
+      <label for="id_motivo_cancelamento">Motivo do cancelamento <span style="color:var(--danger,#b42318);">*</span></label>
+      <select id="id_motivo_cancelamento" name="motivo_cancelamento" required>
+        <option value="">Selecione…</option>
+        {% for code, label in cancel_motivos %}
+        <option value="{{ code }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field full">
+      <label for="id_justificativa">Justificativa <span style="color:var(--danger,#b42318);">*</span></label>
+      <textarea id="id_justificativa" name="justificativa" rows="3" required
+                minlength="15" maxlength="150"
+                placeholder="Descreva o motivo do cancelamento…"
+                data-char-limit="150"></textarea>
+      <div class="hint-line" data-char-counter-for="id_justificativa">0 / 150 caracteres (mín. 15)</div>
+    </div>
+    <div class="wizard-nav" style="margin-top:12px;justify-content:flex-end;">
+      <button type="submit" class="btn btn-danger">Confirmar cancelamento</button>
+    </div>
+  </form>
+</div>
+{% endif %}
+
 <div class="card" style="margin-bottom:12px;">
   <div class="section-label" style="margin-top:0;">Timeline fiscal</div>
   {% include "hub_v4/components/timeline.html" with timeline=timeline %}

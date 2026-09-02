@@ -839,4 +839,18 @@
       });
     }
   })();
+
+  qsa("[data-char-counter-for]").forEach(function (counterEl) {
+    var targetId = counterEl.getAttribute("data-char-counter-for");
+    var field = targetId ? document.getElementById(targetId) : null;
+    if (!field) return;
+    var max = parseInt(field.getAttribute("data-char-limit") || field.maxLength || "150", 10);
+    var min = parseInt(field.getAttribute("minlength") || "15", 10);
+    function refresh() {
+      var n = (field.value || "").length;
+      counterEl.textContent = n + " / " + max + " caracteres (mín. " + min + ")";
+    }
+    field.addEventListener("input", refresh);
+    refresh();
+  });
 })();

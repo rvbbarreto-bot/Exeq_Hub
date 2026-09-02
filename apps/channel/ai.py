@@ -351,6 +351,7 @@ def _handle_pending_cancel(session, flow: dict, text: str) -> str:
         cancel_nf_issue(
             issue,
             justificativa="Cancelamento solicitado via canal WhatsApp (WA-IA).",
+            codigo_cancelamento=9,
             actor="whatsapp_ai",
         )
     except (InvalidTransitionError, CancelJustificationError, FocusCancelFailedError) as exc:
