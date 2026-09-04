@@ -33,8 +33,14 @@
 </div>
 {% endif %}
 
+{% if portal_sync_scheduled %}
+<div class="hint-line" id="nfse-sync-hint" style="margin-bottom:10px;">
+  Sincronizando status com o portal nacional… a lista atualiza em instantes.
+</div>
+{% endif %}
+
 {% if page.object_list %}
-<div class="table-wrap desktop-only">
+<div class="table-wrap desktop-only" id="nfse-list-table" data-status-bulk-url="{% url 'hub-v4-nfse-status-bulk' %}">
   <table class="data stack-on-mobile">
     <thead>
       <tr>
@@ -48,7 +54,7 @@
     </thead>
     <tbody>
       {% for issue in page %}
-      <tr>
+      <tr data-issue-id="{{ issue.id }}" data-issue-status="{{ issue.status }}">
         <td>{{ issue.focus_ref|default:"—" }}</td>
         <td>{{ issue.customer.name }}</td>
         <td>{{ issue.competence_date|date:"m/Y" }}</td>
@@ -110,5 +116,48 @@
 {% else %}
 {% url 'hub-v4-nfse-wizard' as emit_url %}
 {% empty_state "Nenhuma NFS-e encontrada" "Ajuste os filtros ou emita a primeira nota." "Emitir primeira nota →" emit_url %}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if portal_sync_scheduled %}
+<script>
+  (function () {
+    var table = document.getElementById("nfse-list-table");
+    if (!table) return;
+    var url = table.getAttribute("data-status-bulk-url");
+    var rows = table.querySelectorAll("tr[data-issue-id]");
+    if (!rows.length || !url) return;
+    var initial = {};
+    rows.forEach(function (row) {
+      initial[row.getAttribute("data-issue-id")] = row.getAttribute("data-issue-status");
+    });
+    var attempts = 0;
+    var timer = setInterval(function () {
+      attempts += 1;
+      if (attempts > 12) {
+        clearInterval(timer);
+        var hint = document.getElementById("nfse-sync-hint");
+        if (hint) hint.textContent = "Sincronização concluída. Recarregue se algum status parecer desatualizado.";
+        return;
+      }
+      var ids = Object.keys(initial).join(",");
+      fetch(url + "?ids=" + encodeURIComponent(ids), {
+        headers: { Accept: "application/json" },
+        credentials: "same-origin",
+      })
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          if (!data || !data.items) return;
+          var changed = false;
+          Object.keys(data.items).forEach(function (id) {
+            if (initial[id] && initial[id] !== data.items[id]) changed = true;
+          });
+          if (changed) window.location.reload();
+        })
+        .catch(function () {});
+    }, 3000);
+  })();
+</script>
 {% endif %}
 {% endblock %}

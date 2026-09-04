@@ -196,6 +196,17 @@ class NfseListView(View):
             ),
         )
         page = Paginator(qs, 20).get_page(request.GET.get("page") or 1)
+        from apps.issuance.portal_sync import (
+            collect_issue_ids_for_portal_sync,
+            portal_sync_enabled,
+            schedule_portal_status_refresh,
+        )
+
+        sync_ids = collect_issue_ids_for_portal_sync(page.object_list)
+        portal_sync_scheduled = schedule_portal_status_refresh(
+            tenant_id=tenant.id,
+            issue_ids=sync_ids,
+        )
         chips = []
         if status and status != "all":
             chips.append({"key": "status", "label": f"Status: {status}"})
@@ -212,6 +223,8 @@ class NfseListView(View):
                 "q": q,
                 "chips": chips,
                 "role_code": role,
+                "portal_sync_scheduled": portal_sync_scheduled,
+                "portal_sync_enabled": portal_sync_enabled(),
             },
         )
 
@@ -235,6 +248,18 @@ class NfseDetailView(View):
         from integrations.nfse.emission_text import resolve_emission_text
 
         descricao_nota, info_compl = resolve_emission_text(issue)
+        from apps.issuance.portal_sync import (
+            portal_sync_enabled,
+            schedule_portal_status_refresh,
+            should_sync_issue,
+        )
+
+        detail_sync = False
+        if should_sync_issue(issue):
+            detail_sync = schedule_portal_status_refresh(
+                tenant_id=tenant.id,
+                issue_ids=[str(issue.id)],
+            )
         return render(
             request,
             "hub_v4/nfse/detail.html",
@@ -253,6 +278,8 @@ class NfseDetailView(View):
                 "can_cancel": issue.status == NfIssue.Status.AUTHORIZED
                 and role in WRITE_ROLES,
                 "cancel_motivos": NFSE_CANCEL_MOTIVOS,
+                "portal_sync_scheduled": detail_sync,
+                "portal_sync_enabled": portal_sync_enabled(),
             },
         )
 
@@ -297,6 +324,24 @@ class NfseCancelView(View):
         else:
             messages.warning(request, "Cancelamento solicitado — verifique o status.")
         return redirect("hub-v4-nfse-detail", pk=pk)
+
+
+@require_GET
+def nfse_status_bulk(request: HttpRequest):
+    """Retorna status atual (DB) para refresh leve da listagem após sync assíncrona."""
+    tenant, user, role, redir = require_hub(request)
+    if redir:
+        return JsonResponse({"ok": False, "error": "Não autenticado"}, status=401)
+    raw_ids = [part.strip() for part in (request.GET.get("ids") or "").split(",") if part.strip()]
+    if not raw_ids:
+        return JsonResponse({"ok": True, "items": {}})
+    rows = NfIssue.objects.filter(tenant=tenant, id__in=raw_ids[:30]).values("id", "status")
+    return JsonResponse(
+        {
+            "ok": True,
+            "items": {str(row["id"]): row["status"] for row in rows},
+        }
+    )
 
 
 class NfseDocumentsView(View):

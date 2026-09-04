@@ -64,6 +64,9 @@ def poll_nf_issue_status(issue: NfIssue) -> NfIssue:
             payload={"nf_issue_id": str(issue.id), "focus_ref": issue.focus_ref},
             correlation_id=issue.correlation_id,
         )
+        from apps.issuance.artifacts import ensure_cancelled_artifacts
+
+        ensure_cancelled_artifacts(issue)
         return issue
 
     if issue.status != NfIssue.Status.POLLING:

@@ -222,10 +222,18 @@ def _map_emit_response(
     if xml_bytes:
         raw["xml"] = xml_bytes.decode("utf-8", errors="replace")
 
+    from integrations.nfse.sefin_status import resolve_status_from_nfse_payload
+
+    portal_status = resolve_status_from_nfse_payload(xml_bytes=xml_bytes, data=data)
+
     if status_code in {200, 201} and (xml_bytes or chave):
+        mapped = portal_status or "authorized"
+        raw["status"] = mapped
+        if portal_status == "cancelled":
+            raw["cStat"] = raw.get("cStat") or "101"
         return NfseEmitResult(
             external_ref=chave or ref or "SEFIN-OK",
-            status="authorized",
+            status=mapped,
             raw=raw,
         )
 

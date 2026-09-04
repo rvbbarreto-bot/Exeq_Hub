@@ -26,6 +26,11 @@ urlpatterns = [
         name="hub-v4-nfse-cancel",
     ),
     path(
+        "nfse/status-bulk/",
+        views.nfse_status_bulk,
+        name="hub-v4-nfse-status-bulk",
+    ),
+    path(
         "nfse/<uuid:pk>/documentos/",
         views.NfseDocumentsView.as_view(),
         name="hub-v4-nfse-documents",

@@ -212,6 +212,12 @@ TAX_RULE_NATIONAL_FALLBACK = (
 NFSE_TEST_MAX_AMOUNT_CENTS = int(env("NFSE_TEST_MAX_AMOUNT_CENTS", "1499") or "1499")
 # Portão cNBS no DPS: off (default) | homolog (só tpAmb=2) | on (produção+homolog).
 NFSE_DPS_CNBS_MODE = (env("NFSE_DPS_CNBS_MODE", "off") or "off").strip().lower()
+# Sync status com portal SEFIN ao abrir listagem Hub (assíncrono; throttle por nota).
+NFSE_PORTAL_SYNC_ENABLED = env("NFSE_PORTAL_SYNC_ENABLED", "true").lower() == "true"
+NFSE_PORTAL_SYNC_MIN_INTERVAL_SECONDS = int(
+    env("NFSE_PORTAL_SYNC_MIN_INTERVAL_SECONDS", "300") or "300"
+)
+NFSE_PORTAL_SYNC_LIST_LIMIT = int(env("NFSE_PORTAL_SYNC_LIST_LIMIT", "15") or "15")
 WEBHOOK_GATEWAY_SECRET = env("WEBHOOK_GATEWAY_SECRET", "dev-webhook-secret")
 # Fail-closed em DEBUG=False (ou FORCE_SECURE_SECRETS=true). Ver shared/security_checks.py
 FORCE_SECURE_SECRETS = env("FORCE_SECURE_SECRETS", "false").lower() == "true"
