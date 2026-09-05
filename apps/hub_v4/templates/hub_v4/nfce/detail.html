@@ -1,0 +1,59 @@
+{% extends "hub_v4/base.html" %}
+{% load hub_v4_tags %}
+{% block content %}
+<div class="page-header">
+  <h1>NFC-e {{ invoice.series }}/{{ invoice.number }}</h1>
+  {% if docs.xml %}
+  <a class="btn btn-primary" href="{% url 'hub-v4-nfce-doc-download' invoice.id 'xml' %}">Baixar XML</a>
+  {% endif %}
+  {% if docs.pdf %}
+  <a class="btn btn-ghost" href="{% url 'hub-v4-nfce-doc-download' invoice.id 'pdf' %}">Baixar cupom PDF</a>
+  {% endif %}
+  <a class="btn btn-ghost" href="{% url 'hub-v4-nfce-list' %}">Lista</a>
+  <a class="btn btn-ghost" href="{% url 'hub-v4-nfce-pdv' %}">Nova avulsa</a>
+</div>
+<dl class="detail-grid">
+  <dt>Status</dt><dd>{{ invoice.get_status_display }}</dd>
+  <dt>Chave</dt><dd><code>{{ invoice.access_key|default:"—" }}</code></dd>
+  <dt>Protocolo</dt><dd>{{ invoice.protocol|default:"—" }}</dd>
+  <dt>Total</dt><dd class="num">{{ invoice.total_cents|default:0|cents_brl }}</dd>
+  <dt>Emitente</dt><dd>{{ invoice.provider.legal_name }}</dd>
+  <dt>Identificação</dt>
+  <dd>
+    {% if invoice.omit_dest %}Sem identificação{% else %}
+    CPF {{ invoice.identification_snapshot.document|default:"—" }}
+    {% endif %}
+  </dd>
+</dl>
+{% if invoice.items.all %}
+<h2>Itens</h2>
+<table class="data-table">
+  <thead><tr><th>#</th><th>Descrição</th><th>NCM</th><th>CFOP</th><th>CSOSN</th><th>Total</th></tr></thead>
+  <tbody>
+    {% for it in invoice.items.all %}
+    <tr>
+      <td>{{ it.line_number }}</td>
+      <td>{{ it.description }}</td>
+      <td>{{ it.ncm }}</td>
+      <td>{{ it.cfop }}</td>
+      <td>{{ it.csosn|default:"—" }}</td>
+      <td class="num">{{ it.total_cents|default:0|cents_brl }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% if can_cancel %}
+<section class="card card-danger" style="margin-top:1.5rem;">
+  <h2>Cancelar NFC-e</h2>
+  <form method="post" action="{% url 'hub-v4-nfce-cancel' invoice.id %}"
+        onsubmit="return confirm('Confirma o cancelamento desta NFC-e?');">
+    {% csrf_token %}
+    <label for="id_justificativa">Justificativa (15–255 caracteres)</label>
+    <textarea id="id_justificativa" name="justificativa" rows="3" required minlength="15"
+              placeholder="Motivo do cancelamento…"></textarea>
+    <button type="submit" class="btn btn-danger">Confirmar cancelamento</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

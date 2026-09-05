@@ -32,10 +32,12 @@
       </a>
 
       <div class="nav-group-label">Operação</div>
+      {% if nfse_enabled_nav %}
       <a class="nav-item {% if nav == 'nfse' %}is-active{% endif %}" href="{% url 'hub-v4-nfse-list' %}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6"/></svg>
         <span class="label">NFS-e</span>
       </a>
+      {% endif %}
       {% if nfe_enabled_nav %}
       <a class="nav-item {% if nav == 'nfe' %}is-active{% endif %}" href="{% url 'hub-v4-nfe-list' %}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 4h16v4H4z"/><path d="M4 10h16v10H4z"/><path d="M8 14h4"/></svg>
@@ -44,6 +46,12 @@
       <a class="nav-item {% if nav == 'nfe_products' %}is-active{% endif %}" href="{% url 'hub-v4-nfe-products' %}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7h16v10H4z"/><path d="M8 7V5h8v2"/><path d="M9 12h6"/></svg>
         <span class="label">Produtos NF-e</span>
+      </a>
+      {% endif %}
+      {% if nfce_enabled_nav %}
+      <a class="nav-item {% if nav == 'nfce' %}is-active{% endif %}" href="{% url 'hub-v4-nfce-list' %}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 6h16v12H4z"/><path d="M8 10h8"/><path d="M8 14h5"/></svg>
+        <span class="label">NFC-e Avulsa</span>
       </a>
       {% endif %}
       <a class="nav-item {% if nav == 'charges' %}is-active{% endif %}" href="{% url 'hub-v4-charges' %}">
@@ -66,6 +74,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/><path d="M9 10h.01M15 10h.01"/></svg>
         <span class="label">Empresas</span>
       </a>
+      {% if nfse_enabled_nav %}
       <a class="nav-item {% if nav == 'fiscal' %}is-active{% endif %}" href="{% url 'hub-v4-fiscal' %}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
         <span class="label">Perfis fiscais</span>
@@ -82,6 +91,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
         <span class="label">Serviços</span>
       </a>
+      {% endif %}
 
       <div class="nav-group-label">Configuração</div>
       <a class="nav-item {% if nav == 'users' %}is-active{% endif %}" href="{% url 'hub-v4-users' %}">

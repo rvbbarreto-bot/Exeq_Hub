@@ -67,6 +67,11 @@ urlpatterns = [
         name="hub-v4-food-order-detail",
     ),
     path(
+        "food/pedidos/ifood-fiscal/",
+        food_hub.FoodIfoodFiscalHubView.as_view(),
+        name="hub-v4-food-ifood-fiscal",
+    ),
+    path(
         "food/produtos/",
         food_hub.FoodProductsListView.as_view(),
         name="hub-v4-food-products",
@@ -75,6 +80,11 @@ urlpatterns = [
         "food/produtos/novo/",
         food_hub.FoodProductCreateView.as_view(),
         name="hub-v4-food-product-new",
+    ),
+    path(
+        "food/produtos/<uuid:pk>/editar/",
+        food_hub.FoodProductEditView.as_view(),
+        name="hub-v4-food-product-edit",
     ),
     path(
         "food/clientes/",
@@ -231,6 +241,15 @@ urlpatterns = [
         "nfe/produtos/<uuid:pk>/",
         views.NfeProductFormView.as_view(),
         name="hub-v4-nfe-product-edit",
+    ),
+    path("nfce/", views.NfceListView.as_view(), name="hub-v4-nfce-list"),
+    path("nfce/pdv/", views.NfcePdvView.as_view(), name="hub-v4-nfce-pdv"),
+    path("nfce/<uuid:pk>/", views.NfceDetailView.as_view(), name="hub-v4-nfce-detail"),
+    path("nfce/<uuid:pk>/cancelar/", views.NfceCancelView.as_view(), name="hub-v4-nfce-cancel"),
+    path(
+        "nfce/<uuid:pk>/documentos/<str:kind>/download/",
+        views.nfce_document_download,
+        name="hub-v4-nfce-doc-download",
     ),
     path("certificados/", views.CertificatesView.as_view(), name="hub-v4-certificates"),
     path("usuarios/", views.UsersListView.as_view(), name="hub-v4-users"),

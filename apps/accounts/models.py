@@ -35,10 +35,10 @@ class Tenant(TimeStampedModel):
         blank=True,
         verbose_name="Configurações",
         help_text=(
-            "Flags do tenant. Ex.: "
-            '{"nfe_enabled": true, "payment_provider": "inter"}. '
-            "Limites comerciais preferem Subscription.plan.limits; "
-            "max_emit_cnpjs em settings ainda funciona como override/fallback."
+            "Flags do tenant (JSON avançado). Tipos de emissão: use Admin → "
+            'checkboxes ou {"nfse_enabled": true, "nfe_enabled": true}. '
+            "Ex.: payment_provider, max_emit_cnpjs. "
+            "Limites comerciais preferem Subscription.plan.limits."
         ),
     )
 

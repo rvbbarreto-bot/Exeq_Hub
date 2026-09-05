@@ -1,0 +1,175 @@
+{% extends "hub_v4/base.html" %}
+{% load hub_v4_tags %}
+{% block content %}
+<div class="page-header">
+  <h1>NFC-e Avulsa</h1>
+  <a class="btn btn-ghost" href="{% url 'hub-v4-nfce-list' %}">Voltar</a>
+</div>
+<p class="hint-line">
+  Cupom fiscal avulso · catálogo <strong>Produtos NF-e</strong> · ambiente <code>{{ nfce_http_mode }}</code>.
+  CNPJ na venda exige <a href="{% url 'hub-v4-nfe-emit' %}">NF-e modelo 55</a> (política EXEQ).
+</p>
+<form method="post" class="form-stack" id="nfce-avulsa-form" style="max-width:720px;">
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ form.idempotency_key|default:idempotency_key }}">
+  <label>Emitente
+    <select name="provider_id" required>
+      {% for p in providers %}
+      <option value="{{ p.id }}" {% if p.id|stringformat:"s" == active_provider_id %}selected{% endif %}>
+        {{ p.legal_name }} ({{ p.document }})
+      </option>
+      {% endfor %}
+    </select>
+  </label>
+
+  <div class="section-label">Itens do cupom</div>
+  <table class="data" style="margin-bottom:8px;">
+    <thead>
+      <tr>
+        <th>Produto (NfeProduct)</th>
+        <th style="width:100px;">Qtd</th>
+        <th style="width:120px;">Preço unit.</th>
+        <th style="width:48px;"></th>
+      </tr>
+    </thead>
+    <tbody id="nfce-lines-body">
+      <tr class="nfce-line-row">
+        <td>
+          <select name="line_product_id" class="line-product" required>
+            <option value="">Selecione…</option>
+            {% for prod in products %}
+            <option value="{{ prod.id }}" data-price-cents="{{ prod.unit_price_cents }}">
+              {{ prod.code }} — {{ prod.description }} ({{ prod.unit_price_cents|cents_brl }})
+            </option>
+            {% endfor %}
+          </select>
+        </td>
+        <td><input name="line_quantity" class="line-qty" value="1" required inputmode="decimal"></td>
+        <td><input name="line_unit_price" class="line-price" placeholder="padrão catálogo" inputmode="decimal"></td>
+        <td><button type="button" class="btn btn-ghost btn-sm nfce-line-remove" hidden aria-label="Remover linha">×</button></td>
+      </tr>
+    </tbody>
+  </table>
+  <button type="button" class="btn btn-ghost btn-sm" id="nfce-line-add">+ Adicionar item</button>
+
+  <div class="card" style="margin-top:16px;padding:12px 16px;">
+    <div class="form-row" style="align-items:center;justify-content:space-between;">
+      <strong>Total estimado</strong>
+      <span id="nfce-total-preview" class="num">R$ 0,00</span>
+    </div>
+    <p class="hint-line" style="margin:8px 0 0;">Total final validado na emissão (impostos e arredondamentos SEFAZ).</p>
+  </div>
+
+  <label style="margin-top:16px;">Forma de pagamento (tPag)
+    <select name="payment_method" required>
+      {% for code, label in payment_methods %}
+      <option value="{{ code }}" {% if form.payment_method == code %}selected{% elif not form and code == "99" %}selected{% endif %}>{{ code }} — {{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+
+  <fieldset>
+    <legend>Consumidor (opcional)</legend>
+    <label>CPF<input type="text" name="cpf" value="{{ form.cpf|default:'' }}" placeholder="000.000.000-00" autocomplete="off"></label>
+    <label>CNPJ<input type="text" name="cnpj" value="{{ form.cnpj|default:'' }}" placeholder="00.000.000/0000-00" autocomplete="off"></label>
+    <p class="hint-line">Deixe em branco para cupom sem destinatário (até R$ 9.999,99). CNPJ redireciona para NF-e 55.</p>
+  </fieldset>
+
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">Emitir NFC-e Avulsa</button>
+    <a class="btn btn-ghost" href="{% url 'hub-v4-nfce-list' %}">Cancelar</a>
+  </div>
+</form>
+
+<template id="nfce-line-template">
+  <tr class="nfce-line-row">
+    <td>
+      <select name="line_product_id" class="line-product" required>
+        <option value="">Selecione…</option>
+        {% for prod in products %}
+        <option value="{{ prod.id }}" data-price-cents="{{ prod.unit_price_cents }}">
+          {{ prod.code }} — {{ prod.description }} ({{ prod.unit_price_cents|cents_brl }})
+        </option>
+        {% endfor %}
+      </select>
+    </td>
+    <td><input name="line_quantity" class="line-qty" value="1" required inputmode="decimal"></td>
+    <td><input name="line_unit_price" class="line-price" placeholder="padrão catálogo" inputmode="decimal"></td>
+    <td><button type="button" class="btn btn-ghost btn-sm nfce-line-remove" aria-label="Remover linha">×</button></td>
+  </tr>
+</template>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var body = document.getElementById("nfce-lines-body");
+  var tpl = document.getElementById("nfce-line-template");
+  var addBtn = document.getElementById("nfce-line-add");
+  var totalEl = document.getElementById("nfce-total-preview");
+  if (!body || !tpl || !addBtn) return;
+
+  function parseQty(raw) {
+    var n = parseFloat(String(raw || "0").replace(",", "."));
+    return isFinite(n) && n > 0 ? n : 0;
+  }
+
+  function parsePriceToCents(raw, fallbackCents) {
+    var text = String(raw || "").trim();
+    if (!text) return fallbackCents;
+    if (text.indexOf(",") >= 0) text = text.replace(/\./g, "").replace(",", ".");
+    var n = parseFloat(text);
+    if (!isFinite(n) || n < 0) return fallbackCents;
+    return Math.round(n * 100);
+  }
+
+  function formatBrl(cents) {
+    return "R$ " + (cents / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function recalcTotal() {
+    var total = 0;
+    body.querySelectorAll(".nfce-line-row").forEach(function (row) {
+      var sel = row.querySelector(".line-product");
+      var opt = sel && sel.selectedOptions[0];
+      if (!opt || !opt.value) return;
+      var catalogCents = parseInt(opt.getAttribute("data-price-cents") || "0", 10);
+      var qty = parseQty(row.querySelector(".line-qty") && row.querySelector(".line-qty").value);
+      var unitCents = parsePriceToCents(row.querySelector(".line-price") && row.querySelector(".line-price").value, catalogCents);
+      total += Math.round(unitCents * qty);
+    });
+    if (totalEl) totalEl.textContent = formatBrl(total);
+  }
+
+  function syncRemoveButtons() {
+    var rows = body.querySelectorAll(".nfce-line-row");
+    rows.forEach(function (row) {
+      var btn = row.querySelector(".nfce-line-remove");
+      if (btn) btn.hidden = rows.length <= 1;
+    });
+  }
+
+  addBtn.addEventListener("click", function () {
+    body.appendChild(tpl.content.cloneNode(true));
+    syncRemoveButtons();
+    recalcTotal();
+  });
+
+  body.addEventListener("click", function (e) {
+    var btn = e.target.closest(".nfce-line-remove");
+    if (!btn) return;
+    var row = btn.closest(".nfce-line-row");
+    if (row && body.querySelectorAll(".nfce-line-row").length > 1) {
+      row.remove();
+      syncRemoveButtons();
+      recalcTotal();
+    }
+  });
+
+  body.addEventListener("input", recalcTotal);
+  body.addEventListener("change", recalcTotal);
+  syncRemoveButtons();
+  recalcTotal();
+})();
+</script>
+{% endblock %}

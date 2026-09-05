@@ -10,7 +10,7 @@ from decimal import Decimal, InvalidOperation
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db.models import Exists, OuterRef, Q
-from django.http import HttpRequest, JsonResponse
+from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.decorators import method_decorator
@@ -44,7 +44,11 @@ from apps.hub_v4.forms import (
     save_service_from_post,
     save_tax_rule_from_post,
 )
-from apps.hub_v4.nav_flags import nfe_enabled_for_tenant
+from apps.accounts.tenant_emission import (
+    nfce_enabled_for_tenant,
+    nfe_enabled_for_tenant,
+    nfse_enabled_for_tenant,
+)
 from apps.hub_v4.services import (
     certificate_rows,
     dashboard_context,
@@ -96,6 +100,22 @@ def _require_tenant_admin_hub(request: HttpRequest):
         return None, None, None, redir
     if role not in ADMIN_ROLES:
         messages.error(request, "Apenas administradores do escritório gerenciam usuários.")
+        return tenant, user, role, redirect("hub-v4-dashboard")
+    return tenant, user, role, None
+
+
+def _require_nfse_hub(request: HttpRequest, *, write: bool = False):
+    if write:
+        tenant, user, role, redir = _require_writer_hub(request)
+    else:
+        tenant, user, role, redir = require_hub(request)
+    if redir:
+        return tenant, user, role, redir
+    if not nfse_enabled_for_tenant(tenant):
+        messages.warning(
+            request,
+            "NFS-e (serviço) não está habilitada para este escritório.",
+        )
         return tenant, user, role, redirect("hub-v4-dashboard")
     return tenant, user, role, None
 
@@ -177,7 +197,7 @@ class DashboardView(View):
 
 class NfseListView(View):
     def get(self, request: HttpRequest):
-        tenant, user, role, redir = require_hub(request)
+        tenant, user, role, redir = _require_nfse_hub(request)
         if redir:
             return redir
         status = request.GET.get("status") or "all"
@@ -202,10 +222,14 @@ class NfseListView(View):
             schedule_portal_status_refresh,
         )
 
-        sync_ids = collect_issue_ids_for_portal_sync(page.object_list)
+        sync_ids = collect_issue_ids_for_portal_sync(
+            page.object_list,
+            force=request.GET.get("sync") == "1",
+        )
         portal_sync_scheduled = schedule_portal_status_refresh(
             tenant_id=tenant.id,
             issue_ids=sync_ids,
+            force=request.GET.get("sync") == "1",
         )
         chips = []
         if status and status != "all":
@@ -231,7 +255,7 @@ class NfseListView(View):
 
 class NfseDetailView(View):
     def get(self, request: HttpRequest, pk):
-        tenant, user, role, redir = require_hub(request)
+        tenant, user, role, redir = _require_nfse_hub(request)
         if redir:
             return redir
         issue = get_object_or_404(
@@ -255,10 +279,12 @@ class NfseDetailView(View):
         )
 
         detail_sync = False
-        if should_sync_issue(issue):
+        force_sync = request.GET.get("sync") == "1"
+        if should_sync_issue(issue, force=force_sync):
             detail_sync = schedule_portal_status_refresh(
                 tenant_id=tenant.id,
                 issue_ids=[str(issue.id)],
+                force=force_sync,
             )
         return render(
             request,
@@ -286,7 +312,7 @@ class NfseDetailView(View):
 
 class NfseCancelView(View):
     def post(self, request: HttpRequest, pk):
-        tenant, user, role, redir = _require_writer_hub(request)
+        tenant, user, role, redir = _require_nfse_hub(request, write=True)
         if redir:
             return redir
         issue = get_object_or_404(NfIssue, pk=pk, tenant=tenant)
@@ -329,7 +355,7 @@ class NfseCancelView(View):
 @require_GET
 def nfse_status_bulk(request: HttpRequest):
     """Retorna status atual (DB) para refresh leve da listagem após sync assíncrona."""
-    tenant, user, role, redir = require_hub(request)
+    tenant, user, role, redir = _require_nfse_hub(request)
     if redir:
         return JsonResponse({"ok": False, "error": "Não autenticado"}, status=401)
     raw_ids = [part.strip() for part in (request.GET.get("ids") or "").split(",") if part.strip()]
@@ -346,7 +372,7 @@ def nfse_status_bulk(request: HttpRequest):
 
 class NfseDocumentsView(View):
     def get(self, request: HttpRequest, pk):
-        tenant, user, role, redir = require_hub(request)
+        tenant, user, role, redir = _require_nfse_hub(request)
         if redir:
             return redir
         issue = get_object_or_404(NfIssue, pk=pk, tenant=tenant)
@@ -384,7 +410,7 @@ class NfseDocumentsView(View):
 
 @require_GET
 def nfse_document_download(request: HttpRequest, pk, kind: str):
-    tenant, user, role, redir = require_hub(request)
+    tenant, user, role, redir = _require_nfse_hub(request)
     if redir:
         return redir
     return download_nf_artifact(tenant=tenant, issue_id=pk, kind=kind)
@@ -393,7 +419,7 @@ def nfse_document_download(request: HttpRequest, pk, kind: str):
 @require_http_methods(["GET", "POST"])
 def nfse_lookup_customer(request: HttpRequest):
     """Lookup CNPJ (etapa Tomador) via JSON — não emite nota."""
-    tenant, user, role, redir = require_hub(request)
+    tenant, user, role, redir = _require_nfse_hub(request)
     if redir:
         return JsonResponse({"ok": False, "error": "Não autenticado"}, status=401)
     raw = request.GET.get("document") or request.POST.get("document") or ""
@@ -449,7 +475,7 @@ def nfse_lookup_customer(request: HttpRequest):
 @require_http_methods(["GET"])
 def hub_nbs_search(request: HttpRequest):
     """Busca NBS (catálogo global) para autocomplete Hub."""
-    tenant, user, role, redir = require_hub(request)
+    tenant, user, role, redir = _require_nfse_hub(request)
     if redir:
         return JsonResponse({"ok": False, "error": "Não autenticado"}, status=401)
     from apps.master_data.nbs_import import search_nbs
@@ -467,7 +493,7 @@ class NfseWizardView(View):
     template_name = "hub_v4/nfse/wizard.html"
 
     def get(self, request: HttpRequest):
-        tenant, user, role, redir = require_hub(request)
+        tenant, user, role, redir = _require_nfse_hub(request)
         if redir:
             return redir
         draft = self._load_draft(request, tenant)
@@ -481,7 +507,7 @@ class NfseWizardView(View):
         )
 
     def post(self, request: HttpRequest):
-        tenant, user, role, redir = require_hub(request)
+        tenant, user, role, redir = _require_nfse_hub(request, write=True)
         if redir:
             return redir
 
@@ -1804,6 +1830,233 @@ class NfeProductFormView(View):
         }
 
 
+def _require_nfce_hub(request: HttpRequest, *, write: bool = False):
+    if write:
+        tenant, user, role, redir = _require_writer_hub(request)
+    else:
+        tenant, user, role, redir = require_hub(request)
+    if redir:
+        return tenant, user, role, redir
+    if not nfce_enabled_for_tenant(tenant):
+        messages.warning(
+            request,
+            "NFC-e PDV não está habilitada para este tenant. Solicite liberação à plataforma.",
+        )
+        return tenant, user, role, redirect("hub-v4-dashboard")
+    return tenant, user, role, None
+
+
+class NfceListView(View):
+    """Lista cupons NFC-e (mod 65)."""
+
+    def get(self, request: HttpRequest):
+        from apps.nfce.models import NfceInvoice
+
+        tenant, user, role, redir = _require_nfce_hub(request)
+        if redir:
+            return redir
+        qs = (
+            NfceInvoice.objects.filter(tenant=tenant)
+            .select_related("provider")
+            .order_by("-created_at")
+        )
+        page = Paginator(qs, 20).get_page(request.GET.get("page") or 1)
+        return render(
+            request,
+            "hub_v4/nfce/list.html",
+            {
+                "nav": "nfce",
+                "page_title": "NFC-e PDV",
+                "role_code": role,
+                "page": page,
+                "nfce_http_mode": getattr(dj_settings, "NFCE_HTTP_MODE", "stub"),
+                "nfce_tp_amb": getattr(dj_settings, "NFCE_DEFAULT_TP_AMB", "2"),
+            },
+        )
+
+
+class NfcePdvView(View):
+    """NFC-e Avulsa — checkout one-shot (multi-itens, tPag)."""
+
+    template_name = "hub_v4/nfce/pdv.html"
+
+    def get(self, request: HttpRequest):
+        tenant, user, role, redir = _require_nfce_hub(request, write=True)
+        if redir:
+            return redir
+        return render(request, self.template_name, self._ctx(tenant, role, request))
+
+    def post(self, request: HttpRequest):
+        tenant, user, role, redir = _require_nfce_hub(request, write=True)
+        if redir:
+            return redir
+        try:
+            inv = self._emit_from_post(request, tenant, actor=user.email or "hub")
+        except Exception as exc:
+            messages.error(request, str(exc) or "Falha ao emitir NFC-e.")
+            return render(
+                request,
+                self.template_name,
+                {**self._ctx(tenant, role, request), "form": request.POST},
+            )
+        if isinstance(inv, dict) and inv.get("route") == "nfe":
+            messages.warning(
+                request,
+                inv.get("message") or "CNPJ exige NF-e modelo 55. Use emissão NF-e.",
+            )
+            return redirect("hub-v4-nfe-emit")
+        messages.success(
+            request,
+            f"NFC-e {inv.get_status_display()} · série {inv.series}"
+            + (f" nº {inv.number}" if inv.number else "")
+            + ".",
+        )
+        return redirect("hub-v4-nfce-detail", pk=inv.id)
+
+    def _ctx(self, tenant, role, request):
+        from apps.hub_v4.nfce_pdv import NFCE_PDV_PAYMENT_METHODS
+
+        providers = list(
+            Provider.objects.filter(tenant=tenant, is_active=True).order_by("legal_name")
+        )
+        products = list(
+            NfeProduct.objects.filter(tenant=tenant, is_active=True).order_by("code")[:200]
+        )
+        active = get_active_provider(request, tenant)
+        return {
+            "nav": "nfce",
+            "page_title": "NFC-e Avulsa",
+            "role_code": role,
+            "providers": providers,
+            "products": products,
+            "payment_methods": NFCE_PDV_PAYMENT_METHODS,
+            "active_provider_id": str(active.id) if active else "",
+            "idempotency_key": f"hub-nfce-{uuid.uuid4()}",
+            "nfce_http_mode": getattr(dj_settings, "NFCE_HTTP_MODE", "stub"),
+        }
+
+    def _emit_from_post(self, request, tenant, *, actor: str):
+        from apps.hub_v4.nfce_pdv import parse_nfce_pdv_lines, parse_payment_method
+        from apps.nfce.services import checkout_and_emit_nfce
+
+        provider = get_object_or_404(
+            Provider, pk=request.POST.get("provider_id"), tenant=tenant
+        )
+        cpf = (request.POST.get("cpf") or "").strip() or None
+        cnpj = (request.POST.get("cnpj") or "").strip() or None
+        idem = (request.POST.get("idempotency_key") or f"hub-nfce-{uuid.uuid4()}").strip()
+        items = parse_nfce_pdv_lines(request.POST, tenant=tenant)
+        payment_method = parse_payment_method(request.POST)
+
+        result = checkout_and_emit_nfce(
+            tenant=tenant,
+            provider=provider,
+            items=items,
+            idempotency_key=idem,
+            cpf=cpf,
+            cnpj=cnpj,
+            payment_method=payment_method,
+            actor=actor,
+        )
+        if isinstance(result, dict):
+            return result
+        return result
+
+
+class NfceDetailView(View):
+    def get(self, request: HttpRequest, pk):
+        from apps.nfce.models import NfceInvoice
+        from apps.nfce.services import allowed_actions
+        from apps.nfce.xml_export import resolve_authorized_xml_bytes
+
+        tenant, user, role, redir = _require_nfce_hub(request)
+        if redir:
+            return redir
+        invoice = get_object_or_404(
+            NfceInvoice.objects.select_related("provider").prefetch_related("items"),
+            pk=pk,
+            tenant=tenant,
+        )
+        acts = allowed_actions(invoice)
+        return render(
+            request,
+            "hub_v4/nfce/detail.html",
+            {
+                "nav": "nfce",
+                "page_title": f"NFC-e {invoice.series}/{invoice.number or '—'}",
+                "role_code": role,
+                "invoice": invoice,
+                "can_cancel": "cancel" in acts and role in WRITE_ROLES,
+                "docs": {
+                    "xml": resolve_authorized_xml_bytes(invoice) is not None
+                    or invoice.artifacts.filter(kind="xml_authorized").exists(),
+                    "pdf": invoice.artifacts.filter(kind="danfe_pdf").exists(),
+                },
+            },
+        )
+
+
+class NfceCancelView(View):
+    def post(self, request: HttpRequest, pk):
+        from apps.nfce.exceptions import (
+            NfceDisabledError,
+            NfceInvalidTransitionError,
+            NfceValidationError,
+        )
+        from apps.nfce.models import NfceInvoice
+        from apps.nfce.services import cancel_nfce
+
+        tenant, user, role, redir = _require_nfce_hub(request, write=True)
+        if redir:
+            return redir
+        inv = get_object_or_404(NfceInvoice, pk=pk, tenant=tenant)
+        just = (request.POST.get("justificativa") or "").strip()
+        try:
+            inv = cancel_nfce(inv, justificativa=just, actor=user.email or "hub")
+        except (
+            NfceDisabledError,
+            NfceInvalidTransitionError,
+            NfceValidationError,
+            ValueError,
+        ) as exc:
+            messages.error(request, str(exc) or "Falha ao cancelar NFC-e.")
+        else:
+            from apps.food.fiscal.nfce_sync import sync_food_orders_after_nfce_cancel
+
+            sync_food_orders_after_nfce_cancel(inv)
+            messages.success(request, "NFC-e cancelada (stub ou SEFAZ).")
+        return redirect("hub-v4-nfce-detail", pk=inv.id)
+
+
+def nfce_document_download(request: HttpRequest, pk, kind: str = "xml"):
+    from apps.nfce.artifacts import get_artifact, read_artifact_bytes
+    from apps.nfce.models import NfceArtifact, NfceInvoice
+    from apps.nfce.xml_export import resolve_authorized_xml_bytes
+
+    tenant, user, role, redir = _require_nfce_hub(request)
+    if redir:
+        return redir
+    invoice = get_object_or_404(NfceInvoice, pk=pk, tenant=tenant)
+    if kind == "pdf":
+        art = get_artifact(invoice, NfceArtifact.Kind.DANFE_PDF)
+        if art is not None:
+            return HttpResponse(read_artifact_bytes(art), content_type="application/pdf")
+        xml = resolve_authorized_xml_bytes(invoice)
+        if not xml:
+            raise Http404("PDF indisponível")
+        from integrations.sefaz_nfe.danfe_nfce import render_danfce_pdf
+
+        return HttpResponse(render_danfce_pdf(xml), content_type="application/pdf")
+
+    art = get_artifact(invoice, NfceArtifact.Kind.XML_AUTHORIZED)
+    if art is not None:
+        return HttpResponse(read_artifact_bytes(art), content_type="application/xml")
+    xml = resolve_authorized_xml_bytes(invoice)
+    if not xml:
+        raise Http404("XML indisponível")
+    return HttpResponse(xml, content_type="application/xml")
+
+
 class CertificatesView(View):
     """Lista + upload A1 (multipart) no Hub, vinculado a empresa/CNPJ."""
 
@@ -1926,7 +2179,7 @@ class CertificatesView(View):
 
 class FiscalProfilesListView(View):
     def get(self, request: HttpRequest):
-        tenant, user, role, redir = require_hub(request)
+        tenant, user, role, redir = _require_nfse_hub(request)
         if redir:
             return redir
         q = (request.GET.get("q") or "").strip()
@@ -1952,7 +2205,7 @@ class FiscalProfileFormView(View):
     template_name = "hub_v4/fiscal/form.html"
 
     def get(self, request: HttpRequest, pk=None):
-        tenant, user, role, redir = _require_writer_hub(request)
+        tenant, user, role, redir = _require_nfse_hub(request, write=True)
         if redir:
             return redir
         obj = get_object_or_404(FiscalProfile, pk=pk, tenant=tenant) if pk else None
@@ -1972,7 +2225,7 @@ class FiscalProfileFormView(View):
         )
 
     def post(self, request: HttpRequest, pk=None):
-        tenant, user, role, redir = _require_writer_hub(request)
+        tenant, user, role, redir = _require_nfse_hub(request, write=True)
         if redir:
             return redir
         obj = get_object_or_404(FiscalProfile, pk=pk, tenant=tenant) if pk else None
@@ -2015,7 +2268,7 @@ class TaxRulesListView(View):
     """Regras municipais do catálogo publicado do tenant."""
 
     def get(self, request: HttpRequest):
-        tenant, user, role, redir = require_hub(request)
+        tenant, user, role, redir = _require_nfse_hub(request)
         if redir:
             return redir
         q = (request.GET.get("q") or "").strip()
@@ -2057,7 +2310,7 @@ class FiscalReadinessView(View):
     """N1 — checklist go-live + matriz de cobertura ISS (ADR-FISCAL-001)."""
 
     def get(self, request: HttpRequest):
-        tenant, user, role, redir = require_hub(request)
+        tenant, user, role, redir = _require_nfse_hub(request)
         if redir:
             return redir
         from apps.fiscal.readiness import fiscal_readiness
@@ -2083,7 +2336,7 @@ class FiscalTemplateApplyView(View):
     """N2 — aplica template municipal linha a linha."""
 
     def post(self, request: HttpRequest):
-        tenant, user, role, redir = _require_writer_hub(request)
+        tenant, user, role, redir = _require_nfse_hub(request, write=True)
         if redir:
             return redir
         from apps.fiscal.templates_factory import apply_template
@@ -2117,7 +2370,7 @@ class FiscalCsvImportView(View):
     """N2 — import CSV de regras ISS."""
 
     def post(self, request: HttpRequest):
-        tenant, user, role, redir = _require_writer_hub(request)
+        tenant, user, role, redir = _require_nfse_hub(request, write=True)
         if redir:
             return redir
         from apps.fiscal.templates_factory import import_rules_csv
@@ -2151,7 +2404,7 @@ class TaxRuleFormView(View):
     template_name = "hub_v4/fiscal/rules_form.html"
 
     def get(self, request: HttpRequest):
-        tenant, user, role, redir = _require_writer_hub(request)
+        tenant, user, role, redir = _require_nfse_hub(request, write=True)
         if redir:
             return redir
         return render(
@@ -2161,7 +2414,7 @@ class TaxRuleFormView(View):
         )
 
     def post(self, request: HttpRequest):
-        tenant, user, role, redir = _require_writer_hub(request)
+        tenant, user, role, redir = _require_nfse_hub(request, write=True)
         if redir:
             return redir
         try:
@@ -2193,7 +2446,7 @@ class TaxRuleFormView(View):
 
 class ServicesListView(View):
     def get(self, request: HttpRequest):
-        tenant, user, role, redir = require_hub(request)
+        tenant, user, role, redir = _require_nfse_hub(request)
         if redir:
             return redir
         q = (request.GET.get("q") or "").strip()
@@ -2224,7 +2477,7 @@ class ServiceFormView(View):
     template_name = "hub_v4/services/form.html"
 
     def get(self, request: HttpRequest, pk=None):
-        tenant, user, role, redir = _require_writer_hub(request)
+        tenant, user, role, redir = _require_nfse_hub(request, write=True)
         if redir:
             return redir
         obj = (
@@ -2248,7 +2501,7 @@ class ServiceFormView(View):
         )
 
     def post(self, request: HttpRequest, pk=None):
-        tenant, user, role, redir = _require_writer_hub(request)
+        tenant, user, role, redir = _require_nfse_hub(request, write=True)
         if redir:
             return redir
         obj = (

@@ -33,6 +33,16 @@ def require_nfe_enabled() -> None:
         raise NfeDisabledError("NF-e desabilitada (NFE_ENABLED=false)")
 
 
+def require_nfe_enabled_for_tenant(tenant) -> None:
+    require_nfe_enabled()
+    from apps.accounts.tenant_emission import nfe_tenant_opt_in
+
+    if not nfe_tenant_opt_in(tenant):
+        raise NfeDisabledError(
+            "NF-e não habilitada para este tenant (nfe_enabled)"
+        )
+
+
 def http_mode_requires_ie() -> bool:
     return (getattr(settings, "NFE_HTTP_MODE", "stub") or "stub").lower() == "http"
 
@@ -142,7 +152,7 @@ def discard_draft(
     actor: str = "api",
 ) -> None:
     """Remove rascunho puro (sem número consumido)."""
-    require_nfe_enabled()
+    require_nfe_enabled_for_tenant(invoice.tenant)
     if invoice.status != NfeInvoice.Status.DRAFT:
         raise NfeInvalidTransitionError("discard só em draft")
     if invoice.number_consumed or invoice.number is not None:
@@ -165,7 +175,7 @@ def clone_invoice(
     actor: str = "api",
 ) -> NfeInvoice:
     """Novo draft a partir de rejected/failed com nNF consumido (sem reusar number)."""
-    require_nfe_enabled()
+    require_nfe_enabled_for_tenant(source.tenant)
     if source.status not in {NfeInvoice.Status.REJECTED, NfeInvoice.Status.FAILED}:
         raise NfeInvalidTransitionError("clone só a partir de rejected/failed")
     if not source.number_consumed:
@@ -244,7 +254,7 @@ def create_draft(
     ind_ie_dest: str = "9",
     actor: str = "api",
 ) -> NfeInvoice:
-    require_nfe_enabled()
+    require_nfe_enabled_for_tenant(tenant)
     existing = NfeInvoice.objects.filter(tenant=tenant, idempotency_key=idempotency_key).first()
     if existing:
         return existing
@@ -274,7 +284,7 @@ def replace_items(
     items: list[dict[str, Any]],
     expected_version: int | None = None,
 ) -> NfeInvoice:
-    require_nfe_enabled()
+    require_nfe_enabled_for_tenant(invoice.tenant)
     require_content_mutable(invoice)
     if invoice.status != NfeInvoice.Status.DRAFT and not (
         invoice.status in {NfeInvoice.Status.REJECTED, NfeInvoice.Status.FAILED}
@@ -357,7 +367,7 @@ def apply_operator_header_update(
     expected_version: int | None = None,
 ) -> NfeInvoice:
     """Atualiza cabeçalho mutável; bloqueado se conteúdo locked / snapshot frozen."""
-    require_nfe_enabled()
+    require_nfe_enabled_for_tenant(invoice.tenant)
     require_content_mutable(invoice)
     require_not_snapshot_frozen(invoice, field="header")
     if expected_version is not None and invoice.version != expected_version:
@@ -386,7 +396,7 @@ def apply_operator_header_update(
 
 
 def validate_invoice(invoice: NfeInvoice) -> dict[str, Any]:
-    require_nfe_enabled()
+    require_nfe_enabled_for_tenant(invoice.tenant)
     require_content_mutable(invoice)
     result = build_validation(invoice, require_ie=http_mode_requires_ie())
     for row in result["items_taxes"]:
@@ -487,7 +497,7 @@ def emit_invoice(
     expected_version: int | None = None,
     actor: str = "api",
 ) -> NfeInvoice:
-    require_nfe_enabled()
+    require_nfe_enabled_for_tenant(invoice.tenant)
     inv = NfeInvoice.objects.select_for_update().get(pk=invoice.pk)
     if expected_version is not None and inv.version != expected_version:
         raise NfeVersionConflictError(f"versão esperada {expected_version}, atual {inv.version}")
@@ -637,7 +647,7 @@ def cancel_invoice(
     justificativa: str,
     actor: str = "api",
 ) -> NfeInvoice:
-    require_nfe_enabled()
+    require_nfe_enabled_for_tenant(invoice.tenant)
     inv = NfeInvoice.objects.select_for_update().get(pk=invoice.pk)
     if inv.status != NfeInvoice.Status.AUTHORIZED:
         raise NfeInvalidTransitionError("só cancela NF-e autorizada")
@@ -730,7 +740,7 @@ def issue_carta_correcao(
     actor: str = "api",
 ) -> NfeInvoice:
     """CCe 110110 — NF-e permanece authorized; grava evento + artefato xml_cce."""
-    require_nfe_enabled()
+    require_nfe_enabled_for_tenant(invoice.tenant)
     inv = NfeInvoice.objects.select_for_update().get(pk=invoice.pk)
     if inv.status != NfeInvoice.Status.AUTHORIZED:
         raise NfeInvalidTransitionError("CCe só em NF-e autorizada")
@@ -854,7 +864,7 @@ def create_product(
     is_active: bool = True,
     tax_regime_hint: str = "",
 ) -> NfeProduct:
-    require_nfe_enabled()
+    require_nfe_enabled_for_tenant(tenant)
     code_norm = (code or "").strip()[:60]
     if not code_norm:
         raise NfeValidationError("Código do produto é obrigatório")
@@ -907,7 +917,7 @@ def update_product(
     cofins_rate_bp: int | None = None,
     is_active: bool | None = None,
 ) -> NfeProduct:
-    require_nfe_enabled()
+    require_nfe_enabled_for_tenant(product.tenant)
     if code is not None:
         code_norm = code.strip()[:60]
         if not code_norm:

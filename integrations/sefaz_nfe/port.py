@@ -15,6 +15,31 @@ from integrations.sefaz_nfe.parse import map_cstat_to_status, sanitize_sefaz_raw
 logger = logging.getLogger(__name__)
 
 
+def _model_from_access_key(access_key: str) -> str:
+    key = "".join(ch for ch in str(access_key or "") if ch.isdigit())[:44]
+    if len(key) >= 22:
+        return key[20:22]
+    return "55"
+
+
+def _resolve_transport_endpoints(
+    *,
+    uf: str,
+    tp_amb: str,
+    access_key: str = "",
+    context: dict[str, Any] | None = None,
+):
+    from integrations.sefaz_nfe.endpoints import resolve_endpoints
+
+    ctx = context or {}
+    model = str(ctx.get("document_model") or _model_from_access_key(access_key) or "55")
+    if model == "65":
+        from integrations.sefaz_nfe.nfce_endpoints import as_nfe_endpoints, resolve_nfce_endpoints
+
+        return as_nfe_endpoints(resolve_nfce_endpoints(uf=uf, tp_amb=tp_amb)), model
+    return resolve_endpoints(uf=uf, tp_amb=tp_amb), model
+
+
 @dataclass(frozen=True)
 class NfeEmitResult:
     status: str  # authorized | rejected | failed | polling | cancelled
@@ -74,10 +99,14 @@ class StubNfeProvider:
         self, *, invoice_snapshot: dict[str, Any], context: dict[str, Any] | None = None
     ) -> NfeEmitResult:
         from integrations.sefaz_nfe.access_key import build_access_key
-        from integrations.sefaz_nfe.xml_nfe import build_nfe_xml
 
         emit = invoice_snapshot.get("emitente") or {}
         header = invoice_snapshot.get("header") or {}
+        model = str(
+            header.get("model")
+            or invoice_snapshot.get("document_model")
+            or "55"
+        )
         uf = (emit.get("address") or {}).get("uf") or "SP"
         try:
             key = build_access_key(
@@ -86,6 +115,7 @@ class StubNfeProvider:
                 cnpj=str(emit.get("cnpj") or "00000000000000"),
                 series=int(header.get("series") or 1),
                 number=int(header.get("number") or 1),
+                model=model,
             )
         except Exception:  # noqa: BLE001
             payload = repr(invoice_snapshot).encode("utf-8")
@@ -94,7 +124,14 @@ class StubNfeProvider:
 
         signed_xml = None
         try:
-            signed_xml = build_nfe_xml(snapshot=invoice_snapshot, access_key=key)
+            if model == "65":
+                from integrations.sefaz_nfe.xml_nfce import build_nfce_xml
+
+                signed_xml = build_nfce_xml(snapshot=invoice_snapshot, access_key=key)
+            else:
+                from integrations.sefaz_nfe.xml_nfe import build_nfe_xml
+
+                signed_xml = build_nfe_xml(snapshot=invoice_snapshot, access_key=key)
         except Exception:  # noqa: BLE001
             signed_xml = None
 
@@ -341,6 +378,10 @@ class HttpNfeProvider:
     def emitir(
         self, *, invoice_snapshot: dict[str, Any], context: dict[str, Any] | None = None
     ) -> NfeEmitResult:
+        header = invoice_snapshot.get("header") or {}
+        model = str(header.get("model") or invoice_snapshot.get("document_model") or "55")
+        if model == "65":
+            return self._emitir_nfce(invoice_snapshot=invoice_snapshot, context=context)
         from integrations.sefaz_nfe.endpoints import resolve_endpoints
         from integrations.sefaz_nfe.sign import sign_nfe_xml, wrap_envi_nfe
         from integrations.sefaz_nfe.transport import post_nfe_autorizacao
@@ -443,6 +484,131 @@ class HttpNfeProvider:
             signed_xml=signed,
         )
 
+    def _is_nfce_dry_run(self) -> bool:
+        return (getattr(settings, "NFCE_HTTP_DRY_RUN", False) is True) or (
+            str(getattr(settings, "NFCE_HTTP_DRY_RUN", "")).lower() in ("1", "true", "yes")
+        )
+
+    def _emitir_nfce(
+        self, *, invoice_snapshot: dict[str, Any], context: dict[str, Any] | None = None
+    ) -> NfeEmitResult:
+        from integrations.sefaz_nfe.nfce_endpoints import as_nfe_endpoints, resolve_nfce_endpoints
+        from integrations.sefaz_nfe.sign import sign_nfe_xml, wrap_envi_nfe
+        from integrations.sefaz_nfe.transport import post_nfe_autorizacao
+        from integrations.sefaz_nfe.xml_nfce import access_key_from_signed_or_snap, build_nfce_xml
+
+        emit = invoice_snapshot.get("emitente") or {}
+        header = invoice_snapshot.get("header") or {}
+        uf = ((emit.get("address") or {}).get("uf") or getattr(settings, "NFE_PIVOT_UF", "SP")).upper()
+        tp_amb = str(header.get("tp_amb") or getattr(settings, "NFCE_DEFAULT_TP_AMB", "2"))
+        cnpj = "".join(ch for ch in str(emit.get("cnpj") or "") if ch.isdigit())
+
+        sefaz_meta = invoice_snapshot.get("sefaz") if isinstance(invoice_snapshot.get("sefaz"), dict) else {}
+        if not sefaz_meta.get("csc_token"):
+            return NfeEmitResult(
+                status="failed",
+                rejection_code="CSC",
+                rejection_message="CSC/token NFC-e obrigatório em modo HTTP (TenantCscToken ou NFCE_CSC_TOKEN)",
+                raw=sanitize_sefaz_raw({"mode": "http", "stage": "csc", "document_model": "65"}),
+            )
+
+        try:
+            pfx_bytes, password = self._load_pfx(context, cnpj)
+        except Exception as exc:  # noqa: BLE001
+            return NfeEmitResult(
+                status="failed",
+                rejection_code="CERT",
+                rejection_message=f"Certificado A1 indisponível: {exc}",
+                raw=sanitize_sefaz_raw({"mode": "http", "stage": "cert", "document_model": "65"}),
+            )
+
+        signed: bytes | None = None
+        access_key = ""
+        try:
+            unsigned = build_nfce_xml(snapshot=invoice_snapshot)
+            signed = sign_nfe_xml(nfe_xml=unsigned, pfx_bytes=pfx_bytes, password=password)
+            access_key = access_key_from_signed_or_snap(signed, invoice_snapshot)
+            from integrations.sefaz_nfe.xml_preflight import preflight_signed_nfe
+
+            pf = preflight_signed_nfe(signed, require_signature=True)
+            if not pf.ok:
+                return NfeEmitResult(
+                    status="failed",
+                    rejection_code="XSD",
+                    rejection_message=f"Preflight NFC-e (sem HTTP): {'; '.join(pf.errors)}",
+                    access_key=access_key,
+                    raw=sanitize_sefaz_raw(
+                        {
+                            "mode": "http",
+                            "stage": "preflight",
+                            "document_model": "65",
+                            "errors": list(pf.errors),
+                        }
+                    ),
+                    signed_xml=signed,
+                )
+            lote = str(header.get("number") or 1).zfill(15)[:15]
+            envi = wrap_envi_nfe(signed_nfe_xml=signed, id_lote=lote, ind_sinc="1")
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("nfce_http_build_sign_failed")
+            return NfeEmitResult(
+                status="failed",
+                rejection_code="XML",
+                rejection_message=f"Falha montagem/assinatura NFC-e: {exc}",
+                raw=sanitize_sefaz_raw({"mode": "http", "stage": "sign", "document_model": "65"}),
+                signed_xml=None,
+            )
+
+        if self._is_nfce_dry_run():
+            return NfeEmitResult(
+                status="failed",
+                rejection_code="DRY_RUN",
+                rejection_message="NFCE_HTTP_DRY_RUN: XML assinado ok, sem POST SEFAZ",
+                access_key=access_key,
+                raw=sanitize_sefaz_raw(
+                    {
+                        "mode": "http",
+                        "stage": "dry_run",
+                        "document_model": "65",
+                        "xml_bytes": len(envi),
+                        "access_key": access_key,
+                    }
+                ),
+                signed_xml=signed,
+            )
+
+        try:
+            nfce_eps = resolve_nfce_endpoints(uf=uf, tp_amb=tp_amb)
+            eps = as_nfe_endpoints(nfce_eps)
+            resp = post_nfe_autorizacao(
+                url=eps.autorizacao,
+                envi_nfe_xml=envi,
+                pfx_bytes=pfx_bytes,
+                password=password,
+                timeout=float(
+                    getattr(settings, "NFCE_HTTP_TIMEOUT", None)
+                    or getattr(settings, "NFE_HTTP_TIMEOUT", 60)
+                    or 60
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("nfce_http_post_failed")
+            return NfeEmitResult(
+                status="failed",
+                rejection_code="HTTP",
+                rejection_message=f"Falha HTTP SEFAZ NFC-e: {exc}",
+                access_key=access_key,
+                raw=sanitize_sefaz_raw({"mode": "http", "stage": "transport", "document_model": "65"}),
+                signed_xml=signed,
+            )
+
+        return self._result_from_sefaz_resp(
+            resp=resp,
+            stage="autorizacao_nfce",
+            access_key_fallback=access_key,
+            signed_xml=signed,
+        )
+
     def consultar(
         self,
         *,
@@ -471,16 +637,26 @@ class HttpNfeProvider:
                 raw=sanitize_sefaz_raw({"mode": "http", "stage": "consulta_ref"}),
             )
 
-        if self._is_dry_run():
+        ctx = context or {}
+        eps, model = _resolve_transport_endpoints(
+            uf=uf, tp_amb=amb, access_key=key, context=ctx
+        )
+        is_nfce = model == "65"
+        if (self._is_nfce_dry_run() if is_nfce else self._is_dry_run()):
             return NfeEmitResult(
                 status="polling",
                 access_key=key,
                 rejection_code="DRY_RUN",
-                rejection_message="NFE_HTTP_DRY_RUN: consulta sem POST SEFAZ",
+                rejection_message=(
+                    "NFCE_HTTP_DRY_RUN: consulta sem POST SEFAZ"
+                    if is_nfce
+                    else "NFE_HTTP_DRY_RUN: consulta sem POST SEFAZ"
+                ),
                 raw=sanitize_sefaz_raw(
                     {
                         "mode": "http",
                         "stage": "consulta_dry_run",
+                        "document_model": model,
                         "nRec": n_rec,
                         "chNFe": key,
                     }
@@ -499,8 +675,14 @@ class HttpNfeProvider:
             )
 
         try:
-            eps = resolve_endpoints(uf=uf, tp_amb=amb)
-            timeout = float(getattr(settings, "NFE_HTTP_TIMEOUT", 60) or 60)
+            timeout = float(
+                (
+                    getattr(settings, "NFCE_HTTP_TIMEOUT", None)
+                    if is_nfce
+                    else getattr(settings, "NFE_HTTP_TIMEOUT", 60)
+                )
+                or 60
+            )
             if n_rec:
                 resp = post_nfe_ret_autorizacao(
                     url=eps.ret_autorizacao,
@@ -528,7 +710,9 @@ class HttpNfeProvider:
                 access_key=key,
                 rejection_code="HTTP",
                 rejection_message=f"Falha HTTP SEFAZ consulta: {exc}",
-                raw=sanitize_sefaz_raw({"mode": "http", "stage": "consulta_transport"}),
+                raw=sanitize_sefaz_raw(
+                    {"mode": "http", "stage": "consulta_transport", "document_model": model}
+                ),
             )
 
         return self._result_from_sefaz_resp(
@@ -545,7 +729,6 @@ class HttpNfeProvider:
         context: dict[str, Any] | None = None,
     ) -> NfeEmitResult:
         """Evento 110111 assinado + NFeRecepcaoEvento4 (I6)."""
-        from integrations.sefaz_nfe.endpoints import resolve_endpoints
         from integrations.sefaz_nfe.evento_cancel import (
             NfeEventoBuildError,
             build_cancel_from_context,
@@ -586,6 +769,8 @@ class HttpNfeProvider:
             cnpj = key[6:20]
         amb = str(ctx.get("tp_amb") or getattr(settings, "NFE_DEFAULT_TP_AMB", "2")).strip()[:1] or "2"
         uf = str(ctx.get("uf") or getattr(settings, "NFE_PIVOT_UF", "SP")).upper()
+        _, model = _resolve_transport_endpoints(uf=uf, tp_amb=amb, access_key=key, context=ctx)
+        is_nfce = model == "65"
 
         try:
             pfx_bytes, password = self._load_pfx(ctx, cnpj)
@@ -631,16 +816,21 @@ class HttpNfeProvider:
                 raw=sanitize_sefaz_raw({"mode": "http", "stage": "cancel_sign"}),
             )
 
-        if self._is_dry_run():
+        if self._is_nfce_dry_run() if is_nfce else self._is_dry_run():
             return NfeEmitResult(
                 status="failed",
                 access_key=key,
                 rejection_code="DRY_RUN",
-                rejection_message="NFE_HTTP_DRY_RUN: evento 110111 assinado, sem POST SEFAZ",
+                rejection_message=(
+                    "NFCE_HTTP_DRY_RUN: evento 110111 assinado, sem POST SEFAZ"
+                    if is_nfce
+                    else "NFE_HTTP_DRY_RUN: evento 110111 assinado, sem POST SEFAZ"
+                ),
                 raw=sanitize_sefaz_raw(
                     {
                         "mode": "http",
                         "stage": "cancel_dry_run",
+                        "document_model": model,
                         "xml_bytes": len(signed or b""),
                         "chNFe": key,
                     }
@@ -649,13 +839,23 @@ class HttpNfeProvider:
             )
 
         try:
-            eps = resolve_endpoints(uf=uf, tp_amb=amb)
+            eps, _model = _resolve_transport_endpoints(
+                uf=uf, tp_amb=amb, access_key=key, context=ctx
+            )
+            timeout = float(
+                (
+                    getattr(settings, "NFCE_HTTP_TIMEOUT", None)
+                    if is_nfce
+                    else getattr(settings, "NFE_HTTP_TIMEOUT", 60)
+                )
+                or 60
+            )
             resp = post_nfe_evento(
                 url=eps.recepcao_evento,
                 evento_xml=signed,
                 pfx_bytes=pfx_bytes,
                 password=password,
-                timeout=float(getattr(settings, "NFE_HTTP_TIMEOUT", 60) or 60),
+                timeout=timeout,
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception("nfe_http_cancel_post_failed")
@@ -1034,6 +1234,13 @@ class HttpNfeProvider:
 
 def get_nfe_provider():
     mode = (getattr(settings, "NFE_HTTP_MODE", "stub") or "stub").lower()
+    if mode == "http":
+        return HttpNfeProvider()
+    return StubNfeProvider()
+
+
+def get_nfce_provider():
+    mode = (getattr(settings, "NFCE_HTTP_MODE", "stub") or "stub").lower()
     if mode == "http":
         return HttpNfeProvider()
     return StubNfeProvider()

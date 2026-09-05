@@ -4,16 +4,26 @@
 {% block page_heading %}{{ greeting }}{% endblock %}
 
 {% block page_actions %}
+{% if nfse_enabled_nav %}
 <a class="btn btn-primary" href="{% url 'hub-v4-nfse-wizard' %}">Emitir NFS-e</a>
+{% elif nfe_enabled_nav %}
+<a class="btn btn-primary" href="{% url 'hub-v4-nfe-emit' %}">Emitir NF-e</a>
+{% endif %}
 {% endblock %}
 
 {% block content %}
+{% if nfse_enabled_nav %}
 <div class="kpi-grid">
   {% kpi_card "NFS-e hoje" kpis.nfse_hoje %}
   {% kpi_card "Em processamento" kpis.processing %}
   {% kpi_card "Rejeitadas" kpis.rejected %}
   {% kpi_card "Certificados" kpis.cert_active "ativos" %}
 </div>
+{% else %}
+<div class="kpi-grid">
+  {% kpi_card "Certificados" kpis.cert_active "ativos" %}
+</div>
+{% endif %}
 
 <div class="section-label">Uso do plano</div>
 <div class="card plan-usage-card" style="margin-bottom:16px;">
@@ -76,6 +86,7 @@
 {% endif %}
 
 <div class="section-label">Últimas emissões</div>
+{% if nfse_enabled_nav %}
 {% if recent_issues %}
 <div class="table-wrap desktop-only">
   <table class="data">
@@ -110,5 +121,10 @@
 </div>
 {% else %}
 {% empty_state "Nenhuma NFS-e encontrada" "Emita a primeira nota do tenant." "Emitir primeira nota →" "/hub/nfse/emitir/" %}
+{% endif %}
+{% else %}
+<div class="card" style="margin-bottom:16px;color:var(--text-muted);">
+  NFS-e (serviço) não habilitada neste escritório. Use NF-e ou solicite liberação no Admin.
+</div>
 {% endif %}
 {% endblock %}

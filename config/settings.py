@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     "apps.ops",
     "apps.issuance",
     "apps.nfe",
+    "apps.nfce",
     "apps.billing",
     "apps.das",
     "apps.channel",
@@ -193,6 +194,18 @@ CELERY_BEAT_SCHEDULE = {
         "task": "food.sync_marketplace_orders",
         "schedule": float(env("FOOD_MARKETPLACE_SYNC_INTERVAL_SECONDS", "120") or "120"),
     },
+    # iFood fiscal: reconcile PROCESSING preso (D6 — 15 min)
+    "food-reconcile-ifood-fiscal": {
+        "task": "food.reconcile_ifood_fiscal",
+        "schedule": float(env("FOOD_FISCAL_RECONCILE_INTERVAL_SECONDS", "900") or "900"),
+        "kwargs": {"limit": int(env("FOOD_FISCAL_RECONCILE_BATCH_LIMIT", "50") or "50")},
+    },
+    # NFC-e: polling/submitting órfãos (paridade nfe.reconcile_stale)
+    "nfce-reconcile-stale": {
+        "task": "nfce.reconcile_stale",
+        "schedule": float(env("NFCE_RECONCILE_INTERVAL_SECONDS", "120") or "120"),
+        "kwargs": {"limit": int(env("NFCE_RECONCILE_BATCH_LIMIT", "50") or "50")},
+    },
 }
 NF_SYNC_PROCESSING = env("NF_SYNC_PROCESSING", "false").lower() == "true"
 # Reforma Tributária (NFS-e Nacional): off | shadow (calcula+snapshot, não envia) | emit
@@ -216,6 +229,9 @@ NFSE_DPS_CNBS_MODE = (env("NFSE_DPS_CNBS_MODE", "off") or "off").strip().lower()
 NFSE_PORTAL_SYNC_ENABLED = env("NFSE_PORTAL_SYNC_ENABLED", "true").lower() == "true"
 NFSE_PORTAL_SYNC_MIN_INTERVAL_SECONDS = int(
     env("NFSE_PORTAL_SYNC_MIN_INTERVAL_SECONDS", "300") or "300"
+)
+NFSE_PORTAL_SYNC_FORCE_INTERVAL_SECONDS = int(
+    env("NFSE_PORTAL_SYNC_FORCE_INTERVAL_SECONDS", "30") or "30"
 )
 NFSE_PORTAL_SYNC_LIST_LIMIT = int(env("NFSE_PORTAL_SYNC_LIST_LIMIT", "15") or "15")
 WEBHOOK_GATEWAY_SECRET = env("WEBHOOK_GATEWAY_SECRET", "dev-webhook-secret")
@@ -363,6 +379,21 @@ NFE_SYNC_POLL = (env("NFE_SYNC_POLL", "false") or "false").lower() in ("1", "tru
 NFE_RECONCILE_STALE_SECONDS = int(env("NFE_RECONCILE_STALE_SECONDS", "120") or "120")
 # RF-41: path opcional para XSD oficial (vazio = só preflight estrutural)
 NFE_XSD_PATH = env("NFE_XSD_PATH", "")
+
+# NFC-e PDV (mod 65) — default off; lab: NFCE_ENABLED=true + NFCE_HTTP_MODE=stub
+NFCE_ENABLED = (env("NFCE_ENABLED", "false") or "false").lower() in ("1", "true", "yes")
+NFCE_HTTP_MODE = env("NFCE_HTTP_MODE", "stub")  # stub | http (SEFAZ-SP)
+NFCE_DEFAULT_TP_AMB = env("NFCE_DEFAULT_TP_AMB", "2")
+NFCE_LAYOUT_VERSION = env("NFCE_LAYOUT_VERSION", "pl009-stub")
+NFCE_UF_POLICY = env("NFCE_UF_POLICY", "sp_v2026")
+NFCE_RTC_MODE = env("NFCE_RTC_MODE", "shadow")  # off | shadow | emit
+NFCE_HTTP_DRY_RUN = (env("NFCE_HTTP_DRY_RUN", "false") or "false").lower() in ("1", "true", "yes")
+NFCE_HTTP_TIMEOUT = int(env("NFCE_HTTP_TIMEOUT", "60") or "60")
+NFCE_SYNC_POLL = (env("NFCE_SYNC_POLL", "false") or "false").lower() in ("1", "true", "yes")
+NFCE_RECONCILE_STALE_SECONDS = int(env("NFCE_RECONCILE_STALE_SECONDS", "120") or "120")
+FOOD_FISCAL_RECONCILE_STALE_SECONDS = int(env("FOOD_FISCAL_RECONCILE_STALE_SECONDS", "900") or "900")
+NFCE_CSC_ID = env("NFCE_CSC_ID", "1")
+NFCE_CSC_TOKEN = env("NFCE_CSC_TOKEN", "")
 
 FOCUS_HTTP_MODE = env("FOCUS_HTTP_MODE", "stub")  # stub | http
 FOCUS_API_BASE_URL = env(

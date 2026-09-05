@@ -4,6 +4,7 @@ from django.template.response import TemplateResponse
 from django.urls import path, reverse
 
 from apps.accounts.admin_user_forms import UserAddForm, UserChangeForm, UserResetPasswordForm
+from apps.accounts.admin_tenant_forms import TenantAdminForm
 from apps.accounts.models import (
     CertificateAudit,
     DigitalCertificate,
@@ -54,17 +55,67 @@ class SubscriptionAdmin(admin.ModelAdmin):
 
 @admin.register(Tenant)
 class TenantAdmin(admin.ModelAdmin):
+    form = TenantAdminForm
     list_display = (
         "slug",
         "legal_name",
         "document",
         "status",
+        "emission_types_display",
         "focus_layout",
         "subscription_plan",
         "billing_provider_link",
     )
     search_fields = ("slug", "legal_name", "document")
     list_filter = ("status", "focus_layout")
+    fieldsets = (
+        (
+            None,
+            {
+                "fields": (
+                    "slug",
+                    "legal_name",
+                    "document",
+                    "status",
+                ),
+            },
+        ),
+        (
+            "Tipos de emissão",
+            {
+                "fields": ("emit_nfse", "emit_nfe", "emit_nfce"),
+                "description": (
+                    "Selecione pelo menos um tipo. É possível marcar NFS-e e NF-e "
+                    "simultaneamente."
+                ),
+            },
+        ),
+        (
+            "NFS-e",
+            {"fields": ("focus_layout",)},
+        ),
+        (
+            "Avançado",
+            {
+                "classes": ("collapse",),
+                "fields": ("settings",),
+            },
+        ),
+    )
+
+    @admin.display(description="Emissão")
+    def emission_types_display(self, obj: Tenant) -> str:
+        from apps.accounts.tenant_emission import emission_flags_from_settings
+
+        nfse, nfe, nfce = emission_flags_from_settings(obj.settings)
+        parts = []
+        if nfse:
+            parts.append("NFS-e")
+        if nfe:
+            parts.append("NF-e")
+        if nfce:
+            parts.append("NFC-e")
+        return " + ".join(parts) if parts else "—"
 
     @admin.display(description="Plano")
     def subscription_plan(self, obj: Tenant) -> str:
@@ -294,6 +345,8 @@ class TenantSecretAdmin(admin.ModelAdmin):
 
 @admin.register(DigitalCertificate)
 class DigitalCertificateAdmin(admin.ModelAdmin):
+    change_list_template = "admin/accounts/digitalcertificate/change_list.html"
+
     list_display = (
         "label",
         "cnpj",
@@ -316,6 +369,31 @@ class DigitalCertificateAdmin(admin.ModelAdmin):
         "updated_at",
     )
     autocomplete_fields = ("tenant", "provider")
+
+    @staticmethod
+    def hub_upload_hint() -> str:
+        return (
+            "Certificado A1 deve ser enviado pelo Hub (upload do arquivo PFX/P12 + senha). "
+            "O Admin não cadastra certificado manualmente — evita erro de validade (not_before)."
+        )
+
+    def has_add_permission(self, request):
+        return False
+
+    def add_view(self, request, form_url="", extra_context=None):
+        messages.info(
+            request,
+            f"{self.hub_upload_hint()} Acesse Hub → Certificados.",
+        )
+        return HttpResponseRedirect(
+            reverse("admin:accounts_digitalcertificate_changelist")
+        )
+
+    def changelist_view(self, request, extra_context=None):
+        extra = dict(extra_context or {})
+        extra["hub_certificate_upload_url"] = reverse("hub-v4-certificates")
+        extra["hub_certificate_upload_hint"] = self.hub_upload_hint()
+        return super().changelist_view(request, extra_context=extra)
 
 
 @admin.register(CertificateAudit)

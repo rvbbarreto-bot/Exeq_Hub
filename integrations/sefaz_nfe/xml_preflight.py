@@ -46,29 +46,34 @@ def preflight_signed_nfe(xml: bytes | str, *, require_signature: bool = True) ->
     for el in root.iter():
         by_local.setdefault(_local(el.tag), []).append(el)
 
-    for name in ("infNFe", "ide", "emit", "dest", "total", "det"):
+    for name in ("infNFe", "ide", "emit", "total", "det"):
         if name not in by_local:
             errors.append(f"missing_{name}")
 
-    dets = by_local.get("det") or []
-    if not dets:
-        errors.append("missing_det")
-    elif len(dets) < 1:
-        errors.append("det_empty")
-
-    if "ICMSTot" not in by_local and "total" in by_local:
-        # total sem ICMSTot é rejeição comum
-        errors.append("missing_ICMSTot")
-
     ide = (by_local.get("ide") or [None])[0]
+    mod = ""
     if ide is not None:
         fields = {_local(c.tag): (c.text or "").strip() for c in ide}
-        if fields.get("mod") and fields["mod"] != "55":
-            errors.append(f"mod_not_55:{fields['mod']}")
+        mod = fields.get("mod") or ""
+        if fields.get("mod") and fields["mod"] not in ("55", "65"):
+            errors.append(f"mod_invalid:{fields['mod']}")
         if fields.get("tpAmb") and fields["tpAmb"] not in ("1", "2"):
             errors.append(f"tpAmb_invalid:{fields['tpAmb']}")
         if fields.get("serie") is not None and fields.get("serie") == "":
             errors.append("serie_empty")
+
+    if mod != "65" and "dest" not in by_local:
+        errors.append("missing_dest")
+
+    dets = by_local.get("det") or []
+    if not dets:
+        errors.append("missing_det")
+
+    if "ICMSTot" not in by_local and "total" in by_local:
+        errors.append("missing_ICMSTot")
+
+    if mod == "65" and "infNFeSupl" not in by_local:
+        errors.append("missing_infNFeSupl")
 
     emit = (by_local.get("emit") or [None])[0]
     if emit is not None:

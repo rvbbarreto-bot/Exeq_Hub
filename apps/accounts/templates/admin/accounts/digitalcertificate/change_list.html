@@ -1,0 +1,15 @@
+{% extends "admin/change_list.html" %}
+
+{% block content %}
+<div class="help" style="padding:12px 14px;margin-bottom:16px;background:#fff8e6;border:1px solid #e6c200;border-radius:4px;max-width:960px;">
+  <strong>Envio de certificado A1</strong>
+  <p style="margin:8px 0 0;">
+    {{ hub_certificate_upload_hint }}
+    <a href="{{ hub_certificate_upload_url }}" target="_blank" rel="noopener">
+      Abrir Hub → Certificados
+    </a>
+    (login no escritório; selecione empresa/CNPJ, arquivo PFX e senha).
+  </p>
+</div>
+{{ block.super }}
+{% endblock %}

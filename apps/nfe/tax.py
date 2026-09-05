@@ -21,6 +21,20 @@ def _uf(addr: dict | None) -> str:
     return str(addr.get("uf") or addr.get("UF") or "").upper().strip()
 
 
+def _ibge_digits(addr: dict | None) -> str:
+    """7 dígitos IBGE — alinhado ao cadastro Hub (codigo_municipio_ibge) e xml_nfe."""
+    if not isinstance(addr, dict):
+        return ""
+    raw = (
+        addr.get("codigo_ibge")
+        or addr.get("cMun")
+        or addr.get("codigo_municipio_ibge")
+        or addr.get("ibge")
+        or ""
+    )
+    return "".join(ch for ch in str(raw) if ch.isdigit())[:7]
+
+
 def is_interstate(*, emit_uf: str, dest_uf: str) -> bool:
     e = (emit_uf or "").upper().strip()
     d = (dest_uf or e).upper().strip()
@@ -184,8 +198,7 @@ def build_validation(
     if not emit_uf:
         errors.append({"field": "provider.address.uf", "message": "UF do emitente obrigatória"})
     # G-EMIT prep: IBGE emit/dest (rejeições SEFAZ evitáveis)
-    ibge_emit = str(addr.get("codigo_ibge") or addr.get("cMun") or "").strip()
-    if len("".join(ch for ch in ibge_emit if ch.isdigit())) != 7:
+    if len(_ibge_digits(addr)) != 7:
         errors.append(
             {
                 "field": "provider.address.codigo_ibge",
@@ -210,8 +223,7 @@ def build_validation(
         errors.append({"field": "customer.address", "message": "endereço do destinatário incompleto"})
     if not _uf(c_addr):
         errors.append({"field": "customer.address.uf", "message": "UF do destinatário obrigatória"})
-    ibge_dest = str(c_addr.get("codigo_ibge") or c_addr.get("cMun") or "").strip()
-    if len("".join(ch for ch in ibge_dest if ch.isdigit())) != 7:
+    if len(_ibge_digits(c_addr)) != 7:
         errors.append(
             {
                 "field": "customer.address.codigo_ibge",
