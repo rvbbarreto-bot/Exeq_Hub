@@ -6,7 +6,20 @@ from typing import Any
 from xml.etree import ElementTree as ET
 
 from apps.fiscal.rtc_goods import RTC_DEFAULT_CLASS, RTC_DEFAULT_CST, rtc_money_fields
-from integrations.sefaz_nfe.xml_nfe import _el
+from integrations.sefaz_nfe.xml_nfe import _el, _cmun
+
+
+def append_cmun_fg_ibs(ide: ET.Element, snapshot: dict[str, Any]) -> None:
+    from apps.fiscal.rtc_goods import resolve_cmun_fg_ibs
+
+    ibge = resolve_cmun_fg_ibs(snapshot)
+    if len(ibge) == 7:
+        _el(ide, "cMunFGIBS", ibge)
+    else:
+        emit_addr = (snapshot.get("emitente") or {}).get("address") or {}
+        fallback = _cmun(emit_addr)
+        if fallback and fallback != "0000000":
+            _el(ide, "cMunFGIBS", fallback)
 
 
 def append_item_ibscbs(imposto: ET.Element, rtc: dict[str, Any]) -> None:

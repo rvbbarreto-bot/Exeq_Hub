@@ -366,16 +366,31 @@ def build_validation(
     total = max(products_cents + freight - discount, 0)
 
     pay = invoice.payment_amount_cents
-    if pay is not None and abs(int(pay) - total) > 1:
+    from apps.fiscal.rtc_emit_readiness import assess_rtc_emit_readiness
+    from apps.fiscal.rtc_goods import aggregate_rtc_totals, effective_payable_cents, nfe_rtc_mode
+
+    rtc_mode = nfe_rtc_mode()
+    rtc_ready = assess_rtc_emit_readiness(
+        document_model="55", issue_date=invoice.issue_date
+    )
+    if rtc_mode == "emit" and not rtc_ready["ok"]:
+        for code in rtc_ready["blockers"]:
+            errors.append({"field": "rtc", "message": f"RTC emit bloqueado: {code}"})
+
+    rtc_totals_preview = aggregate_rtc_totals(items_taxes)
+    payable = effective_payable_cents(
+        {"total_cents": total, "rtc": rtc_totals_preview},
+        mode=rtc_mode,
+    )
+    if pay is not None and abs(int(pay) - payable) > 1:
         errors.append(
             {
                 "field": "payment_amount_cents",
-                "message": f"pagamento {pay} difere do total {total}",
+                "message": f"pagamento {pay} difere do total exigido {payable}",
             }
         )
 
     from apps.nfe.catalog import catalog_meta, catalog_version_label
-    from apps.fiscal.rtc_goods import aggregate_rtc_totals, nfe_rtc_mode
 
     totals = {
         "products_cents": products_cents,

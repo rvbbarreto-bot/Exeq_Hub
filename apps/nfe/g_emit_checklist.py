@@ -80,6 +80,10 @@ def build_g_emit_checklist(
             f"--out .storage/nfe_g_emit_sp_evidence.json",
         ]
 
+    from apps.fiscal.rtc_emit_readiness import assess_rtc_emit_readiness
+
+    rtc_emit = assess_rtc_emit_readiness(document_model="55")
+
     return {
         "schema_version": "1.0",
         "purpose": "g_emit_checklist",
@@ -108,6 +112,7 @@ def build_g_emit_checklist(
         },
         "runbook": "Docs/Exeq_Hub_NFe_U5_Interestadual_CCe_G_EMIT.md",
         "runbook_commands": runbook_cmds,
+        "rtc_emit": rtc_emit,
         "note": (
             "ready_for_http_emit=true NÃO autoriza G-EMIT — só pré-req local. "
             "G-EMIT exige authorized + XML + DANFE + chave 35… e g_emit_candidate no spike."

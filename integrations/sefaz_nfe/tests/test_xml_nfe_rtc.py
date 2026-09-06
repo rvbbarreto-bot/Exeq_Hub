@@ -96,7 +96,8 @@ def _emit_snapshot():
     }
 
 
-def test_xml_nfe_rtc_emit_includes_ibscbs_and_w03():
+def test_xml_nfe_rtc_emit_includes_ibscbs_and_w03(settings):
+    settings.NFE_RTC_MODE = "emit"
     xml = build_nfe_xml(snapshot=_emit_snapshot())
     text = xml.decode("utf-8")
     assert "<IBSCBS>" in text
@@ -104,3 +105,4 @@ def test_xml_nfe_rtc_emit_includes_ibscbs_and_w03():
     assert "<IBSCBSTot>" in text
     assert "<vNFTot>101.00</vNFTot>" in text
     assert "<vPag>101.00</vPag>" in text
+    assert "<cMunFGIBS>3504107</cMunFGIBS>" in text

@@ -173,6 +173,38 @@ def rtc_money_fields(block: dict[str, Any]) -> dict[str, str]:
     }
 
 
+def rtc_emit_xml_active(*, totals: dict[str, Any], mode: str) -> bool:
+    if mode != "emit":
+        return False
+    rtc = totals.get("rtc") if isinstance(totals.get("rtc"), dict) else {}
+    return bool(int(rtc.get("v_ibs_cents") or 0) + int(rtc.get("v_cbs_cents") or 0))
+
+
+def effective_payable_cents(totals: dict[str, Any], *, mode: str) -> int:
+    """vPag = vNFTot quando RTC emit; senão vNF."""
+    base = int(totals.get("total_cents") or 0)
+    if not rtc_emit_xml_active(totals=totals, mode=mode):
+        return base
+    rtc = totals.get("rtc") if isinstance(totals.get("rtc"), dict) else {}
+    return int(rtc.get("v_nftot_cents") or base)
+
+
+def resolve_cmun_fg_ibs(snapshot: dict[str, Any]) -> str:
+    """Município fato gerador IBS/CBS — destino preferido, senão emitente."""
+    dest = snapshot.get("destinatario") or {}
+    ident = snapshot.get("identification") or {}
+    emit = snapshot.get("emitente") or {}
+
+    def _ibge(addr: dict) -> str:
+        raw = addr.get("codigo_ibge") or addr.get("ibge") or addr.get("cMun") or ""
+        digits = "".join(ch for ch in str(raw) if ch.isdigit())
+        return digits[:7] if len(digits) >= 7 else ""
+
+    dest_addr = dest.get("address") or ident.get("address") or {}
+    emit_addr = emit.get("address") or {}
+    return _ibge(dest_addr) or _ibge(emit_addr)
+
+
 def build_goods_rtc_forensic(
     *,
     rtc_totals: dict[str, Any],

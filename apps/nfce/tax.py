@@ -183,6 +183,18 @@ def build_validation(
 
     discount = int(invoice.discount_cents or 0)
     total_cents = max(products_cents - discount, 0)
+
+    from apps.fiscal.rtc_emit_readiness import assess_rtc_emit_readiness
+    from apps.fiscal.rtc_goods import effective_payable_cents
+
+    rtc_mode = nfce_rtc_mode()
+    rtc_ready = assess_rtc_emit_readiness(
+        document_model="65", issue_date=invoice.issue_date
+    )
+    if rtc_mode == "emit" and not rtc_ready["ok"]:
+        for code in rtc_ready["blockers"]:
+            errors.append({"field": "rtc", "message": f"RTC emit bloqueado: {code}"})
+
     totals = {
         "products_cents": products_cents,
         "discount_cents": discount,
@@ -197,6 +209,16 @@ def build_validation(
     rtc_totals = aggregate_rtc_totals(items_taxes)
     if rtc_totals.get("v_ibs_cents") or rtc_totals.get("v_cbs_cents"):
         totals["rtc"] = rtc_totals
+
+    pay = invoice.payment_amount_cents
+    payable = effective_payable_cents(totals, mode=rtc_mode)
+    if pay is not None and abs(int(pay) - payable) > 1:
+        errors.append(
+            {
+                "field": "payment_amount_cents",
+                "message": f"pagamento {pay} difere do total exigido {payable}",
+            }
+        )
     return {
         "ok": not errors,
         "field_errors": errors,

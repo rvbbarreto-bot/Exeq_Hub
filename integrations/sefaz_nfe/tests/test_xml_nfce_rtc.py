@@ -82,17 +82,20 @@ def _emit_snapshot():
                 "v_nftot_cents": 10_100,
             },
         },
-        "payment": {"method": "99", "amount_cents": 10_000},
+        "payment": {"method": "99", "amount_cents": 10_100},
     }
 
 
-def test_xml_nfce_rtc_emit_includes_ibscbs():
+def test_xml_nfce_rtc_emit_includes_ibscbs(settings):
+    settings.NFCE_RTC_MODE = "emit"
     xml = build_nfce_xml(snapshot=_emit_snapshot())
     text = xml.decode("utf-8")
     assert "<IBSCBS>" in text
     assert "<gIBSCBS>" in text
     assert "<IBSCBSTot>" in text
     assert "<vNFTot>101.00</vNFTot>" in text
+    assert "<vPag>101.00</vPag>" in text
+    assert "<cMunFGIBS>3504107</cMunFGIBS>" in text
 
 
 @pytest.mark.django_db

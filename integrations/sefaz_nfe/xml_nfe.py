@@ -125,6 +125,12 @@ def build_nfe_xml(*, snapshot: dict[str, Any], access_key: str | None = None) ->
     _el(ide, "tpNF", "1")
     _el(ide, "idDest", id_dest)
     _el(ide, "cMunFG", _cmun(emit.get("address") or {}))
+    from apps.fiscal.rtc_goods import goods_rtc_mode, rtc_emit_xml_active
+
+    if rtc_emit_xml_active(totals=totals, mode=goods_rtc_mode(document_model="55")):
+        from integrations.sefaz_nfe.xml_rtc_ub import append_cmun_fg_ibs
+
+        append_cmun_fg_ibs(ide, snapshot)
     _el(ide, "tpImp", "1")
     _el(ide, "tpEmis", "1")
     _el(ide, "cDV", access_key[-1])

@@ -247,6 +247,7 @@ def validate_invoice(invoice: NfceInvoice) -> dict[str, Any]:
 
 
 def _snapshot_for_emit(invoice: NfceInvoice, validation: dict[str, Any]) -> dict[str, Any]:
+    from apps.fiscal.rtc_goods import effective_payable_cents, nfce_rtc_mode
     from apps.nfe.catalog import catalog_version_label
 
     provider = invoice.provider
@@ -331,7 +332,10 @@ def _snapshot_for_emit(invoice: NfceInvoice, validation: dict[str, Any]) -> dict
         "totals": validation["totals"],
         "payment": {
             "method": invoice.payment_method,
-            "amount_cents": invoice.payment_amount_cents or validation["totals"]["total_cents"],
+            "amount_cents": (
+                invoice.payment_amount_cents
+                or effective_payable_cents(validation["totals"], mode=nfce_rtc_mode())
+            ),
         },
     }
     raw = json.dumps(snap, sort_keys=True, default=str).encode("utf-8")
@@ -386,8 +390,14 @@ def emit_nfce(
     inv.status = NfceInvoice.Status.SUBMITTING
     inv.total_cents = validation["totals"]["total_cents"]
     if inv.payment_amount_cents is None:
-        inv.payment_amount_cents = inv.total_cents
+        inv.payment_amount_cents = validation["totals"]["total_cents"]
     snap = _snapshot_for_emit(inv, validation)
+    from apps.fiscal.rtc_goods import effective_payable_cents, nfce_rtc_mode
+
+    if nfce_rtc_mode() == "emit":
+        payable = effective_payable_cents(validation["totals"], mode="emit")
+        inv.payment_amount_cents = payable
+        snap["payment"]["amount_cents"] = payable
     from apps.nfce.sefaz_timestamps import persist_authorization_meta, stamp_dh_emi
 
     snap = stamp_dh_emi(snap)

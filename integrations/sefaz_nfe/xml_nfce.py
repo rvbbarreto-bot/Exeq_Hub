@@ -72,6 +72,12 @@ def build_nfce_xml(*, snapshot: dict[str, Any], access_key: str | None = None) -
     _el(ide, "tpNF", "1")
     _el(ide, "idDest", "1")
     _el(ide, "cMunFG", _cmun(emit.get("address") or {}))
+    from apps.fiscal.rtc_goods import goods_rtc_mode, rtc_emit_xml_active
+
+    if rtc_emit_xml_active(totals=totals, mode=goods_rtc_mode(document_model="65")):
+        from integrations.sefaz_nfe.xml_rtc_ub import append_cmun_fg_ibs
+
+        append_cmun_fg_ibs(ide, snapshot)
     _el(ide, "tpImp", "4")
     _el(ide, "tpEmis", "1")
     _el(ide, "cDV", access_key[-1])
@@ -214,10 +220,11 @@ def build_nfce_xml(*, snapshot: dict[str, Any], access_key: str | None = None) -
     _el(icmstot, "vTotTrib", "0.00")
 
     rtc_totals = totals.get("rtc") if isinstance(totals.get("rtc"), dict) else None
+    pay_cents = tot
     if rtc_totals:
         from integrations.sefaz_nfe.xml_nfce_rtc import append_total_ibscbs
 
-        append_total_ibscbs(total_el, rtc_totals, v_nf_cents=tot)
+        pay_cents = append_total_ibscbs(total_el, rtc_totals, v_nf_cents=tot)
 
     transp = _el(inf, "transp")
     _el(transp, "modFrete", "9")
@@ -225,7 +232,7 @@ def build_nfce_xml(*, snapshot: dict[str, Any], access_key: str | None = None) -
     pag = _el(inf, "pag")
     detpag = _el(pag, "detPag")
     _el(detpag, "tPag", str(payment.get("method") or "99")[:2])
-    _el(detpag, "vPag", _money_cents(int(payment.get("amount_cents") or tot)))
+    _el(detpag, "vPag", _money_cents(int(payment.get("amount_cents") or pay_cents)))
 
     inf_adic = _el(inf, "infAdic")
     _el(inf_adic, "infCpl", "NFC-e gerada pelo EXEQ Hub (emissor proprio).")
