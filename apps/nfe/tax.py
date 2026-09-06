@@ -320,6 +320,24 @@ def build_validation(
             cofins_cst = p.cofins_cst
             cofins_bp = p.cofins_rate_bp
 
+        from apps.nfe.cross_validate import cross_validate_invoice_item
+
+        item_cross = cross_validate_invoice_item(
+            line_number=it.line_number,
+            ncm=it.ncm,
+            cfop=it.cfop,
+            pis_cst=pis_cst,
+            cofins_cst=cofins_cst,
+            cest=getattr(it.product, "cest", "") if it.product_id else "",
+            ipi_cst=getattr(it.product, "ipi_cst", "") if it.product_id else "",
+            ip_enq=getattr(it.product, "ip_enq", "") if it.product_id else "",
+            ipi_rate_bp=int(getattr(it.product, "ipi_rate_bp", 0) or 0) if it.product_id else 0,
+            issue_date=invoice.issue_date,
+            crt=str(getattr(provider, "tax_regime", "") or ""),
+        )
+        for err in item_cross["errors"]:
+            errors.append({"field": err["field"], "message": err["message"]})
+
         tax = calculate_item_taxes(
             tax_regime=regime,
             item_total_cents=line_total,

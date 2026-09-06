@@ -376,6 +376,7 @@ NFE_CATALOG_STRICT = (env("NFE_CATALOG_STRICT", "false") or "false").lower() in 
     "true",
     "yes",
 )
+NFE_CROSS_VALIDATE = env("NFE_CROSS_VALIDATE", "warn")  # off | warn | block
 NFE_PIVOT_UF = env("NFE_PIVOT_UF", "SP")
 # I5: reconciliação polling → authorized|rejected|failed
 NFE_POLL_COUNTDOWN = int(env("NFE_POLL_COUNTDOWN", "15") or "15")

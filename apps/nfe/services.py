@@ -890,6 +890,10 @@ def create_product(
     pis_rate_bp: int = 0,
     cofins_cst: str = "07",
     cofins_rate_bp: int = 0,
+    cest: str = "",
+    ipi_cst: str = "",
+    ip_enq: str = "",
+    ipi_rate_bp: int = 0,
     is_active: bool = True,
     tax_regime_hint: str = "",
 ) -> NfeProduct:
@@ -913,6 +917,10 @@ def create_product(
         cofins_cst=cofins_cst,
         origin=origin,
         tax_regime=tax_regime_hint,
+        cest=cest,
+        ipi_cst=ipi_cst,
+        ip_enq=ip_enq,
+        ipi_rate_bp=ipi_rate_bp,
     )
     if prod_errors:
         raise NfeValidationError(prod_errors[0])
@@ -938,6 +946,10 @@ def create_product(
         pis_rate_bp=max(0, int(pis_rate_bp or 0)),
         cofins_cst=(cofins_cst or "07")[:2],
         cofins_rate_bp=max(0, int(cofins_rate_bp or 0)),
+        cest="".join(ch for ch in str(cest or "") if ch.isdigit())[:7],
+        ipi_cst=(ipi_cst or "")[:2],
+        ip_enq=(ip_enq or "")[:3],
+        ipi_rate_bp=max(0, int(ipi_rate_bp or 0)),
         is_active=bool(is_active),
     )
 
@@ -960,6 +972,10 @@ def update_product(
     pis_rate_bp: int | None = None,
     cofins_cst: str | None = None,
     cofins_rate_bp: int | None = None,
+    cest: str | None = None,
+    ipi_cst: str | None = None,
+    ip_enq: str | None = None,
+    ipi_rate_bp: int | None = None,
     is_active: bool | None = None,
 ) -> NfeProduct:
     require_nfe_enabled_for_tenant(product.tenant)
@@ -995,6 +1011,10 @@ def update_product(
             pis_cst=product.pis_cst if pis_cst is None else pis_cst,
             cofins_cst=product.cofins_cst if cofins_cst is None else cofins_cst,
             origin=product.origin if origin is None else origin,
+            cest=product.cest if cest is None else cest,
+            ipi_cst=product.ipi_cst if ipi_cst is None else ipi_cst,
+            ip_enq=product.ip_enq if ip_enq is None else ip_enq,
+            ipi_rate_bp=product.ipi_rate_bp if ipi_rate_bp is None else ipi_rate_bp,
         )
         if prod_errors:
             raise NfeValidationError(prod_errors[0])
@@ -1025,6 +1045,14 @@ def update_product(
         product.cofins_cst = (cofins_cst or "07")[:2]
     if cofins_rate_bp is not None:
         product.cofins_rate_bp = max(0, int(cofins_rate_bp))
+    if cest is not None:
+        product.cest = "".join(ch for ch in str(cest) if ch.isdigit())[:7]
+    if ipi_cst is not None:
+        product.ipi_cst = (ipi_cst or "")[:2]
+    if ip_enq is not None:
+        product.ip_enq = (ip_enq or "")[:3]
+    if ipi_rate_bp is not None:
+        product.ipi_rate_bp = max(0, int(ipi_rate_bp))
     if is_active is not None:
         product.is_active = bool(is_active)
     product.save()
