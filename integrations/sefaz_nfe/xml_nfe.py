@@ -118,7 +118,10 @@ def build_nfe_xml(*, snapshot: dict[str, Any], access_key: str | None = None) ->
     _el(ide, "mod", "55")
     _el(ide, "serie", str(series))
     _el(ide, "nNF", str(number))
-    _el(ide, "dhEmi", f"{issue_date}T12:00:00-03:00")
+    dh_emi = (header.get("dh_emi") or "").strip()
+    if not dh_emi:
+        dh_emi = f"{issue_date}T12:00:00-03:00"
+    _el(ide, "dhEmi", dh_emi)
     _el(ide, "tpNF", "1")
     _el(ide, "idDest", id_dest)
     _el(ide, "cMunFG", _cmun(emit.get("address") or {}))
@@ -253,6 +256,12 @@ def build_nfe_xml(*, snapshot: dict[str, Any], access_key: str | None = None) ->
                 _el(g, "p" + tag, f"{Decimal(int(blk.get('rate_bp') or 0)) / Decimal(100):.4f}")
                 _el(g, "v" + tag, _money_cents(int(blk.get("value_cents") or 0)))
 
+        rtc = taxes.get("rtc") or {}
+        if rtc.get("xml_ub"):
+            from integrations.sefaz_nfe.xml_nfe_rtc import append_item_ibscbs
+
+            append_item_ibscbs(imposto, rtc)
+
     if int(totals.get("products_cents") or 0) > 0:
         products_cents = int(totals["products_cents"])
 
@@ -280,13 +289,20 @@ def build_nfe_xml(*, snapshot: dict[str, Any], access_key: str | None = None) ->
     _el(icmstot, "vNF", _money_cents(tot))
     _el(icmstot, "vTotTrib", "0.00")
 
+    rtc_totals = totals.get("rtc") if isinstance(totals.get("rtc"), dict) else None
+    pay_cents = tot
+    if rtc_totals:
+        from integrations.sefaz_nfe.xml_nfe_rtc import append_total_ibscbs
+
+        pay_cents = append_total_ibscbs(total_el, rtc_totals, v_nf_cents=tot)
+
     transp = _el(inf, "transp")
     _el(transp, "modFrete", str(header.get("freight_mod") or "9")[:1])
 
     pag = _el(inf, "pag")
     detpag = _el(pag, "detPag")
     _el(detpag, "tPag", str(payment.get("method") or "99")[:2])
-    _el(detpag, "vPag", _money_cents(int(payment.get("amount_cents") or tot)))
+    _el(detpag, "vPag", _money_cents(int(payment.get("amount_cents") or pay_cents)))
 
     inf_adic = _el(inf, "infAdic")
     _el(inf_adic, "infCpl", "NF-e gerada pelo EXEQ Hub (emissor proprio).")

@@ -247,7 +247,7 @@ def validate_invoice(invoice: NfceInvoice) -> dict[str, Any]:
 
 
 def _snapshot_for_emit(invoice: NfceInvoice, validation: dict[str, Any]) -> dict[str, Any]:
-    from apps.nfe.catalog import CATALOG_VERSION
+    from apps.nfe.catalog import catalog_version_label
 
     provider = invoice.provider
     ident = invoice.identification_snapshot or {}
@@ -293,7 +293,8 @@ def _snapshot_for_emit(invoice: NfceInvoice, validation: dict[str, Any]) -> dict
         }
     snap = {
         "tax_engine_version": NFCE_TAX_ENGINE_VERSION,
-        "catalog_version": validation.get("totals", {}).get("catalog_version") or CATALOG_VERSION,
+        "catalog_version": validation.get("totals", {}).get("catalog_version")
+        or catalog_version_label(),
         "layout_version": getattr(settings, "NFCE_LAYOUT_VERSION", "pl009-stub"),
         "tenant_id": str(invoice.tenant_id),
         "document_model": "65",
@@ -387,6 +388,9 @@ def emit_nfce(
     if inv.payment_amount_cents is None:
         inv.payment_amount_cents = inv.total_cents
     snap = _snapshot_for_emit(inv, validation)
+    from apps.nfce.sefaz_timestamps import persist_authorization_meta, stamp_dh_emi
+
+    snap = stamp_dh_emi(snap)
     snap_store = json.loads(json.dumps(snap, default=str))
     if isinstance(snap_store.get("sefaz"), dict):
         snap_store["sefaz"].pop("csc_token", None)
@@ -412,6 +416,7 @@ def emit_nfce(
         inv.number_consumed = True
         inv.rejection_code = ""
         inv.rejection_message = ""
+        persist_authorization_meta(inv, result)
     elif result.status == "polling":
         inv.status = NfceInvoice.Status.POLLING
         inv.access_key = result.access_key or inv.access_key

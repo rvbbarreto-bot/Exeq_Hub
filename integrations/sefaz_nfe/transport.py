@@ -33,6 +33,7 @@ class SefazHttpResponse:
     x_motivo: str = ""
     protocol: str = ""
     access_key: str = ""
+    dh_recbto: str = ""
     lote_c_stat: str = ""
     n_rec: str = ""
 
@@ -93,6 +94,7 @@ def _post_soap(
             x_motivo=parsed.x_motivo,
             protocol=parsed.protocol,
             access_key=parsed.access_key,
+            dh_recbto=parsed.dh_recbto,
             lote_c_stat=parsed.lote_c_stat,
             n_rec=parsed.n_rec,
         )
@@ -222,6 +224,7 @@ def post_nfe_evento(
             x_motivo=parsed.x_motivo,
             protocol=parsed.protocol,
             access_key=parsed.access_key,
+            dh_recbto=parsed.dh_recbto,
             lote_c_stat=parsed.lote_c_stat,
             n_rec=parsed.n_rec,
         )
@@ -264,6 +267,7 @@ def post_nfe_inutilizacao(
             x_motivo=parsed.x_motivo,
             protocol=parsed.protocol,
             access_key=parsed.access_key,
+            dh_recbto=parsed.dh_recbto,
             lote_c_stat=parsed.lote_c_stat,
             n_rec=parsed.n_rec,
         )

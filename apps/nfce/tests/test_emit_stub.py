@@ -77,6 +77,9 @@ def test_emit_anonymous_nfce_stub(nfce_settings, tenant_a, provider_sp):
     assert inv.number == 1
     assert len(inv.access_key) == 44
     assert inv.fiscal_snapshot["header"]["model"] == "65"
+    assert "dh_emi" in inv.fiscal_snapshot["header"]
+    assert "T12:00:00" not in inv.fiscal_snapshot["header"]["dh_emi"]
+    assert inv.fiscal_snapshot["sefaz"]["dh_recbto"]
     from apps.nfce.models import NfceArtifact
 
     assert NfceArtifact.objects.filter(

@@ -370,6 +370,12 @@ NFE_HTTP_DRY_RUN = (env("NFE_HTTP_DRY_RUN", "false") or "false").lower() in ("1"
 NFE_HTTP_TIMEOUT = int(env("NFE_HTTP_TIMEOUT", "60") or "60")
 NFE_DEFAULT_TP_AMB = env("NFE_DEFAULT_TP_AMB", "2")  # 2 homolog | 1 produção
 NFE_LAYOUT_VERSION = env("NFE_LAYOUT_VERSION", "pl009-stub")
+NFE_RTC_MODE = env("NFE_RTC_MODE", "shadow")  # off | shadow | emit
+NFE_CATALOG_STRICT = (env("NFE_CATALOG_STRICT", "false") or "false").lower() in (
+    "1",
+    "true",
+    "yes",
+)
 NFE_PIVOT_UF = env("NFE_PIVOT_UF", "SP")
 # I5: reconciliação polling → authorized|rejected|failed
 NFE_POLL_COUNTDOWN = int(env("NFE_POLL_COUNTDOWN", "15") or "15")

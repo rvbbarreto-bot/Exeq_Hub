@@ -131,6 +131,9 @@ def poll_nfce_invoice(invoice: NfceInvoice, *, actor: str = "worker") -> NfceInv
         inv.rejection_code = ""
         inv.rejection_message = ""
         inv.number_consumed = True
+        from apps.nfce.sefaz_timestamps import persist_authorization_meta
+
+        persist_authorization_meta(inv, result)
     elif result.status == "rejected":
         inv.status = NfceInvoice.Status.REJECTED
         inv.rejection_code = result.rejection_code

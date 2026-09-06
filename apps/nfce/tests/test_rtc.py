@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import date
 
+import pytest
+
 from apps.nfce.rtc import (
     RTC_2026_CBS_BP,
     RTC_2026_IBS_BP,
@@ -37,8 +39,12 @@ def test_build_item_rtc_shadow(settings):
     assert rtc["v_cbs_cents"] == 90
 
 
+@pytest.mark.django_db
 def test_build_item_rtc_emit_xml_flag(settings):
+    from apps.fiscal.rtc_classification import seed_minimal_rtc_pack
+
     settings.NFCE_RTC_MODE = "emit"
+    seed_minimal_rtc_pack()
     rtc = build_item_rtc(line_total_cents=10_000, issue_date=date(2026, 1, 1))
     assert rtc["mode"] == "emit"
     assert rtc["xml_ub"] is True

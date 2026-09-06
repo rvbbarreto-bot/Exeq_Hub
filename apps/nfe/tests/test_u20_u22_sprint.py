@@ -6,15 +6,17 @@ import pytest
 from django.utils import timezone
 
 from apps.master_data.models import Customer, Provider, TaxRegime
-from apps.nfe.catalog import CATALOG_VERSION, validate_ncm
+from apps.nfe.catalog import catalog_version_label, validate_ncm
 from apps.nfe.models import NfeInvoice, NfeTransmissionAttempt
 from apps.nfe.services import create_draft, create_product, emit_invoice, replace_items
 
 
 @pytest.fixture
-def nfe_settings(settings):
+def nfe_settings(settings, tenant_a):
     settings.NFE_ENABLED = True
     settings.NFE_HTTP_MODE = "stub"
+    tenant_a.settings = {**(tenant_a.settings or {}), "nfe_enabled": True}
+    tenant_a.save(update_fields=["settings"])
     return settings
 
 
@@ -84,7 +86,7 @@ def test_emit_records_transmission_attempt(
     assert att is not None
     assert att.result_status == "authorized"
     assert att.correlation_id == inv.correlation_id
-    assert inv.fiscal_snapshot.get("catalog_version") == CATALOG_VERSION
+    assert inv.fiscal_snapshot.get("catalog_version") == catalog_version_label()
 
 
 @pytest.mark.django_db

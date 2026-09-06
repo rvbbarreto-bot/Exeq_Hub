@@ -332,18 +332,16 @@ class NfceInvoiceViewSet(viewsets.ViewSet):
 
     def artifacts_pdf(self, request, pk=None):
         inv = get_object_or_404(NfceInvoice, pk=pk, tenant=request.tenant)
-        from apps.nfce.artifacts import get_artifact, read_artifact_bytes
-        from apps.nfce.models import NfceArtifact
-
-        art = get_artifact(inv, NfceArtifact.Kind.DANFE_PDF)
-        if art is not None:
-            return HttpResponse(read_artifact_bytes(art), content_type="application/pdf")
         xml = resolve_authorized_xml_bytes(inv)
         if not xml:
             return Response(
                 {"detail": "PDF indisponível", "code": "nfce_artifact"},
                 status=404,
             )
-        from integrations.sefaz_nfe.danfe_nfce import render_danfce_pdf
+        from integrations.sefaz_nfe.danfe_nfce import render_danfce_for_invoice
 
-        return HttpResponse(render_danfce_pdf(xml), content_type="application/pdf")
+        cancelled = inv.status == NfceInvoice.Status.CANCELLED
+        return HttpResponse(
+            render_danfce_for_invoice(inv, xml, cancelled=cancelled),
+            content_type="application/pdf",
+        )

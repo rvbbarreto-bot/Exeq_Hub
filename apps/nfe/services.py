@@ -424,7 +424,7 @@ def validate_invoice(invoice: NfeInvoice) -> dict[str, Any]:
 
 
 def _snapshot_for_emit(invoice: NfeInvoice, validation: dict[str, Any]) -> dict[str, Any]:
-    from apps.nfe.catalog import CATALOG_VERSION
+    from apps.nfe.catalog import catalog_meta, catalog_version_label
 
     provider = invoice.provider
     customer = invoice.customer
@@ -449,7 +449,9 @@ def _snapshot_for_emit(invoice: NfeInvoice, validation: dict[str, Any]) -> dict[
         )
     snap = {
         "tax_engine_version": TAX_ENGINE_VERSION,
-        "catalog_version": validation.get("totals", {}).get("catalog_version") or CATALOG_VERSION,
+        "catalog_version": validation.get("totals", {}).get("catalog_version")
+        or catalog_version_label(),
+        "catalog_versions": catalog_meta(),
         "layout_version": getattr(settings, "NFE_LAYOUT_VERSION", "pl009-stub"),
         "tenant_id": str(invoice.tenant_id),
         "emitente": {
@@ -487,6 +489,19 @@ def _snapshot_for_emit(invoice: NfeInvoice, validation: dict[str, Any]) -> dict[
     }
     raw = json.dumps(snap, sort_keys=True, default=str).encode("utf-8")
     snap["payload_hash"] = hashlib.sha256(raw).hexdigest()
+
+    rtc_totals = validation.get("totals", {}).get("rtc")
+    from apps.fiscal.rtc_goods import build_goods_rtc_forensic, nfe_rtc_mode
+
+    rtc_mode = nfe_rtc_mode()
+    if rtc_totals and rtc_mode != "off":
+        snap["forensic"] = build_goods_rtc_forensic(
+            rtc_totals=rtc_totals,
+            catalog_meta=snap.get("catalog_versions") or {},
+            mode=rtc_mode,
+            document_model="55",
+            layout=snap.get("layout_version") or "",
+        )
     return snap
 
 
@@ -537,6 +552,9 @@ def emit_invoice(
     if inv.payment_amount_cents is None:
         inv.payment_amount_cents = inv.total_cents
     snap = _snapshot_for_emit(inv, validation)
+    from apps.fiscal.sefaz_timestamps import persist_authorization_meta, stamp_dh_emi
+
+    snap = stamp_dh_emi(snap)
     inv.fiscal_snapshot = snap
     inv.payload_hash = snap["payload_hash"]
     inv.taxes_summary = validation["totals"]
@@ -569,6 +587,7 @@ def emit_invoice(
         inv.number_consumed = True
         inv.rejection_code = ""
         inv.rejection_message = ""
+        persist_authorization_meta(inv, result)
     elif result.status == "polling":
         inv.status = NfeInvoice.Status.POLLING
         inv.access_key = result.access_key or inv.access_key
@@ -871,6 +890,22 @@ def create_product(
     if NfeProduct.objects.filter(tenant=tenant, code=code_norm).exists():
         raise NfeValidationError(f"Já existe produto com código {code_norm}")
     ncm_digits = "".join(ch for ch in str(ncm or "") if ch.isdigit())[:8]
+    from apps.nfe.cross_validate import validate_product_fields
+
+    prod_errors = validate_product_fields(
+        ncm=ncm_digits,
+        unit=unit,
+        cfop_internal=cfop_internal,
+        cfop_interstate=cfop_interstate,
+        csosn=csosn,
+        icms_cst=icms_cst,
+        pis_cst=pis_cst,
+        cofins_cst=cofins_cst,
+        origin=origin,
+        tax_regime=tax_regime_hint,
+    )
+    if prod_errors:
+        raise NfeValidationError(prod_errors[0])
     if len(ncm_digits) != 8:
         raise NfeValidationError("NCM deve ter 8 dígitos")
     desc = (description or "").strip()[:120]
@@ -936,6 +971,23 @@ def update_product(
         product.description = desc
     if ncm is not None:
         ncm_digits = "".join(ch for ch in str(ncm) if ch.isdigit())[:8]
+        from apps.nfe.cross_validate import validate_product_fields
+
+        prod_errors = validate_product_fields(
+            ncm=ncm_digits,
+            unit=product.unit if unit is None else unit,
+            cfop_internal=product.cfop_internal if cfop_internal is None else cfop_internal,
+            cfop_interstate=(
+                product.cfop_interstate if cfop_interstate is None else cfop_interstate
+            ),
+            csosn=product.csosn if csosn is None else csosn,
+            icms_cst=product.icms_cst if icms_cst is None else icms_cst,
+            pis_cst=product.pis_cst if pis_cst is None else pis_cst,
+            cofins_cst=product.cofins_cst if cofins_cst is None else cofins_cst,
+            origin=product.origin if origin is None else origin,
+        )
+        if prod_errors:
+            raise NfeValidationError(prod_errors[0])
         if len(ncm_digits) != 8:
             raise NfeValidationError("NCM deve ter 8 dígitos")
         product.ncm = ncm_digits

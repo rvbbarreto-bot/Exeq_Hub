@@ -65,7 +65,10 @@ def build_nfce_xml(*, snapshot: dict[str, Any], access_key: str | None = None) -
     _el(ide, "mod", "65")
     _el(ide, "serie", str(series))
     _el(ide, "nNF", str(number))
-    _el(ide, "dhEmi", f"{issue_date}T12:00:00-03:00")
+    dh_emi = (header.get("dh_emi") or "").strip()
+    if not dh_emi:
+        dh_emi = f"{issue_date}T12:00:00-03:00"
+    _el(ide, "dhEmi", dh_emi)
     _el(ide, "tpNF", "1")
     _el(ide, "idDest", "1")
     _el(ide, "cMunFG", _cmun(emit.get("address") or {}))

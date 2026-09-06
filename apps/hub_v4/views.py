@@ -1801,6 +1801,12 @@ class NfeProductFormView(View):
         return redirect("hub-v4-nfe-product-edit", pk=saved.pk)
 
     def _ctx(self, tenant, role, *, obj=None):
+        from apps.fiscal.goods_catalog import (
+            dropdown_cfop_internal,
+            dropdown_cfop_interstate,
+            dropdown_units,
+        )
+
         unit_price_display = ""
         icms_display = ""
         pis_display = ""
@@ -1827,6 +1833,9 @@ class NfeProductFormView(View):
             "icms_rate_display": icms_display,
             "pis_rate_display": pis_display,
             "cofins_rate_display": cofins_display,
+            "cfop_internal_choices": dropdown_cfop_internal(),
+            "cfop_interstate_choices": dropdown_cfop_interstate(),
+            "unit_choices": dropdown_units(),
         }
 
 
@@ -2038,15 +2047,16 @@ def nfce_document_download(request: HttpRequest, pk, kind: str = "xml"):
         return redir
     invoice = get_object_or_404(NfceInvoice, pk=pk, tenant=tenant)
     if kind == "pdf":
-        art = get_artifact(invoice, NfceArtifact.Kind.DANFE_PDF)
-        if art is not None:
-            return HttpResponse(read_artifact_bytes(art), content_type="application/pdf")
         xml = resolve_authorized_xml_bytes(invoice)
         if not xml:
             raise Http404("PDF indisponível")
-        from integrations.sefaz_nfe.danfe_nfce import render_danfce_pdf
+        from integrations.sefaz_nfe.danfe_nfce import render_danfce_for_invoice
 
-        return HttpResponse(render_danfce_pdf(xml), content_type="application/pdf")
+        cancelled = invoice.status == NfceInvoice.Status.CANCELLED
+        return HttpResponse(
+            render_danfce_for_invoice(invoice, xml, cancelled=cancelled),
+            content_type="application/pdf",
+        )
 
     art = get_artifact(invoice, NfceArtifact.Kind.XML_AUTHORIZED)
     if art is not None:

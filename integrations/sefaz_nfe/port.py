@@ -311,6 +311,7 @@ class HttpNfeProvider:
                 "cStat": resp.c_stat,
                 "xMotivo": resp.x_motivo,
                 "nProt": resp.protocol,
+                "dhRecbto": getattr(resp, "dh_recbto", "") or "",
                 "chNFe": resp.access_key or access_key_fallback,
                 "lote_cStat": resp.lote_c_stat,
                 "nRec": getattr(resp, "n_rec", "") or "",

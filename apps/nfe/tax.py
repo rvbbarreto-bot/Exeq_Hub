@@ -88,15 +88,15 @@ def validate_cfop_against_ufs(*, cfop: str, emit_uf: str, dest_uf: str) -> str |
 
 
 def rtc_hooks_placeholder() -> dict[str, Any]:
-    """U5: chaves futuras IBS/CBS (RF-25) — sem cálculo até norma/RTC."""
-    from apps.nfe.catalog import CATALOG_VERSION
+    """Reservado — RTC calculado em build_validation via rtc_goods."""
+    from apps.fiscal.rtc_goods import nfe_rtc_mode
 
     return {
         "ibs": None,
         "cbs": None,
         "is": None,
-        "catalog_version": CATALOG_VERSION,
-        "note": "RTC hooks reservados; sem cálculo em goods-0.2.0-u5",
+        "mode": nfe_rtc_mode(),
+        "note": "RTC goods — ver taxes.rtc e totals.rtc",
     }
 
 
@@ -279,6 +279,14 @@ def build_validation(
                     errors.append(
                         {"field": f"items[{it.line_number}].cfop", "message": cat_err}
                     )
+        if require_ie and it.unit:
+            from apps.nfe.catalog import validate_unit
+
+            unit_err = validate_unit(it.unit)
+            if unit_err:
+                errors.append(
+                    {"field": f"items[{it.line_number}].unit", "message": unit_err}
+                )
         if it.quantity <= 0:
             errors.append(
                 {
@@ -326,6 +334,20 @@ def build_validation(
             emit_uf=emit_uf,
             dest_uf=dest_uf,
         )
+        from apps.fiscal.rtc_goods import build_item_rtc, nfe_rtc_mode
+
+        tax["rtc"] = build_item_rtc(
+            line_total_cents=line_total,
+            issue_date=invoice.issue_date,
+            document_model="55",
+        )
+        if tax["rtc"].get("status") == "blocked":
+            errors.append(
+                {
+                    "field": f"items[{it.line_number}].rtc",
+                    "message": tax["rtc"].get("reason") or "RTC bloqueado (classificação)",
+                }
+            )
         products_cents += line_total
         icms_total += int(tax["icms"].get("value_cents") or 0)
         icms_base_total += int(tax["icms"].get("base_cents") or 0)
@@ -352,7 +374,8 @@ def build_validation(
             }
         )
 
-    from apps.nfe.catalog import CATALOG_VERSION
+    from apps.nfe.catalog import catalog_meta, catalog_version_label
+    from apps.fiscal.rtc_goods import aggregate_rtc_totals, nfe_rtc_mode
 
     totals = {
         "products_cents": products_cents,
@@ -364,7 +387,9 @@ def build_validation(
         "pis_cents": pis_total,
         "cofins_cents": cofins_total,
         "tax_engine_version": TAX_ENGINE_VERSION,
-        "catalog_version": CATALOG_VERSION,
+        "catalog_version": catalog_version_label(),
+        "catalog_versions": catalog_meta(),
+        "rtc_mode": nfe_rtc_mode(),
         "operation": {
             "emit_uf": emit_uf,
             "dest_uf": dest_uf,
@@ -376,6 +401,9 @@ def build_validation(
             ),
         },
     }
+    rtc_totals = aggregate_rtc_totals(items_taxes)
+    if rtc_totals.get("v_ibs_cents") or rtc_totals.get("v_cbs_cents"):
+        totals["rtc"] = rtc_totals
     return {
         "ok": len(errors) == 0,
         "field_errors": errors,

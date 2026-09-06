@@ -34,8 +34,16 @@
       </div>
       <div class="field">
         <label for="id_unit">Unidade</label>
-        <input id="id_unit" name="unit" maxlength="6"
-               value="{% if form %}{{ form.unit }}{% elif obj %}{{ obj.unit }}{% else %}UN{% endif %}">
+        <select id="id_unit" name="unit">
+          {% for code, label in unit_choices %}
+          <option value="{{ code }}"
+            {% if form and form.unit == code %}selected
+            {% elif obj and obj.unit == code %}selected
+            {% elif not form and not obj and code == "UN" %}selected{% endif %}>
+            {{ code }} — {{ label }}
+          </option>
+          {% endfor %}
+        </select>
       </div>
       <div class="field">
         <label for="id_origin">Origem (0–8)</label>
@@ -44,13 +52,29 @@
       </div>
       <div class="field">
         <label for="id_cfop_internal">CFOP interno</label>
-        <input class="mono" id="id_cfop_internal" name="cfop_internal" maxlength="4"
-               value="{% if form %}{{ form.cfop_internal }}{% elif obj %}{{ obj.cfop_internal }}{% else %}5102{% endif %}">
+        <select class="mono" id="id_cfop_internal" name="cfop_internal">
+          {% for code, label in cfop_internal_choices %}
+          <option value="{{ code }}"
+            {% if form and form.cfop_internal == code %}selected
+            {% elif obj and obj.cfop_internal == code %}selected
+            {% elif not form and not obj and code == "5102" %}selected{% endif %}>
+            {{ code }} — {{ label }}
+          </option>
+          {% endfor %}
+        </select>
       </div>
       <div class="field">
         <label for="id_cfop_interstate">CFOP interestadual</label>
-        <input class="mono" id="id_cfop_interstate" name="cfop_interstate" maxlength="4"
-               value="{% if form %}{{ form.cfop_interstate }}{% elif obj %}{{ obj.cfop_interstate }}{% else %}6102{% endif %}">
+        <select class="mono" id="id_cfop_interstate" name="cfop_interstate">
+          {% for code, label in cfop_interstate_choices %}
+          <option value="{{ code }}"
+            {% if form and form.cfop_interstate == code %}selected
+            {% elif obj and obj.cfop_interstate == code %}selected
+            {% elif not form and not obj and code == "6102" %}selected{% endif %}>
+            {{ code }} — {{ label }}
+          </option>
+          {% endfor %}
+        </select>
       </div>
       <div class="field">
         <label for="id_csosn">CSOSN (Simples)</label>

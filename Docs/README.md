@@ -14,6 +14,7 @@ Repositório: https://github.com/rvbbarreto-bot/Exeq_Hub
 | NFS-e integração | `Exeq_Hub_NFSe_Emission_Architecture_Reference.md` | **1.1.0** (addendum emissor próprio; Focus histórico) |
 | ADR emissor próprio Nacional | `ADR_NFSE_001_Emissor_Proprio_Nacional.md` | **Aprovado** (PO 2026-07-29 — SEFIN/ADN + DANFSe) |
 | ADR emissor próprio NF-e SEFAZ | `ADR_NFE_001_Emissor_Proprio_SEFAZ.md` | **Aprovado + GO desenvolvimento** (PO 2026-08-05 — SP; stub até IE/SEFAZ) |
+| LLR NFC-e PDV kickoff | `Exeq_Hub_LLR_NFCE_Emissao_PDV_Kickoff.md` | **0.1.0-draft** (PO 2026-09-04 — CPF/CNPJ, SN, RTC, fases NFCE-0…3) |
 | Plano desenvolvimento emissor próprio | `Exeq_Hub_Plano_Desenvolvimento_Emissor_Proprio_NFSe.md` | **Autorizado PO** (início 2026-07-29 — visão gestão) |
 | DoD segurança NFS-e/SEFIN | `Exeq_Hub_DoD_Seguranca_NFSe_SEFIN.md` | G-SEC P0 aprovado; P1 (pentest escopo pronto) |
 | Briefing pentest SEC-P1-09 | `Exeq_Hub_NFSe_Pentest_Briefing_SEC_P1_09.md` | Escopo |
@@ -49,6 +50,7 @@ Repositório: https://github.com/rvbbarreto-bot/Exeq_Hub
 | U13 EX-SEC NF-e + throttle | `Exeq_Hub_NFe_U13_EX_SEC.md` | Isolamento multi-tenant + `nfe_write` rate limit |
 | RF-72 mídia WhatsApp NF-e | `Exeq_Hub_NFe_RF72_Midia_WhatsApp.md` | DANFE/XML se sessão canal ligar `nfe.authorized` |
 | Reforma Tributária / RTC | `Exeq_Hub_Reforma_Tributaria_RTC_MultiDocumento_Estudo_Tecnico.md` | **0.1.0-draft** (estudo direção — IBS/CBS/IS, multi-DF-e, contábil) |
+| **Estudo técnico RTC + NF-e/NFC-e (fidelidade fiscal)** | `Exeq_Hub_Estudo_Tecnico_RTC_NFe_NFCe_Fidelidade_Fiscal.md` | **1.0.0** (Tech Lead 2026-09-06 — CAT/VAL/RTC-G, fluxos, roadmap) |
 | ADR RTC execução | `ADR_RTC_001_Priorizacao_Pilares.md` | **Aceito** (PO 2026-07-26 — pilares 1→5→2→4→3) |
 | ADR Matriz ISS N0/N1/N2 | `ADR_FISCAL_001_Matriz_ISS_N0_N1_N2.md` | **Aprovado + GO** (PO 2026-08-11 — readiness + templates) |
 | Billing Inter | `Exeq_Hub_Inter_Billing_Integration_Study.md` | **1.0.0** (Sprint 5 — Inter first / BolePix v3) |
