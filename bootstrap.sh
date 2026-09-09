@@ -13,6 +13,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
+# Gate PO: lab Hub sempre Postgres — não herdar EXEQ_TEST_SQLITE do shell
+unset EXEQ_TEST_SQLITE 2>/dev/null || true
 
 BG=0
 WITH_CELERY=1
@@ -179,7 +181,7 @@ run_py -m pip install -q -r requirements.txt
 log "migrate"
 run_py manage.py migrate --noinput
 
-log "admin plataforma (lab: admin@local / admin)"
+log "admin plataforma (PLATFORM_ADMIN_* no .env ou admin@local / admin)"
 run_py manage.py ensure_platform_admin
 
 log "django check"

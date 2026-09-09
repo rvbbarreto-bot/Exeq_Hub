@@ -52,6 +52,7 @@ from apps.accounts.tenant_emission import (
 from apps.hub_v4.services import (
     certificate_rows,
     dashboard_context,
+    hub_nbs_catalog,
     issue_timeline,
     nfse_queryset,
 )
@@ -264,6 +265,10 @@ class NfseDetailView(View):
             tenant=tenant,
         )
         events = NfIssueEvent.objects.filter(nf_issue=issue).order_by("occurred_at")
+        from apps.issuance.user_messages import enrich_issue_events, rejection_display
+
+        event_rows = enrich_issue_events(events)
+        rejection = rejection_display(issue)
         artifacts = issue.artifacts.select_related("stored_file").all()
         docs = artifact_presence(issue)
         from apps.issuance.sefin_summary import sefin_integration_summary
@@ -297,6 +302,8 @@ class NfseDetailView(View):
                 "informacoes_complementares": info_compl,
                 "timeline": issue_timeline(issue),
                 "events": events,
+                "event_rows": event_rows,
+                "rejection": rejection,
                 "artifacts": artifacts,
                 "docs": docs,
                 "role_code": role,
@@ -841,6 +848,7 @@ class NfseWizardView(View):
             "regime_simples": TaxRegime.SIMPLES,
             "published_ibge": published_ibge,
             "emit_coverage_keys": emit_coverage_keys,
+            "nbs_catalog": hub_nbs_catalog(),
         }
 
     def _parse_wizard_payload(self, request, tenant) -> dict:
@@ -1168,10 +1176,15 @@ class DasDetailView(View):
         if redir:
             return redir
         guia = get_object_or_404(
-            GuiaFiscal.objects.select_related("provider"),
+            GuiaFiscal.objects.select_related("provider", "pdf_file"),
             pk=pk,
             tenant=tenant,
         )
+        delivery = {}
+        if isinstance(guia.metadata, dict):
+            raw = guia.metadata.get("delivery")
+            if isinstance(raw, dict):
+                delivery = raw
         return render(
             request,
             "hub_v4/das/detail.html",
@@ -1179,8 +1192,62 @@ class DasDetailView(View):
                 "nav": "das",
                 "page_title": f"Guia {guia.tipo_guia}",
                 "guia": guia,
+                "delivery": delivery,
                 "role_code": role,
+                "can_write": role in WRITE_ROLES,
+                "has_pdf": bool(guia.pdf_file_id),
             },
+        )
+
+    def post(self, request: HttpRequest, pk):
+        tenant, user, role, redir = _require_writer_hub(request)
+        if redir:
+            return redir
+        guia = get_object_or_404(GuiaFiscal, pk=pk, tenant=tenant)
+        if request.POST.get("action") != "resend_delivery":
+            return redirect("hub-v4-das-detail", pk=guia.id)
+        from apps.das.delivery import enqueue_guia_redelivery
+
+        enqueue_guia_redelivery(
+            tenant=tenant,
+            guia=guia,
+            payload={"force": True, "channels": ["email", "whatsapp"]},
+        )
+        messages.success(request, "Reenvio enfileirado ao contador.")
+        return redirect("hub-v4-das-detail", pk=guia.id)
+
+
+class DasPdfDownloadView(View):
+    def get(self, request: HttpRequest, pk):
+        tenant, user, role, redir = require_hub(request)
+        if redir:
+            return redir
+        guia = get_object_or_404(
+            GuiaFiscal.objects.select_related("pdf_file"),
+            pk=pk,
+            tenant=tenant,
+        )
+        if not guia.pdf_file_id:
+            messages.error(request, "PDF indisponível.")
+            return redirect("hub-v4-das-detail", pk=guia.id)
+        from io import BytesIO
+
+        from django.http import FileResponse
+
+        from shared.storage import StorageError, get_storage
+
+        stored = guia.pdf_file
+        try:
+            data = get_storage().get(key=stored.object_key)
+        except StorageError:
+            messages.error(request, "Arquivo não encontrado.")
+            return redirect("hub-v4-das-detail", pk=guia.id)
+        filename = f"guia-{guia.tipo_guia}-{guia.competencia}-{guia.id}.pdf"
+        return FileResponse(
+            BytesIO(data),
+            as_attachment=True,
+            filename=filename,
+            content_type=stored.content_type or "application/pdf",
         )
 
 
@@ -1748,6 +1815,7 @@ class NfeProductsListView(View):
         if q:
             qs = qs.filter(Q(code__icontains=q) | Q(description__icontains=q) | Q(ncm__icontains=q))
         page = Paginator(qs, 30).get_page(request.GET.get("page") or 1)
+        base_qs = NfeProduct.objects.filter(tenant=tenant)
         return render(
             request,
             "hub_v4/nfe/products_list.html",
@@ -1756,7 +1824,9 @@ class NfeProductsListView(View):
                 "page_title": "Produtos NF-e",
                 "page": page,
                 "q": q,
-                "count": qs.count(),
+                "count": base_qs.count(),
+                "active_count": base_qs.filter(is_active=True).count(),
+                "inactive_count": base_qs.filter(is_active=False).count(),
                 "role_code": role,
                 "can_write": role in WRITE_ROLES,
             },
@@ -1798,7 +1868,7 @@ class NfeProductFormView(View):
                 {**self._ctx(tenant, role, obj=obj), "form": request.POST},
             )
         messages.success(request, f"Produto {saved.code} salvo.")
-        return redirect("hub-v4-nfe-product-edit", pk=saved.pk)
+        return redirect("hub-v4-nfe-products")
 
     def _ctx(self, tenant, role, *, obj=None):
         from apps.fiscal.goods_catalog import (
@@ -1837,6 +1907,175 @@ class NfeProductFormView(View):
             "cfop_interstate_choices": dropdown_cfop_interstate(),
             "unit_choices": dropdown_units(),
         }
+
+
+class NfeProductImportTemplateView(View):
+    """Download modelo Excel v1.0."""
+
+    def get(self, request: HttpRequest):
+        tenant, user, role, redir = _require_nfe_hub(request, write=True)
+        if redir:
+            return redir
+        from apps.nfe.product_import import TEMPLATE_FILENAME, generate_template_xlsx
+
+        content = generate_template_xlsx()
+        resp = HttpResponse(
+            content,
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        resp["Content-Disposition"] = f'attachment; filename="{TEMPLATE_FILENAME}"'
+        return resp
+
+
+class NfeProductImportView(View):
+    template_name = "hub_v4/nfe/product_import.html"
+
+    def get(self, request: HttpRequest):
+        tenant, user, role, redir = _require_nfe_hub(request, write=True)
+        if redir:
+            return redir
+        from apps.nfe.product_import import MODEL_VERSION, max_bytes, max_rows
+
+        return render(
+            request,
+            self.template_name,
+            {
+                "nav": "nfe_products",
+                "page_title": "Importar produtos NF-e",
+                "role_code": role,
+                "model_version": MODEL_VERSION,
+                "max_rows": max_rows(),
+                "max_mb": max_bytes() // (1024 * 1024),
+            },
+        )
+
+    def post(self, request: HttpRequest):
+        tenant, user, role, redir = _require_nfe_hub(request, write=True)
+        if redir:
+            return redir
+        from apps.nfe.product_import import ProductImportError, validate_workbook
+
+        upload = request.FILES.get("xlsx_file")
+        if upload is None:
+            messages.error(request, "Selecione um arquivo Excel (.xlsx).")
+            return redirect("hub-v4-nfe-product-import")
+        try:
+            preview = validate_workbook(
+                tenant=tenant,
+                file_bytes=upload.read(),
+                filename=upload.name or "produtos.xlsx",
+            )
+        except ProductImportError as exc:
+            messages.error(request, str(exc))
+            return redirect("hub-v4-nfe-product-import")
+        return redirect("hub-v4-nfe-product-import-preview", token=preview.token)
+
+
+class NfeProductImportPreviewView(View):
+    template_name = "hub_v4/nfe/product_import_preview.html"
+
+    def get(self, request: HttpRequest, token: str):
+        tenant, user, role, redir = _require_nfe_hub(request, write=True)
+        if redir:
+            return redir
+        from apps.nfe.product_import import ProductImportError, load_preview
+
+        try:
+            preview = load_preview(str(tenant.id), token)
+        except ProductImportError as exc:
+            messages.error(request, str(exc))
+            return redirect("hub-v4-nfe-product-import")
+        page = Paginator(preview.rows, 50).get_page(request.GET.get("page") or 1)
+        return render(
+            request,
+            self.template_name,
+            {
+                "nav": "nfe_products",
+                "page_title": "Prévia da importação",
+                "role_code": role,
+                "preview": preview,
+                "page": page,
+                "token": token,
+            },
+        )
+
+
+class NfeProductImportConfirmView(View):
+    def post(self, request: HttpRequest, token: str):
+        tenant, user, role, redir = _require_nfe_hub(request, write=True)
+        if redir:
+            return redir
+        from apps.nfe.product_import import ProductImportError, commit_import
+
+        try:
+            preview = commit_import(
+                tenant=tenant,
+                token=token,
+                actor=user.email or "hub",
+            )
+        except ProductImportError as exc:
+            messages.error(request, str(exc))
+            return redirect("hub-v4-nfe-product-import-preview", token=token)
+        messages.success(
+            request,
+            "Importação concluída: "
+            f"{preview.summary.get('cadastrados', 0)} cadastrados, "
+            f"{preview.summary.get('alterados', 0)} alterados, "
+            f"{preview.summary.get('nao_processados', 0)} não processados.",
+        )
+        return redirect("hub-v4-nfe-product-import-result", token=token)
+
+
+class NfeProductImportResultView(View):
+    template_name = "hub_v4/nfe/product_import_result.html"
+
+    def get(self, request: HttpRequest, token: str):
+        tenant, user, role, redir = _require_nfe_hub(request, write=True)
+        if redir:
+            return redir
+        from apps.nfe.product_import import ProductImportError, load_preview
+
+        try:
+            preview = load_preview(str(tenant.id), token)
+        except ProductImportError as exc:
+            messages.error(request, str(exc))
+            return redirect("hub-v4-nfe-product-import")
+        return render(
+            request,
+            self.template_name,
+            {
+                "nav": "nfe_products",
+                "page_title": "Resultado da importação",
+                "role_code": role,
+                "preview": preview,
+                "token": token,
+            },
+        )
+
+
+class NfeProductImportReportView(View):
+    def get(self, request: HttpRequest, token: str):
+        tenant, user, role, redir = _require_nfe_hub(request, write=True)
+        if redir:
+            return redir
+        from apps.nfe.product_import import (
+            ProductImportError,
+            generate_report_xlsx,
+            load_preview,
+        )
+
+        try:
+            preview = load_preview(str(tenant.id), token)
+        except ProductImportError as exc:
+            messages.error(request, str(exc))
+            return redirect("hub-v4-nfe-product-import")
+        content = generate_report_xlsx(preview)
+        resp = HttpResponse(
+            content,
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        resp["Content-Disposition"] = f'attachment; filename="relatorio_importacao_{token[:8]}.xlsx"'
+        return resp
 
 
 def _require_nfce_hub(request: HttpRequest, *, write: bool = False):
@@ -2507,6 +2746,7 @@ class ServiceFormView(View):
                 "page_title": "Editar serviço" if obj else "Novo serviço",
                 "obj": obj,
                 "role_code": role,
+                "nbs_catalog": hub_nbs_catalog(),
             },
         )
 
@@ -2536,6 +2776,7 @@ class ServiceFormView(View):
                     "obj": obj,
                     "role_code": role,
                     "form": request.POST,
+                    "nbs_catalog": hub_nbs_catalog(),
                 },
             )
         messages.success(
@@ -2804,6 +3045,22 @@ class UserEditView(View):
 
 
 class PreferencesView(View):
+    def _das_delivery_ctx(self, tenant):
+        settings = tenant.settings if isinstance(tenant.settings, dict) else {}
+        das = settings.get("das_delivery")
+        if not isinstance(das, dict):
+            das = {}
+        return {
+            "das_enabled": das.get("enabled", True),
+            "das_email_auto": das.get("email_auto", True),
+            "das_whatsapp_auto": das.get("whatsapp_auto", True),
+            "das_accountant_email": das.get("accountant_email", ""),
+            "das_accountant_whatsapp": das.get("accountant_whatsapp", ""),
+            "das_use_nfe_notify_email": das.get("use_nfe_notify_email_for_das", False),
+            "notify_phone": settings.get("notify_phone", ""),
+            "nfe_notify_email": settings.get("nfe_notify_email", ""),
+        }
+
     def get(self, request: HttpRequest):
         tenant, user, role, redir = require_hub(request)
         if redir:
@@ -2818,5 +3075,34 @@ class PreferencesView(View):
                 "tenant": tenant,
                 "user": user,
                 "usage": provider_usage(tenant),
+                "can_edit_delivery": role == "tenant_admin",
+                **self._das_delivery_ctx(tenant),
             },
         )
+
+    def post(self, request: HttpRequest):
+        tenant, user, role, redir = _require_tenant_admin_hub(request)
+        if redir:
+            return redir
+        settings = dict(tenant.settings or {})
+        das = dict(settings.get("das_delivery") or {})
+        das["enabled"] = (request.POST.get("das_enabled") or "0") in {"1", "true", "on", "yes"}
+        das["email_auto"] = (request.POST.get("das_email_auto") or "0") in {"1", "true", "on", "yes"}
+        das["whatsapp_auto"] = (request.POST.get("das_whatsapp_auto") or "0") in {
+            "1",
+            "true",
+            "on",
+            "yes",
+        }
+        das["accountant_email"] = (request.POST.get("das_accountant_email") or "").strip()
+        das["accountant_whatsapp"] = (request.POST.get("das_accountant_whatsapp") or "").strip()
+        das["use_nfe_notify_email_for_das"] = (
+            request.POST.get("das_use_nfe_notify_email") or "0"
+        ) in {"1", "true", "on", "yes"}
+        settings["das_delivery"] = das
+        settings["notify_phone"] = (request.POST.get("notify_phone") or "").strip()
+        settings["nfe_notify_email"] = (request.POST.get("nfe_notify_email") or "").strip()
+        tenant.settings = settings
+        tenant.save(update_fields=["settings", "updated_at"])
+        messages.success(request, "Preferências de entrega DAS salvas.")
+        return redirect("hub-v4-preferences")

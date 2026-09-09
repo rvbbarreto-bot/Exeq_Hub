@@ -1,18 +1,20 @@
 {% extends "hub_v4/base.html" %}
 {% load hub_v4_tags %}
 
+{% block page_crumb %}{% endblock %}
+
 {% block page_actions %}
 <a class="btn btn-ghost" href="{% url 'hub-v4-nfse-detail' issue.id %}">Voltar ao detalhe</a>
 {% endblock %}
 
 {% block content %}
-<div class="doc-header card" style="margin-bottom:12px;">
+<div class="doc-header card">
   <div>
-    <div style="font-family:var(--font-display);font-weight:700;">Documentos Técnicos</div>
-    <div class="hint-line" style="margin:0;">
-      {{ issue.customer.name }} · ref {{ issue.focus_ref|default:issue.id }}
-    </div>
-    <div style="margin-top:6px;">{% status_badge issue.status %}</div>
+    <h2 class="detail-title">Documentos Técnicos</h2>
+    <p class="detail-subtitle">
+      {{ issue.customer.name }} · ref <span class="mono">{{ issue.focus_ref|default:issue.id }}</span>
+    </p>
+    <div style="margin-top:8px;">{% status_badge issue.status %}</div>
   </div>
   <div class="doc-quick-actions">
     {% if docs.pdf %}

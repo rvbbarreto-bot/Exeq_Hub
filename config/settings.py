@@ -2,6 +2,8 @@ from datetime import timedelta
 import os
 from pathlib import Path
 
+from config.db_gate import assert_sqlite_allowed, env_truthy
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
@@ -85,8 +87,10 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-if env("EXEQ_TEST_SQLITE", "").lower() in {"1", "true", "yes"}:
-    # Lab offline: pytest sem Postgres/docker (não usar em prod)
+assert_sqlite_allowed()
+
+if env_truthy("EXEQ_TEST_SQLITE"):
+    # Offline: pytest sem Postgres/docker (gate PO — bloqueado fora de pytest)
     _sqlite = BASE_DIR / ".storage" / "pytest_exeq.sqlite3"
     _sqlite.parent.mkdir(parents=True, exist_ok=True)
     DATABASES = {
@@ -205,6 +209,12 @@ CELERY_BEAT_SCHEDULE = {
         "task": "nfce.reconcile_stale",
         "schedule": float(env("NFCE_RECONCILE_INTERVAL_SECONDS", "120") or "120"),
         "kwargs": {"limit": int(env("NFCE_RECONCILE_BATCH_LIMIT", "50") or "50")},
+    },
+    # NF-e entrada: enfileira distNSU por cursor automático
+    "nfe-entrada-distribuicao-tick": {
+        "task": "nfe.distribuicao_tick",
+        "schedule": float(env("NFE_ENTRADA_TICK_INTERVAL_SECONDS", "900") or "900"),
+        "kwargs": {"limit": int(env("NFE_ENTRADA_TICK_BATCH_LIMIT", "50") or "50")},
     },
 }
 NF_SYNC_PROCESSING = env("NF_SYNC_PROCESSING", "false").lower() == "true"
@@ -376,7 +386,13 @@ NFE_CATALOG_STRICT = (env("NFE_CATALOG_STRICT", "false") or "false").lower() in 
     "true",
     "yes",
 )
-NFE_CROSS_VALIDATE = env("NFE_CROSS_VALIDATE", "warn")  # off | warn | block
+GOODS_CROSS_VALIDATE = env("GOODS_CROSS_VALIDATE", "") or env("NFE_CROSS_VALIDATE", "warn")
+# off | warn | block — NF-e + NFC-e (ADR-GOODS-VALIDATE-V1); NFE_CROSS_VALIDATE legado
+NFE_CROSS_VALIDATE = GOODS_CROSS_VALIDATE
+NFE_PRODUCT_IMPORT_MAX_ROWS = int(env("NFE_PRODUCT_IMPORT_MAX_ROWS", "500") or "500")
+NFE_PRODUCT_IMPORT_MAX_BYTES = int(
+    env("NFE_PRODUCT_IMPORT_MAX_BYTES", str(3 * 1024 * 1024)) or str(3 * 1024 * 1024)
+)
 NFE_PIVOT_UF = env("NFE_PIVOT_UF", "SP")
 # I5: reconciliação polling → authorized|rejected|failed
 NFE_POLL_COUNTDOWN = int(env("NFE_POLL_COUNTDOWN", "15") or "15")
@@ -386,6 +402,27 @@ NFE_SYNC_POLL = (env("NFE_SYNC_POLL", "false") or "false").lower() in ("1", "tru
 NFE_RECONCILE_STALE_SECONDS = int(env("NFE_RECONCILE_STALE_SECONDS", "120") or "120")
 # RF-41: path opcional para XSD oficial (vazio = só preflight estrutural)
 NFE_XSD_PATH = env("NFE_XSD_PATH", "")
+
+# NF-e entrada — distribuição DFe + manifestação (ADR-NFE-ENTRADA-001)
+NFE_ENTRADA_ENABLED = (env("NFE_ENTRADA_ENABLED", "false") or "false").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+NFE_ENTRADA_HTTP_MODE = env("NFE_ENTRADA_HTTP_MODE", "stub")  # stub | http
+NFE_ENTRADA_HTTP_DRY_RUN = (env("NFE_ENTRADA_HTTP_DRY_RUN", "false") or "false").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+NFE_ENTRADA_STUB_MODE = env("NFE_ENTRADA_STUB_MODE", "137")  # 137 | 138 | 656
+NFE_ENTRADA_DIST_TIMEOUT = int(env("NFE_ENTRADA_DIST_TIMEOUT", "60") or "60")
+NFE_ENTRADA_DIST_MAX_RETRIES = int(env("NFE_ENTRADA_DIST_MAX_RETRIES", "3") or "3")
+NFE_ENTRADA_DIST_BACKOFF_BASE = int(env("NFE_ENTRADA_DIST_BACKOFF_BASE", "300") or "300")
+NFE_ENTRADA_BLOCK_656_SECONDS = int(env("NFE_ENTRADA_BLOCK_656_SECONDS", "3600") or "3600")
+NFE_ENTRADA_DEFAULT_INTERVAL = int(env("NFE_ENTRADA_DEFAULT_INTERVAL", "3600") or "3600")
+NFE_ENTRADA_TICK_INTERVAL_SECONDS = int(env("NFE_ENTRADA_TICK_INTERVAL_SECONDS", "900") or "900")
+NFE_ENTRADA_TICK_BATCH_LIMIT = int(env("NFE_ENTRADA_TICK_BATCH_LIMIT", "50") or "50")
 
 # NFC-e PDV (mod 65) — default off; lab: NFCE_ENABLED=true + NFCE_HTTP_MODE=stub
 NFCE_ENABLED = (env("NFCE_ENABLED", "false") or "false").lower() in ("1", "true", "yes")
@@ -496,3 +533,6 @@ EMAIL_USE_SSL = (env("EMAIL_USE_SSL", "false") or "false").lower() in (
 )
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "EXEQ Hub <noreply@exeq.local>")
 SERVER_EMAIL = env("SERVER_EMAIL", DEFAULT_FROM_EMAIL)
+
+# Hub V4 — navegação lateral (spec PO; equivalente UNFOLD["SIDEBAR"] para /hub/)
+from config.hub_sidebar import HUB_V4_SIDEBAR  # noqa: E402

@@ -1,15 +1,21 @@
 {% extends "hub_v4/base.html" %}
 
+{% block page_subtitle %}
+<div class="page-subtitle">{% if obj %}Editar perfil{% else %}Perfil fiscal e regra municipal ISS{% endif %}</div>
+{% endblock %}
+
 {% block page_actions %}
 <a class="btn btn-ghost" href="{% url 'hub-v4-fiscal' %}">Voltar</a>
 {% endblock %}
 
 {% block content %}
-<div class="card">
-  <form method="post">
-    {% csrf_token %}
-    <div class="form-grid">
-      <div class="field full">
+<form method="post" id="fiscal-profile-form" class="form-page">
+  {% csrf_token %}
+
+  <div class="card section">
+    <h3>Perfil</h3>
+    <div class="formgrid formgrid--3">
+      <div class="field fullrow">
         <label for="id_name">Nome *</label>
         <input id="id_name" name="name" required maxlength="128"
                value="{% if form %}{{ form.name }}{% elif obj %}{{ obj.name }}{% endif %}"
@@ -35,14 +41,19 @@
           <option value="inactive" {% if obj and obj.status == 'inactive' %}selected{% endif %}>Inativo</option>
         </select>
       </div>
-      <div class="field full">
+      <div class="field fullrow">
         <label for="id_iss_retention_policy">Política de retenção ISS</label>
         <input id="id_iss_retention_policy" name="iss_retention_policy"
                value="{% if form %}{{ form.iss_retention_policy }}{% elif obj %}{{ obj.iss_retention_policy }}{% else %}by_rule{% endif %}">
         <p class="hint-line">Padrão: by_rule (segue a regra municipal publicada).</p>
       </div>
+    </div>
+  </div>
 
-      <div class="field full">
+  <div class="card section">
+    <h3>Regra municipal (ISS)</h3>
+    <div class="formgrid formgrid--3">
+      <div class="field fullrow">
         <label style="display:flex;align-items:center;gap:8px;font-weight:600;">
           <input type="checkbox" name="ensure_rule" value="1" {% if not obj %}checked{% endif %}>
           Publicar regra municipal (ISS) para este perfil
@@ -85,10 +96,9 @@
                placeholder="0.02">
       </div>
     </div>
-    <div class="wizard-nav" style="margin-top:20px;">
-      <a class="btn btn-ghost" href="{% url 'hub-v4-fiscal' %}">Cancelar</a>
-      <button type="submit" class="btn btn-primary">Salvar perfil</button>
-    </div>
-  </form>
-</div>
+  </div>
+
+  {% url 'hub-v4-fiscal' as fiscal_url %}
+  {% include "hub_v4/partials/form_sticky_footer.html" with back_url=fiscal_url cancel_url=fiscal_url submit_label="Salvar perfil" %}
+</form>
 {% endblock %}

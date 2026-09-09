@@ -1,0 +1,120 @@
+{% extends "hub_v4/base.html" %}
+{% load hub_v4_tags %}
+
+{% block page_actions %}
+{% if has_xml %}
+<a class="btn btn-primary" href="{% url 'hub-v4-nfe-entrada-xml' document.id %}">Baixar XML</a>
+{% endif %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-nfe-entrada-list' %}">Lista</a>
+{% endblock %}
+
+{% block content %}
+<div class="card" style="margin-bottom:12px;">
+  <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center;">
+    <div>
+      <div style="font-family:var(--font-display);font-weight:700;font-size:1.1rem;">
+        Série {{ document.series|default:"—" }} · nº {{ document.number|default:"—" }}
+      </div>
+      <div style="color:var(--text-muted);font-size:.9rem;">
+        {{ document.issuer_name|default:"—" }} · {{ document.provider.legal_name }}
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      {% entrada_manifest_badge document.manifest_status %}
+      {% entrada_xml_badge document.xml_status %}
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:12px;">
+  <div class="section-label" style="margin-top:0;">Resumo</div>
+  <div class="form-grid">
+    <div><span style="color:var(--text-muted);font-size:.8rem;">Valor</span><div><strong>{% if document.total_cents %}{{ document.total_cents|cents_brl }}{% else %}—{% endif %}</strong></div></div>
+    <div><span style="color:var(--text-muted);font-size:.8rem;">Emissão</span><div>{{ document.issue_date|date:"d/m/Y"|default:"—" }}</div></div>
+    <div><span style="color:var(--text-muted);font-size:.8rem;">Schema</span><div>{{ document.get_schema_type_display }}</div></div>
+    <div><span style="color:var(--text-muted);font-size:.8rem;">NSU</span><div class="mono">{{ document.nsu }}</div></div>
+    <div class="full">
+      <span style="color:var(--text-muted);font-size:.8rem;">Chave de acesso</span>
+      <div class="mono" style="word-break:break-all;">{{ document.access_key|default:"—" }}</div>
+    </div>
+    <div><span style="color:var(--text-muted);font-size:.8rem;">CNPJ emitente</span><div class="mono">{{ document.issuer_cnpj|default:"—" }}</div></div>
+    <div><span style="color:var(--text-muted);font-size:.8rem;">CNPJ destinatário</span><div class="mono">{{ document.recipient_cnpj|default:"—" }}</div></div>
+  </div>
+</div>
+
+{% if can_write %}
+<div class="card" style="margin-bottom:12px;">
+  <div class="section-label" style="margin-top:0;">Manifestação do destinatário</div>
+  <p style="color:var(--text-muted);font-size:.9rem;margin-top:0;">
+    Confirmação da operação (210200) exige ação explícita — nunca automática.
+  </p>
+  <div style="display:flex;flex-wrap:wrap;gap:8px;">
+    {% if can_ciencia %}
+    <form method="post" action="{% url 'hub-v4-nfe-entrada-manifest' document.id %}">
+      {% csrf_token %}
+      <input type="hidden" name="tp_evento" value="210210">
+      <button type="submit" class="btn btn-ghost btn-sm">Ciência da emissão</button>
+    </form>
+    {% endif %}
+    {% if can_confirmacao %}
+    <form method="post" action="{% url 'hub-v4-nfe-entrada-manifest' document.id %}" onsubmit="return confirm('Confirmar operação comercial desta NF-e?');">
+      {% csrf_token %}
+      <input type="hidden" name="tp_evento" value="210200">
+      <input type="hidden" name="confirmed" value="on">
+      <button type="submit" class="btn btn-primary btn-sm">Confirmar operação</button>
+    </form>
+    {% endif %}
+    {% if can_desconhecimento %}
+    <form method="post" action="{% url 'hub-v4-nfe-entrada-manifest' document.id %}" onsubmit="return confirm('Registrar desconhecimento desta operação?');">
+      {% csrf_token %}
+      <input type="hidden" name="tp_evento" value="210220">
+      <input type="hidden" name="confirmed" value="on">
+      <button type="submit" class="btn btn-ghost btn-sm">Desconhecimento</button>
+    </form>
+    {% endif %}
+  </div>
+  {% if can_nao_realizada %}
+  <form method="post" action="{% url 'hub-v4-nfe-entrada-manifest' document.id %}" style="margin-top:12px;">
+    {% csrf_token %}
+    <input type="hidden" name="tp_evento" value="210240">
+    <input type="hidden" name="confirmed" value="on">
+    <div class="field full">
+      <label for="justificativa">Operação não realizada — justificativa (mín. 15 caracteres)</label>
+      <textarea id="justificativa" name="justificativa" rows="2" required minlength="15" placeholder="Descreva o motivo…"></textarea>
+    </div>
+    <button type="submit" class="btn btn-ghost btn-sm">Registrar operação não realizada</button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="section-label" style="margin-top:0;">Histórico de manifestações</div>
+  {% if manifestations %}
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Evento</th>
+        <th>Status</th>
+        <th>Protocolo</th>
+        <th>cStat</th>
+        <th>Data</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in manifestations %}
+      <tr>
+        <td>{{ m.get_tp_evento_display }}</td>
+        <td>{% status_badge m.status %}</td>
+        <td class="mono">{{ m.protocol|default:"—" }}</td>
+        <td>{{ m.c_stat|default:"—" }}</td>
+        <td>{{ m.created_at|date:"d/m/Y H:i" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="color:var(--text-muted);">Nenhuma manifestação registrada.</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -16,6 +16,8 @@ param(
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $Root
+# Gate PO: lab Hub sempre Postgres — não herdar EXEQ_TEST_SQLITE do terminal/CI local
+Remove-Item Env:EXEQ_TEST_SQLITE -ErrorAction SilentlyContinue
 
 $bashOk = $false
 if (Get-Command bash -ErrorAction SilentlyContinue) {

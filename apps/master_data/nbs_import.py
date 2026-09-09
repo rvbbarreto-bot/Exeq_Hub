@@ -161,6 +161,21 @@ def get_published_nbs_items():
     return version, version.items.filter(is_active=True)
 
 
+def list_published_nbs_catalog() -> list[dict]:
+    """Lista completa da versão NBS publicada (para DropdownSelect no Hub)."""
+    _version, qs = get_published_nbs_items()
+    if _version is None:
+        return []
+    return [
+        {
+            "codigo": i.codigo,
+            "description": i.description,
+            "display": format_nbs_display_code(i.codigo),
+        }
+        for i in qs.order_by("codigo").iterator(chunk_size=500)
+    ]
+
+
 def search_nbs(*, query: str = "", limit: int = 20) -> list[dict]:
     """Busca códigos NBS na versão publicada (código prefixo ou descrição)."""
     _version, qs = get_published_nbs_items()

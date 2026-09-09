@@ -1,0 +1,16 @@
+<div class="card stickyfoot">
+  <div class="stickyfoot-left">
+    {% if back_url %}
+    <a class="btn btn-ghost" href="{{ back_url }}">Voltar</a>
+    {% endif %}
+    {% if cancel_url %}
+    <a class="btn btn-ghost" href="{{ cancel_url }}">Cancelar</a>
+    {% endif %}
+    {% if extra_left %}{{ extra_left|safe }}{% endif %}
+  </div>
+  {% if submit_id %}
+  <button type="submit" class="btn btn-primary" id="{{ submit_id }}"{% if submit_form %} form="{{ submit_form }}"{% endif %}{% if submit_name %} name="{{ submit_name }}"{% endif %}{% if submit_value %} value="{{ submit_value }}"{% endif %}>{{ submit_label|default:"Salvar" }}</button>
+  {% else %}
+  <button type="submit" class="btn btn-primary"{% if submit_form %} form="{{ submit_form }}"{% endif %}{% if submit_name %} name="{{ submit_name }}"{% endif %}{% if submit_value %} value="{{ submit_value }}"{% endif %}>{{ submit_label|default:"Salvar" }}</button>
+  {% endif %}
+</div>

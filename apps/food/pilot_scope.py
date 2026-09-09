@@ -7,7 +7,7 @@ URLs legadas respondem 404 com página explicativa (sem redirect).
 from __future__ import annotations
 
 PILOT_HUB_SECTIONS: frozenset[str] = frozenset(
-    {"orders", "products", "customers", "production"}
+    {"orders", "products", "customers", "production", "marketplace"}
 )
 
 PILOT_ADMIN_MODELS: frozenset[str] = frozenset(
@@ -19,6 +19,7 @@ PILOT_ADMIN_MODELS: frozenset[str] = frozenset(
         "FoodProductionOrder",
         "FoodPayment",
         "FoodPaymentEvent",
+        "FoodMarketplaceConnection",
     }
 )
 

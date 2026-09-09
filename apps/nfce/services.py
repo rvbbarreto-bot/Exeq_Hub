@@ -281,6 +281,7 @@ def _snapshot_for_emit(invoice: NfceInvoice, validation: dict[str, Any]) -> dict
                 "origin": it.origin,
                 "csosn": it.csosn,
                 "icms_cst": it.icms_cst,
+                "gtin": getattr(it.product, "gtin", "") if it.product_id else "",
                 "taxes": it.taxes,
             }
         )

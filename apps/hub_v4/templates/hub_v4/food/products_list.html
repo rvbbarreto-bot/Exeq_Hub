@@ -20,16 +20,36 @@
 {% if page.object_list %}
 <table class="data">
   <thead>
-    <tr><th>SKU</th><th>Nome</th><th>Categoria</th><th class="num">Preço</th><th>Ativo</th></tr>
+    <tr>
+      <th>SKU</th>
+      <th>Nome</th>
+      <th>Fiscal NFC-e</th>
+      <th>Categoria</th>
+      <th class="num">Preço</th>
+      <th>Ativo</th>
+      <th></th>
+    </tr>
   </thead>
   <tbody>
     {% for p in page.object_list %}
     <tr>
       <td class="mono">{{ p.sku }}</td>
       <td>{{ p.name }}</td>
+      <td>
+        {% if p.nfe_product %}
+        <span class="mono">{{ p.nfe_product.code }}</span>
+        {% else %}
+        <span style="color:var(--danger,#c00);">Não mapeado</span>
+        {% endif %}
+      </td>
       <td>{{ p.category|default:"—" }}</td>
       <td class="num">{{ p.price_cents|cents_brl }}</td>
       <td>{% if p.is_active %}Sim{% else %}Não{% endif %}</td>
+      <td>
+        {% if can_write %}
+        <a class="btn btn-ghost btn-sm" href="{% url 'hub-v4-food-product-edit' p.id %}">Editar</a>
+        {% endif %}
+      </td>
     </tr>
     {% endfor %}
   </tbody>

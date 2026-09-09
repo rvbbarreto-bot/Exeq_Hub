@@ -1,27 +1,27 @@
 {% extends "hub_v4/base.html" %}
 
+{% block page_subtitle %}
+<div class="page-subtitle">Documento fiscal · modelo 55</div>
+{% endblock %}
+
 {% block page_actions %}
 <a class="btn btn-ghost" href="{% url 'hub-v4-nfe-list' %}">Voltar</a>
 {% endblock %}
 
 {% block content %}
-<div class="card" style="margin-bottom:12px;">
-  <p class="step-lead" style="margin:0;">
-    Emissão rápida: 1 item fiscal → envio SEFAZ (<code>{{ nfe_http_mode }}</code>).
-    Use produto do catálogo ou preencha item manual (NCM obrigatório).
-  </p>
-</div>
+<form method="post" id="nfe-emit-form" class="form-page">
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
 
-<div class="card">
-  <form method="post">
-    {% csrf_token %}
-    <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
-    <div class="form-grid">
-      <div class="field full">
+  <div class="card section">
+    <h3>Documento</h3>
+    <div class="formgrid">
+      <div class="field fullrow">
         <label for="id_provider_id">Emitente (CNPJ) *</label>
         <select id="id_provider_id" name="provider_id" required>
           {% for p in providers %}
           <option value="{{ p.id }}"
+            data-uf="{% if p.address.uf %}{{ p.address.uf }}{% endif %}"
             {% if form and form.provider_id == p.id|stringformat:"s" %}selected
             {% elif active_provider_id and p.id|stringformat:"s" == active_provider_id %}selected
             {% elif not form and not active_provider_id and forloop.first %}selected{% endif %}>
@@ -32,12 +32,14 @@
           {% endfor %}
         </select>
       </div>
-      <div class="field full">
+      <div class="field fullrow">
         <label for="id_customer_id">Destinatário *</label>
         <select id="id_customer_id" name="customer_id" required>
           <option value="">Selecione…</option>
           {% for c in customers %}
-          <option value="{{ c.id }}" {% if form.customer_id == c.id|stringformat:"s" %}selected{% endif %}>
+          <option value="{{ c.id }}"
+            data-uf="{% if c.address.uf %}{{ c.address.uf }}{% endif %}"
+            {% if form.customer_id == c.id|stringformat:"s" %}selected{% endif %}>
             {{ c.name }} · {{ c.document }}
           </option>
           {% empty %}
@@ -45,22 +47,31 @@
           {% endfor %}
         </select>
       </div>
-      <div class="field">
+      <div class="field field-wide">
         <label for="id_nature_operation">Natureza da operação</label>
         <input id="id_nature_operation" name="nature_operation" maxlength="60"
                value="{% if form %}{{ form.nature_operation }}{% else %}VENDA{% endif %}">
       </div>
+      <div class="field field-narrow">
+        <label for="id_series">Série</label>
+        <input id="id_series" name="series" type="number" min="1" value="{% if form %}{{ form.series|default:1 }}{% else %}1{% endif %}">
+      </div>
+    </div>
+  </div>
+
+  <div class="card section">
+    <h3>Ambiente</h3>
+    <div class="formgrid formgrid--3">
       <div class="field">
         <label for="id_issue_date">Data de emissão</label>
         <input id="id_issue_date" name="issue_date" type="date"
                value="{% if form %}{{ form.issue_date }}{% else %}{{ today }}{% endif %}">
       </div>
       <div class="field">
-        <label for="id_series">Série</label>
-        <input id="id_series" name="series" type="number" min="1" value="{% if form %}{{ form.series|default:1 }}{% else %}1{% endif %}">
-      </div>
-      <div class="field">
-        <label for="id_tp_amb">Ambiente (tpAmb)</label>
+        <label for="id_tp_amb">
+          Ambiente (tpAmb)
+          <abbr class="helpicon" title="Homologação simula o envio à SEFAZ sem valor fiscal real. Use produção quando o cliente estiver pronto para emissão oficial.">?</abbr>
+        </label>
         <select id="id_tp_amb" name="tp_amb">
           <option value="2" {% if default_tp_amb == '2' %}selected{% endif %}>2 · Homologação</option>
           <option value="1" {% if default_tp_amb == '1' %}selected{% endif %}>1 · Produção</option>
@@ -74,67 +85,152 @@
           <option value="2">2 · Isento</option>
         </select>
       </div>
+    </div>
+  </div>
 
-      <div class="field full">
-        <div class="section-label">Item</div>
-      </div>
-      <div class="field full">
-        <label for="id_product_id">Produto do catálogo (opcional)</label>
-        <select id="id_product_id" name="product_id">
-          <option value="">— preencher item manualmente —</option>
-          {% for p in products %}
-          <option value="{{ p.id }}" {% if form.product_id == p.id|stringformat:"s" %}selected{% endif %}>
-            {{ p.code }} · {{ p.description }} · NCM {{ p.ncm }}
-          </option>
-          {% endfor %}
-        </select>
-        {% if not products %}
-        <p class="hint-line">Sem catálogo — use item manual ou <a href="{% url 'hub-v4-nfe-product-new' %}">cadastre um produto</a>.</p>
-        {% else %}
-        <p class="hint-line"><a href="{% url 'hub-v4-nfe-products' %}">Gerenciar produtos</a></p>
-        {% endif %}
-      </div>
-      <div class="field">
-        <label for="id_quantity">Quantidade *</label>
-        <input id="id_quantity" name="quantity" value="{% if form %}{{ form.quantity }}{% else %}1{% endif %}" required>
-      </div>
-      <div class="field">
-        <label for="id_unit_price">Preço unitário (R$)</label>
-        <input id="id_unit_price" name="unit_price" inputmode="decimal"
-               placeholder="do produto se vazio"
-               value="{% if form %}{{ form.unit_price }}{% endif %}">
-      </div>
-      <div class="field">
-        <label for="id_item_code">Código (manual)</label>
-        <input id="id_item_code" name="item_code" maxlength="60"
-               value="{% if form %}{{ form.item_code }}{% else %}ITEM1{% endif %}">
-      </div>
-      <div class="field">
-        <label for="id_item_ncm">NCM (manual, 8 dig.)</label>
-        <input id="id_item_ncm" name="item_ncm" maxlength="8" inputmode="numeric"
-               placeholder="12345678"
-               value="{% if form %}{{ form.item_ncm }}{% endif %}">
-      </div>
-      <div class="field full">
-        <label for="id_item_description">Descrição (manual)</label>
-        <input id="id_item_description" name="item_description" maxlength="120"
-               value="{% if form %}{{ form.item_description }}{% endif %}">
-      </div>
-      <div class="field">
-        <label for="id_csosn">CSOSN</label>
-        <input id="id_csosn" name="csosn" maxlength="3"
-               value="{% if form %}{{ form.csosn }}{% else %}102{% endif %}">
-      </div>
-      <div class="field">
-        <label for="id_cfop">CFOP (opcional)</label>
-        <input id="id_cfop" name="cfop" maxlength="4" placeholder="auto se vazio"
-               value="{% if form %}{{ form.cfop }}{% endif %}">
+  <div class="card section">
+    <h3>Itens</h3>
+    <div class="itemcard">
+      <div class="formgrid">
+        <div class="field fullrow">
+          <label for="id_product_id">Produto do catálogo (opcional)</label>
+          <select id="id_product_id" name="product_id">
+            <option value="">— Preencher manualmente —</option>
+            {% for p in products %}
+            <option value="{{ p.id }}"
+              data-code="{{ p.code|escape }}"
+              data-description="{{ p.description|escape }}"
+              data-ncm="{{ p.ncm }}"
+              data-price-cents="{{ p.unit_price_cents }}"
+              data-csosn="{% if p.csosn %}{{ p.csosn }}{% else %}102{% endif %}"
+              data-cfop-internal="{{ p.cfop_internal|default:'5102' }}"
+              data-cfop-interstate="{{ p.cfop_interstate|default:'6102' }}"
+              data-unit="{{ p.unit|default:'UN' }}"
+              data-origin="{{ p.origin|default:'0' }}"
+              {% if form.product_id == p.id|stringformat:"s" %}selected{% endif %}>
+              {{ p.code }} · {{ p.description }} · NCM {{ p.ncm }}
+            </option>
+            {% endfor %}
+          </select>
+          {% if not products %}
+          <p class="hint-line">Sem catálogo — <a href="{% url 'hub-v4-nfe-product-new' %}">cadastre um produto</a>.</p>
+          {% endif %}
+        </div>
+        <div class="field field-narrow">
+          <label for="id_quantity">Quantidade *</label>
+          <input id="id_quantity" name="quantity" value="{% if form %}{{ form.quantity }}{% else %}1{% endif %}" required>
+        </div>
+        <div class="field">
+          <label for="id_unit_price">Preço unitário (R$)</label>
+          <input id="id_unit_price" name="unit_price" inputmode="decimal" placeholder="0,00"
+                 value="{% if form %}{{ form.unit_price }}{% endif %}">
+        </div>
+        <div class="field fullrow">
+          <label for="id_item_description">Descrição</label>
+          <input id="id_item_description" name="item_description" maxlength="120" placeholder="Descrição do item"
+                 value="{% if form %}{{ form.item_description }}{% endif %}">
+        </div>
+        <div class="field">
+          <label for="id_item_ncm">NCM (8 dígitos) *</label>
+          <input id="id_item_ncm" name="item_ncm" maxlength="8" inputmode="numeric" placeholder="12345678"
+                 value="{% if form %}{{ form.item_ncm }}{% endif %}">
+        </div>
+        <div class="field field-narrow">
+          <label for="id_cfop">
+            CFOP
+            <abbr class="helpicon" title="Calculado automaticamente a partir da UF do emitente e do destinatário.">?</abbr>
+          </label>
+          <input id="id_cfop" name="cfop" maxlength="4" placeholder="Automático"
+                 value="{% if form %}{{ form.cfop }}{% endif %}">
+        </div>
+        <input type="hidden" id="id_item_code" name="item_code" value="{% if form %}{{ form.item_code }}{% else %}ITEM1{% endif %}">
+        <input type="hidden" id="id_csosn" name="csosn" value="{% if form %}{{ form.csosn }}{% else %}102{% endif %}">
       </div>
     </div>
-    <div class="wizard-nav" style="margin-top:20px;">
+  </div>
+
+  <div class="card stickyfoot">
+    <div class="stickyfoot-left">
+      <a class="btn btn-ghost" href="{% url 'hub-v4-nfe-list' %}">Voltar</a>
       <a class="btn btn-ghost" href="{% url 'hub-v4-nfe-list' %}">Cancelar</a>
-      <button type="submit" class="btn btn-primary">Emitir NF-e</button>
     </div>
-  </form>
-</div>
+    <button type="submit" class="btn btn-primary">Emitir NF-e</button>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var productSel = document.getElementById("id_product_id");
+  var providerSel = document.getElementById("id_provider_id");
+  var customerSel = document.getElementById("id_customer_id");
+  if (!productSel) return;
+
+  function selectedUf(selectEl) {
+    if (!selectEl) return "";
+    var opt = selectEl.selectedOptions[0];
+    return opt ? String(opt.getAttribute("data-uf") || "").trim().toUpperCase() : "";
+  }
+
+  function suggestCfop(opt) {
+    if (!opt || !opt.value) return "";
+    var emitUf = selectedUf(providerSel);
+    var destUf = selectedUf(customerSel);
+    var internal = opt.getAttribute("data-cfop-internal") || "5102";
+    var interstate = opt.getAttribute("data-cfop-interstate") || "6102";
+    if (!destUf || !emitUf || emitUf === destUf) return internal;
+    return interstate;
+  }
+
+  function centsToBrlInput(cents) {
+    var n = parseInt(String(cents || "0"), 10);
+    if (!isFinite(n) || n < 0) n = 0;
+    return (n / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function setValue(id, value) {
+    var el = document.getElementById(id);
+    if (el) el.value = value == null ? "" : String(value);
+  }
+
+  function clearCatalogFields() {
+    setValue("id_unit_price", "");
+    setValue("id_item_code", "ITEM1");
+    setValue("id_item_ncm", "");
+    setValue("id_item_description", "");
+    setValue("id_csosn", "102");
+    setValue("id_cfop", "");
+  }
+
+  function fillFromCatalog() {
+    var opt = productSel.selectedOptions[0];
+    if (!opt || !opt.value) {
+      clearCatalogFields();
+      return;
+    }
+    setValue("id_unit_price", centsToBrlInput(opt.getAttribute("data-price-cents")));
+    setValue("id_item_code", opt.getAttribute("data-code") || "");
+    setValue("id_item_ncm", opt.getAttribute("data-ncm") || "");
+    setValue("id_item_description", opt.getAttribute("data-description") || "");
+    setValue("id_csosn", opt.getAttribute("data-csosn") || "102");
+    setValue("id_cfop", suggestCfop(opt));
+  }
+
+  productSel.addEventListener("change", fillFromCatalog);
+  if (providerSel) providerSel.addEventListener("change", function () {
+    if (productSel.value) fillFromCatalog();
+  });
+  if (customerSel) customerSel.addEventListener("change", function () {
+    if (productSel.value) fillFromCatalog();
+  });
+
+  if (productSel.value) {
+    var priceEl = document.getElementById("id_unit_price");
+    var ncmEl = document.getElementById("id_item_ncm");
+    var hasReplay = (priceEl && priceEl.value.trim()) || (ncmEl && ncmEl.value.trim());
+    if (!hasReplay) fillFromCatalog();
+  }
+})();
+</script>
 {% endblock %}

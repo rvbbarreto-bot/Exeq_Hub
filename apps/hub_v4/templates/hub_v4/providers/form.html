@@ -1,5 +1,9 @@
 {% extends "hub_v4/base.html" %}
 
+{% block page_subtitle %}
+<div class="page-subtitle">{% if obj %}Editar empresa{% else %}Cadastro de prestador / emitente{% endif %}</div>
+{% endblock %}
+
 {% block page_actions %}
 <a class="btn btn-ghost" href="{% url 'hub-v4-providers' %}">Voltar</a>
 {% endblock %}
@@ -12,17 +16,17 @@
 </div>
 {% endif %}
 
-<div class="card" data-provider-form data-lookup-url="{% url 'hub-v4-provider-lookup' %}">
-  <div id="lookup-banner" class="lookup-banner info" role="status">
-    Informe um CNPJ válido e consulte a Receita para pré-preencher.
-  </div>
+<form method="post" id="provider-form" class="form-page" data-provider-form data-lookup-url="{% url 'hub-v4-provider-lookup' %}">
+  {% csrf_token %}
+  <input type="hidden" name="data_source" value="{% if form %}{{ form.data_source }}{% elif obj %}{{ obj.data_source }}{% else %}manual{% endif %}">
+  <input type="hidden" name="receita_raw_payload" id="id_receita_raw_payload" value="">
 
-  <form method="post" id="provider-form">
-    {% csrf_token %}
-    <input type="hidden" name="data_source" value="{% if form %}{{ form.data_source }}{% elif obj %}{{ obj.data_source }}{% else %}manual{% endif %}">
-    <input type="hidden" name="receita_raw_payload" id="id_receita_raw_payload" value="">
-
-    <div class="form-grid">
+  <div class="card section">
+    <h3>CNPJ e Receita</h3>
+    <div id="lookup-banner" class="lookup-banner info" role="status">
+      Informe um CNPJ válido e consulte a Receita para pré-preencher.
+    </div>
+    <div class="formgrid">
       <div class="field">
         <label for="id_document">CNPJ *</label>
         <input class="mono" name="document" id="id_document" required maxlength="18"
@@ -30,11 +34,10 @@
                value="{% if form %}{{ form.document }}{% elif obj %}{{ obj.document }}{% endif %}"
                placeholder="00.000.000/0000-00">
       </div>
-      <div class="field" style="display:flex;align-items:flex-end;">
-        <button type="button" class="btn btn-ghost" id="btn-lookup" style="width:100%;">Consultar Receita</button>
+      <div class="field field-action">
+        <button type="button" class="btn btn-ghost" id="btn-lookup">Consultar Receita</button>
       </div>
-
-      <div class="field full">
+      <div class="field fullrow">
         <label for="id_legal_name">Razão social *</label>
         <input name="legal_name" id="id_legal_name" required
                value="{% if form %}{{ form.legal_name }}{% elif obj %}{{ obj.legal_name }}{% endif %}">
@@ -44,6 +47,17 @@
         <input name="trade_name" id="id_trade_name"
                value="{% if form %}{{ form.trade_name }}{% elif obj %}{{ obj.trade_name }}{% endif %}">
       </div>
+      <div class="field">
+        <label for="id_whatsapp">WhatsApp</label>
+        <input name="whatsapp" id="id_whatsapp"
+               value="{% if form %}{{ form.whatsapp }}{% elif obj %}{{ obj.whatsapp }}{% endif %}">
+      </div>
+    </div>
+  </div>
+
+  <div class="card section">
+    <h3>Dados fiscais</h3>
+    <div class="formgrid formgrid--3">
       <div class="field">
         <label for="id_municipal_registration">Inscrição municipal</label>
         <input name="municipal_registration" id="id_municipal_registration"
@@ -74,7 +88,6 @@
           <option value="0" {% if form and form.is_active == '0' %}selected{% elif obj and not obj.is_active %}selected{% endif %}>Não</option>
         </select>
       </div>
-
       <div class="field">
         <label for="id_situacao_cadastral">Situação cadastral</label>
         <input name="situacao_cadastral" id="id_situacao_cadastral"
@@ -85,12 +98,12 @@
         <input type="date" name="data_abertura" id="id_data_abertura"
                value="{% if form %}{{ form.data_abertura }}{% elif obj and obj.data_abertura %}{{ obj.data_abertura|date:'Y-m-d' }}{% endif %}">
       </div>
-      <div class="field full">
+      <div class="field fullrow">
         <label for="id_cnae_principal">CNAE principal</label>
         <input name="cnae_principal" id="id_cnae_principal"
                value="{% if form %}{{ form.cnae_principal }}{% elif obj %}{{ obj.cnae_principal }}{% endif %}">
       </div>
-      <div class="field full">
+      <div class="field fullrow">
         <label for="id_natureza_juridica">Natureza jurídica</label>
         <input name="natureza_juridica" id="id_natureza_juridica"
                value="{% if form %}{{ form.natureza_juridica }}{% elif obj %}{{ obj.natureza_juridica }}{% endif %}">
@@ -99,13 +112,13 @@
         <label for="id_porte">Porte</label>
         <input name="porte" id="id_porte" value="{% if form %}{{ form.porte }}{% elif obj %}{{ obj.porte }}{% endif %}">
       </div>
-      <div class="field">
-        <label for="id_whatsapp">WhatsApp</label>
-        <input name="whatsapp" id="id_whatsapp"
-               value="{% if form %}{{ form.whatsapp }}{% elif obj %}{{ obj.whatsapp }}{% endif %}">
-      </div>
+    </div>
+  </div>
 
-      <div class="field full">
+  <div class="card section">
+    <h3>Endereço</h3>
+    <div class="formgrid formgrid--3">
+      <div class="field fullrow">
         <label for="id_logradouro">Logradouro</label>
         <input name="logradouro" id="id_logradouro"
                value="{% if form %}{{ form.logradouro }}{% elif obj %}{{ obj.address.logradouro }}{% endif %}">
@@ -152,13 +165,11 @@
                value="{% if form %}{{ form.email_receita }}{% elif obj %}{{ obj.address.email }}{% endif %}">
       </div>
     </div>
+  </div>
 
-    <div class="wizard-nav" style="margin-top:20px;">
-      <a class="btn btn-ghost" href="{% url 'hub-v4-providers' %}">Cancelar</a>
-      <button type="submit" class="btn btn-primary">Salvar empresa</button>
-    </div>
-  </form>
-</div>
+  {% url 'hub-v4-providers' as providers_url %}
+  {% include "hub_v4/partials/form_sticky_footer.html" with back_url=providers_url cancel_url=providers_url submit_label="Salvar empresa" %}
+</form>
 
 {% if obj and obj.receita_raw_payload %}
 {{ obj.receita_raw_payload|json_script:"receita-raw-seed" }}

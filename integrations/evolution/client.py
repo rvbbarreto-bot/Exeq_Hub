@@ -118,7 +118,8 @@ class EvolutionHttpGateway:
         number = phone_e164.lstrip("+")
         url = f"{self.base_url}/message/sendMedia/{self.instance}"
         b64 = base64.b64encode(data).decode("ascii")
-        media = f"data:{mime_type};base64,{b64}"
+        # Evolution v2.x: media = base64 puro (data URI retorna 400)
+        media = b64
         with httpx.Client(timeout=self.timeout) as client:
             response = client.post(
                 url,

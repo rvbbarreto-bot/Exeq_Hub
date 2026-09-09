@@ -6,6 +6,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from apps.accounts.permissions import IsTenantWriter
+from apps.das.delivery import enqueue_guia_redelivery
 from apps.das.models import GuiaFiscal
 from apps.das.serializers import GuiaFiscalCreateSerializer, GuiaFiscalSerializer
 from shared.renderers import PDF_DOWNLOAD_RENDERERS
@@ -71,4 +72,31 @@ class GuiaFiscalViewSet(viewsets.ModelViewSet):
             as_attachment=True,
             filename=filename,
             content_type=stored.content_type or "application/pdf",
+        )
+
+    @action(detail=True, methods=["post"], url_path="resend-delivery")
+    def resend_delivery(self, request, pk=None):
+        """ADR-DAS-DELIVERY-001 — reenvio via outbox (202)."""
+        guia = self.get_object()
+        if guia.status != GuiaFiscal.Status.DISPONIVEL:
+            return Response(
+                {"detail": "Reenvio só para guia disponível", "code": "das_not_available"},
+                status=400,
+            )
+        payload = request.data if isinstance(request.data, dict) else {}
+        channels = payload.get("channels") or ["email", "whatsapp"]
+        if not isinstance(channels, list):
+            channels = ["email", "whatsapp"]
+        body = {
+            "force": bool(payload.get("force", True)),
+            "channels": channels,
+        }
+        if payload.get("delivery_email"):
+            body["delivery_email"] = str(payload["delivery_email"]).strip()
+        if payload.get("delivery_phone"):
+            body["delivery_phone"] = str(payload["delivery_phone"]).strip()
+        enqueue_guia_redelivery(tenant=request.tenant, guia=guia, payload=body)
+        return Response(
+            {"detail": "Reenvio enfileirado", "code": "das_redelivery_queued"},
+            status=202,
         )

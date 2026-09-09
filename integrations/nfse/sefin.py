@@ -96,11 +96,15 @@ class SefinNfseProvider:
         client = self._get_client()
         try:
             response = client.consultar_nfse(chave_acesso=ref)
+            result = _map_emit_response(
+                response.status_code, response.data, response.xml_bytes, ref=ref
+            )
+            if result.status == "authorized" and response.status_code in {200, 201}:
+                result = _merge_cancel_event_consult(client, ref=ref, result=result)
+            return result
         finally:
             if self._client is None:
                 client.close()
-
-        return _map_emit_response(response.status_code, response.data, response.xml_bytes, ref=ref)
 
     def cancelar(
         self,
@@ -250,6 +254,41 @@ def _map_emit_response(
     return NfseEmitResult(
         external_ref=chave or ref or "SEFIN-PENDING",
         status="processing",
+        raw=raw,
+    )
+
+
+def _merge_cancel_event_consult(
+    client: SefinHttpClient,
+    *,
+    ref: str,
+    result: NfseEmitResult,
+) -> NfseEmitResult:
+    from integrations.nfse.sefin_status import event_response_indicates_cancelled
+
+    try:
+        evt = client.consultar_evento_nfse(
+            chave_acesso=ref,
+            tipo_evento="e101101",
+            num_seq=1,
+        )
+    except SefinHttpError:
+        return result
+    if not event_response_indicates_cancelled(
+        status_code=evt.status_code,
+        data=evt.data,
+        xml_bytes=evt.xml_bytes,
+    ):
+        return result
+    raw = dict(result.raw or {})
+    raw["status"] = "cancelled"
+    raw["cStat"] = "101"
+    raw["cancel_event"] = evt.data
+    if evt.xml_bytes:
+        raw["cancel_event_xml"] = evt.xml_bytes.decode("utf-8", errors="replace")
+    return NfseEmitResult(
+        external_ref=result.external_ref or ref,
+        status="cancelled",
         raw=raw,
     )
 

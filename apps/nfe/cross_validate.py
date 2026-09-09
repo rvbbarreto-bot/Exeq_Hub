@@ -14,6 +14,13 @@ from apps.fiscal.goods_catalog import (
     validate_ncm,
     validate_unit,
 )
+from apps.fiscal.goods_validate import (
+    CrossValidateContext,
+    effective_cross_validate_mode,
+    tenant_fiscal_profile,
+    validate_fiscal_profile_item,
+    validate_fiscal_profile_product,
+)
 from apps.fiscal.rtc_goods import nfe_rtc_mode, resolve_goods_classification
 from apps.master_data.models import TaxRegime
 
@@ -29,11 +36,12 @@ class CrossValidationResult(TypedDict):
     fiscal_complete: bool
 
 
-def cross_validate_mode() -> str:
-    mode = (getattr(settings, "NFE_CROSS_VALIDATE", "warn") or "warn").strip().lower()
-    if mode not in {"off", "warn", "block"}:
-        return "warn"
-    return mode
+def cross_validate_mode(
+    *,
+    context: CrossValidateContext = "draft",
+    http_emit: bool = False,
+) -> str:
+    return effective_cross_validate_mode(context=context, http_emit=http_emit)
 
 
 def _msg_errors(messages: list[str], *, rule: str, field: str) -> list[dict[str, str]]:
@@ -59,6 +67,9 @@ def validate_product_fields(
     issue_date: date | str | None = None,
     crt: str = "",
     check_catalog: bool | None = None,
+    tenant=None,
+    context: CrossValidateContext = "catalog",
+    http_emit: bool = False,
 ) -> list[str]:
     """Compat — retorna só mensagens de erro bloqueantes (L1–L4 + L5–L8)."""
     result = cross_validate_product(
@@ -79,6 +90,9 @@ def validate_product_fields(
         issue_date=issue_date,
         crt=crt,
         check_catalog=check_catalog,
+        tenant=tenant,
+        context=context,
+        http_emit=http_emit,
     )
     return [e["message"] for e in result["errors"]]
 
@@ -102,11 +116,23 @@ def cross_validate_product(
     issue_date: date | str | None = None,
     crt: str = "",
     check_catalog: bool | None = None,
+    tenant=None,
+    context: CrossValidateContext = "draft",
+    http_emit: bool = False,
 ) -> CrossValidationResult:
     errors: list[dict[str, str]] = []
     warnings: list[dict[str, str]] = []
     strict = catalog_strict() if check_catalog is None else check_catalog
 
+    profile = tenant_fiscal_profile(tenant)
+    errors.extend(
+        validate_fiscal_profile_product(
+            fiscal_profile=profile,
+            cfop_internal=cfop_internal,
+            cfop_interstate=cfop_interstate,
+            csosn=csosn,
+        )
+    )
     ncm_digits = "".join(ch for ch in str(ncm or "") if ch.isdigit())
     if len(ncm_digits) != 8:
         errors.extend(_msg_errors(["NCM deve ter 8 dígitos"], rule="RULE-L1-NCM", field="ncm"))
@@ -224,7 +250,7 @@ def cross_validate_product(
             )
         )
 
-    mode = cross_validate_mode()
+    mode = cross_validate_mode(context=context, http_emit=http_emit)
     if mode == "off":
         return {"ok": True, "errors": [], "warnings": warnings, "fiscal_complete": True}
 
@@ -243,6 +269,7 @@ def cross_validate_product(
         "RULE-IPI-0-CST",
         "RULE-IPI-0-ENQ",
         "RULE-L8-RTC-CRT3",
+        "RULE-PROFILE-ST",
     }
     if mode == "warn":
         kept: list[dict[str, str]] = []
@@ -270,35 +297,57 @@ def cross_validate_invoice_item(
     pis_cst: str,
     cofins_cst: str,
     cest: str = "",
+    csosn: str = "",
     ipi_cst: str = "",
     ip_enq: str = "",
     ipi_rate_bp: int = 0,
     issue_date: date | str | None,
     crt: str,
+    tenant=None,
+    context: CrossValidateContext = "emit",
+    http_emit: bool = False,
 ) -> CrossValidationResult:
-    """Validação L5–L8 por linha de NF-e (emit)."""
-    errors = run_layers_l5_l8(
-        ncm=ncm,
-        cfop=cfop,
-        pis_cst=pis_cst,
-        cofins_cst=cofins_cst,
-        cest=cest,
-        crt=crt,
-        issue_date=issue_date,
-        rtc_mode=nfe_rtc_mode(),
-        classification_status=resolve_goods_classification().get("status"),
-        ipi_rate_bp=ipi_rate_bp,
-        ipi_cst=ipi_cst,
-        ip_enq=ip_enq,
-    )
-    for err in errors:
-        err["field"] = f"items[{line_number}].{err.get('field', 'cfop')}"
-    mode = cross_validate_mode()
+    """Validação L5–L8 por linha de NF-e/NFC-e (emit)."""
+    mode = cross_validate_mode(context=context, http_emit=http_emit)
     if mode == "off":
         return {"ok": True, "errors": [], "warnings": [], "fiscal_complete": True}
+
+    errors = list(
+        validate_fiscal_profile_item(
+            fiscal_profile=tenant_fiscal_profile(tenant),
+            cfop=cfop,
+            csosn=csosn,
+            line_number=line_number,
+        )
+    )
+    errors.extend(
+        run_layers_l5_l8(
+            ncm=ncm,
+            cfop=cfop,
+            pis_cst=pis_cst,
+            cofins_cst=cofins_cst,
+            cest=cest,
+            crt=crt,
+            issue_date=issue_date,
+            rtc_mode=nfe_rtc_mode(),
+            classification_status=resolve_goods_classification().get("status"),
+            ipi_rate_bp=ipi_rate_bp,
+            ipi_cst=ipi_cst,
+            ip_enq=ip_enq,
+        )
+    )
+    for err in errors:
+        if not str(err.get("field") or "").startswith("items["):
+            err["field"] = f"items[{line_number}].{err.get('field', 'cfop')}"
     warnings: list[dict[str, str]] = []
     if mode == "warn":
-        hard = {"RULE-L7-ST-CEST", "RULE-IPI-0-CST", "RULE-IPI-0-ENQ", "RULE-L8-RTC-CRT3"}
+        hard = {
+            "RULE-L7-ST-CEST",
+            "RULE-IPI-0-CST",
+            "RULE-IPI-0-ENQ",
+            "RULE-L8-RTC-CRT3",
+            "RULE-PROFILE-ST",
+        }
         kept: list[dict[str, str]] = []
         for err in errors:
             if err.get("rule") in hard:

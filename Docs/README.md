@@ -14,6 +14,7 @@ Repositório: https://github.com/rvbbarreto-bot/Exeq_Hub
 | NFS-e integração | `Exeq_Hub_NFSe_Emission_Architecture_Reference.md` | **1.1.0** (addendum emissor próprio; Focus histórico) |
 | ADR emissor próprio Nacional | `ADR_NFSE_001_Emissor_Proprio_Nacional.md` | **Aprovado** (PO 2026-07-29 — SEFIN/ADN + DANFSe) |
 | ADR emissor próprio NF-e SEFAZ | `ADR_NFE_001_Emissor_Proprio_SEFAZ.md` | **Aprovado + GO desenvolvimento** (PO 2026-08-05 — SP; stub até IE/SEFAZ) |
+| ADR entrega DAS/DARF ao contador | `ADR_DAS_DELIVERY_001_Entrega_Contador.md` | **Aprovado** (PO 2026-09-08 — e-mail + WhatsApp Evolution + outbox) |
 | LLR NFC-e PDV kickoff | `Exeq_Hub_LLR_NFCE_Emissao_PDV_Kickoff.md` | **0.1.0-draft** (PO 2026-09-04 — CPF/CNPJ, SN, RTC, fases NFCE-0…3) |
 | Plano desenvolvimento emissor próprio | `Exeq_Hub_Plano_Desenvolvimento_Emissor_Proprio_NFSe.md` | **Autorizado PO** (início 2026-07-29 — visão gestão) |
 | DoD segurança NFS-e/SEFIN | `Exeq_Hub_DoD_Seguranca_NFSe_SEFIN.md` | G-SEC P0 aprovado; P1 (pentest escopo pronto) |
@@ -24,6 +25,7 @@ Repositório: https://github.com/rvbbarreto-bot/Exeq_Hub
 | ARD canal WhatsApp + mensageria | `Exeq_Hub_ARD_WhatsApp_NFSe_Mensageria.md` | **0.2.0** — gate Fase 3; item 17 decidido (gateway dual Evolution + Meta) |
 | UX análise nav + responsive | `Exeq_Hub_UX_Analise_Navegacao_Responsive.md` | **0.1.0** — UI foundations; protótipo `frontend/prototypes/ux-foundations-nav-responsive.html` |
 | QA roteiro emissão via WhatsApp | `Exeq_Hub_QA_Roteiro_WhatsApp_NFSe.md` | **0.5.0** — Fases 1–3 + smoke nativo Ricardo + WA-IA stub |
+| QA roteiro entrega DAS + Evolution | `Exeq_Hub_QA_Roteiro_DAS_Delivery_Evolution.md` | **0.1.0** — config Evolution + Hub preferências + casos DAS-D/E/W/O |
 | LLR emissor próprio | `Exeq_Hub_LLR_Emissor_Proprio_NFSe_Nacional.md` | **0.3.0** (RF/EX + NT 008 v1.02) |
 | LLR UI NF-e B2B (sem estoque) | `Exeq_Hub_LLR_NFe_UI_B2B_Sem_Estoque.md` | **0.2.0** — reanálise greenfield + reuso NFS-e; allowed_actions; G-IMPACT |
 | LLR domínio NF-e SEFAZ greenfield | `Exeq_Hub_LLR_NFe_Dominio_SEFAZ_Greenfield.md` | **0.1.0** — FSM, número, snapshot, tax, EX-*, API, gates G-EMIT-NFE |

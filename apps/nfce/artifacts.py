@@ -12,7 +12,7 @@ from shared.storage import get_storage
 
 logger = logging.getLogger(__name__)
 
-DANFCE_LAYOUT_VERSION = "exeq-danfce-0.1"
+DANFCE_LAYOUT_VERSION = "exeq-danfce-1.0"
 
 
 def has_artifact(invoice: NfceInvoice, kind: str) -> bool:
@@ -103,9 +103,9 @@ def ensure_authorized_artifacts(
         logger.exception("nfce_artifact_xml_store_failed invoice=%s", invoice.id)
 
     try:
-        from integrations.sefaz_nfe.danfe_nfce import render_danfce_pdf
+        from integrations.sefaz_nfe.danfe_nfce import render_danfce_for_invoice
 
-        pdf = render_danfce_pdf(data)
+        pdf = render_danfce_for_invoice(invoice, data)
         if pdf and pdf.startswith(b"%PDF"):
             store_artifact(
                 invoice,
@@ -128,9 +128,9 @@ def ensure_cancelled_artifacts(invoice: NfceInvoice) -> None:
     if not data:
         return
     try:
-        from integrations.sefaz_nfe.danfe_nfce import render_danfce_pdf
+        from integrations.sefaz_nfe.danfe_nfce import render_danfce_for_invoice
 
-        pdf = render_danfce_pdf(data, cancelled=True)
+        pdf = render_danfce_for_invoice(invoice, data, cancelled=True)
         if pdf and pdf.startswith(b"%PDF"):
             NfceArtifact.objects.filter(
                 invoice_id=invoice.id, kind=NfceArtifact.Kind.DANFE_PDF

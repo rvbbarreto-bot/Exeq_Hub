@@ -4,8 +4,23 @@ register = template.Library()
 
 
 @register.inclusion_tag("hub_v4/components/kpi_card.html")
-def kpi_card(label, value, hint=""):
-    return {"label": label, "value": value, "hint": hint}
+def kpi_card(label, value, hint="", tone="total"):
+    return {"label": label, "value": value, "hint": hint, "tone": tone}
+
+
+@register.inclusion_tag("hub_v4/components/status_badge.html")
+def import_status_badge(status):
+    s = (status or "").upper()
+    mapping = {
+        "NOVO": ("success", "Novo"),
+        "ATUALIZAÇÃO": ("warning", "Atualização"),
+        "SEM ALTERAÇÃO": ("neutral", "Sem alteração"),
+        "ERRO": ("danger", "Erro"),
+        "NÃO PROCESSADO": ("danger", "Não processado"),
+        "PROCESSADO": ("success", "Processado"),
+    }
+    tone, label = mapping.get(s, ("neutral", status or "—"))
+    return {"tone": tone, "label": label}
 
 
 @register.inclusion_tag("hub_v4/components/status_badge.html")
@@ -28,8 +43,73 @@ def status_badge(status):
         "paid": ("success", "Paga"),
         "overdue": ("danger", "Vencida"),
         "active": ("success", "Ativo"),
+        "inactive": ("neutral", "Inativo"),
+        "accepted": ("success", "Homologado"),
+        "rejected": ("danger", "Rejeitado"),
         "expired": ("danger", "Expirado"),
         "expiring": ("warning", "A expirar"),
+    }
+    tone, label = mapping.get(s, ("neutral", status or "—"))
+    return {"tone": tone, "label": label}
+
+
+@register.inclusion_tag("hub_v4/components/status_badge.html")
+def entrada_manifest_badge(status):
+    s = (status or "").lower()
+    mapping = {
+        "none": ("warning", "Sem manifestação"),
+        "ciencia": ("neutral", "Ciência"),
+        "confirmada": ("success", "Confirmada"),
+        "desconhecida": ("skip", "Desconhecida"),
+        "nao_realizada": ("danger", "Não realizada"),
+    }
+    tone, label = mapping.get(s, ("neutral", status or "—"))
+    return {"tone": tone, "label": label}
+
+
+@register.inclusion_tag("hub_v4/components/status_badge.html")
+def guia_status_badge(status):
+    s = (status or "").upper()
+    mapping = {
+        "PROCESSANDO": ("warning", "Processando"),
+        "DISPONIVEL": ("success", "Disponível"),
+        "PAGO": ("success", "Pago"),
+        "CANCELADO": ("neutral", "Cancelado"),
+        "RETIFICADO": ("warning", "Retificado"),
+        "VENCIDO": ("danger", "Vencido"),
+        "EM_CONTESTACAO": ("warning", "Em contestação"),
+    }
+    tone, label = mapping.get(s, ("neutral", status or "—"))
+    return {"tone": tone, "label": label}
+
+
+@register.inclusion_tag("hub_v4/components/status_badge.html")
+def guia_compliance_badge(status):
+    s = (status or "").lower()
+    mapping = {
+        "pendente": ("warning", "Pendente"),
+        "aprovado": ("success", "Aprovado"),
+        "bloqueado": ("danger", "Bloqueado"),
+        "dispensado": ("neutral", "Dispensado"),
+    }
+    tone, label = mapping.get(s, ("neutral", status or "—"))
+    return {"tone": tone, "label": label}
+
+
+@register.inclusion_tag("hub_v4/components/status_badge.html")
+def delivery_channel_badge(sent):
+    if sent:
+        return {"tone": "success", "label": "Enviado"}
+    return {"tone": "warning", "label": "Pendente"}
+
+
+@register.inclusion_tag("hub_v4/components/status_badge.html")
+def entrada_xml_badge(status):
+    s = (status or "").lower()
+    mapping = {
+        "pending": ("warning", "XML pendente"),
+        "available": ("success", "XML disponível"),
+        "error": ("danger", "Erro XML"),
     }
     tone, label = mapping.get(s, ("neutral", status or "—"))
     return {"tone": tone, "label": label}

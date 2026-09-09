@@ -1,6 +1,16 @@
 {% extends "hub_v4/base.html" %}
 {% load hub_v4_tags %}
 
+{% block page_crumb %}{% endblock %}
+
+{% block page_subtitle %}
+<div class="page-subtitle">Emissão NFS-e · 4 etapas</div>
+{% endblock %}
+
+{% block page_actions %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-nfse-list' %}">Voltar à lista</a>
+{% endblock %}
+
 {% block content %}
 <div
   data-wizard
@@ -11,6 +21,7 @@
   {{ services_data|json_script:"hub-services-data" }}
   {{ profiles_data|json_script:"hub-profiles-data" }}
   {{ emit_coverage_keys|json_script:"hub-emit-coverage" }}
+  {{ nbs_catalog|json_script:"hub-nbs-catalog" }}
   <div class="wizard-steps" role="tablist" aria-label="Etapas da emissão">
     <button type="button" class="step is-active" data-wizard-step aria-current="step">1 · Tomador</button>
     <button type="button" class="step" data-wizard-step>2 · Serviço</button>
@@ -20,7 +31,7 @@
 
   <div class="field-error" id="wizard-step-error" role="alert" hidden></div>
 
-  <form id="form-nfse-wizard" method="post" class="card" novalidate>
+  <form id="form-nfse-wizard" method="post" novalidate>
     {% csrf_token %}
     <input type="hidden" name="confirm_emit" value="0">
     <input type="hidden" name="wizard_action" value="emit" id="wizard_action">
@@ -28,33 +39,35 @@
     <input type="hidden" name="draft_id" value="{{ draft_id }}" id="draft_id">
 
     {% if draft %}
-    <div class="plan-usage-bar" style="margin-bottom:14px;">
-      <span class="chip chip-accent">Rascunho</span>
-      <span style="color:var(--text-muted);">Retome a emissão — alterar campos e salvar de novo ou emitir.</span>
-      <a class="link-muted" href="{% url 'hub-v4-nfse-list' %}?status=draft" style="margin-left:auto;">Ver rascunhos</a>
+    <div class="banner banner-warning" style="margin-bottom:14px;">
+      {% status_badge "draft" %} — retome a emissão, salve de novo ou envie para autorização.
+      <a class="link-muted" href="{% url 'hub-v4-nfse-list' %}?status=draft" style="margin-left:8px;">Ver rascunhos</a>
     </div>
     {% endif %}
 
     {# —— Etapa 1 · Tomador (spec §10) —— #}
     <div class="wizard-pane is-active" data-wizard-pane data-step="0">
-      <p class="step-lead">Informe o documento ou escolha um tomador já cadastrado.</p>
-      <div class="form-grid">
-        <div class="field">
-          <label for="lookup_doc">CPF/CNPJ</label>
-          <input id="lookup_doc" name="lookup_document" inputmode="numeric" autocomplete="off"
-                 placeholder="Somente dígitos" aria-describedby="lookup-help">
+      <div class="card section">
+      <h3>Tomador</h3>
+      <div class="formgrid formgrid--3">
+        <div class="field-lookup-row">
+          <div class="field">
+            <label for="lookup_doc">
+              CPF/CNPJ
+              <abbr class="field-tip" title="CNPJ consulta cadastro/Receita. CPF: preencha manualmente (LGPD).">ⓘ</abbr>
+            </label>
+            <input id="lookup_doc" name="lookup_document" inputmode="numeric" autocomplete="off"
+                   placeholder="Somente dígitos">
+          </div>
+          <div class="field field-action">
+            <button type="button" class="btn btn-ghost" id="btn-lookup-doc">Buscar</button>
+          </div>
         </div>
-        <div class="field" style="display:flex;align-items:flex-end;">
-          <button type="button" class="btn btn-ghost" id="btn-lookup-doc" style="width:100%;">
-            Buscar
-          </button>
-        </div>
-        <div class="field full">
+        <div class="field fullrow">
           <p class="lookup-ok" id="lookup-feedback" hidden>✓ Tomador encontrado</p>
           <p class="field-error" id="lookup-error" hidden></p>
-          <p id="lookup-help" class="hint-line">CNPJ consulta cadastro/Receita. CPF: preencha manualmente (LGPD).</p>
         </div>
-        <div class="field full">
+        <div class="field fullrow">
           <label for="id_customer_id">Tomador cadastrado *</label>
           <select id="id_customer_id" name="customer_id" required data-validate="required">
             <option value="">Selecione…</option>
@@ -78,22 +91,24 @@
           <label for="id_customer_email">E-mail</label>
           <input id="id_customer_email" type="email" readonly class="is-readonly" tabindex="-1" placeholder="—">
         </div>
-        <div class="field full">
+        <div class="field fullrow">
           <label for="id_customer_phone">Telefone</label>
           <input id="id_customer_phone" type="text" readonly class="is-readonly" tabindex="-1" placeholder="—">
         </div>
       </div>
-      <div class="wizard-nav">
-        <span></span>
+      </div>
+      <div class="card stickyfoot">
+        <div class="stickyfoot-left"><span></span></div>
         <button type="button" class="btn btn-primary" data-wizard-next>Continuar</button>
       </div>
     </div>
 
     {# —— Etapa 2 · Serviço —— #}
     <div class="wizard-pane" data-wizard-pane data-step="1">
-      <p class="step-lead">Serviço, competência e valor da nota.</p>
-      <div class="form-grid">
-        <div class="field full">
+      <div class="card section">
+      <h3>Serviço e valor</h3>
+      <div class="formgrid">
+        <div class="field fullrow">
           <label for="id_service_id">Serviço (catálogo) *</label>
           <select id="id_service_id" name="service_id" required data-validate="required"
                   class="field-service-select">
@@ -118,39 +133,31 @@
             ou materialize a lista nacional no Hub.
           </p>
           {% else %}
-          <p class="hint-line">{{ services|length }} serviço(s) disponível(is). <a href="{% url 'hub-v4-service-new' %}">Novo serviço</a></p>
+          <p class="hint-line"><a href="{% url 'hub-v4-service-new' %}">Novo serviço</a></p>
           {% endif %}
         </div>
-        <div class="field full">
+        <div class="field fullrow">
           <label for="id_lc116">Código LC116</label>
           <input id="id_lc116" type="text" readonly class="is-readonly field-lc116"
                  placeholder="Preenchido pelo serviço" title="Código LC 116 do serviço selecionado">
         </div>
-        <div class="field full" data-nbs-picker data-nbs-search-url="{% url 'hub-v4-nbs-search' %}"
-             data-nbs-initial-desc="{{ draft_nbs_desc|default:''|escape }}">
-          <label for="id_nbs_select">Código NBS</label>
-          <input type="hidden" id="id_codigo_nbs" name="codigo_nbs" value="{{ draft_codigo_nbs|default:'' }}">
-          <input type="search" class="nbs-picker-filter" data-nbs-picker-filter
-                 placeholder="Filtrar lista por código ou descrição" autocomplete="off"
-                 aria-label="Filtrar códigos NBS">
-          <select id="id_nbs_select" class="nbs-picker-list" size="8" data-nbs-picker-select
-                  aria-label="Lista NBS nacional">
-            <option value="">Carregando lista NBS…</option>
-          </select>
-          <p class="hint-line">Selecione na lista (Anexo B). Formato exibido: n.nnnn.nn.nn — editável por nota.</p>
-        </div>
-        <div class="field full">
-          <label for="id_service_desc">Descrição do serviço na nota *</label>
+        {% include "hub_v4/partials/nbs_dropdown_select.html" with show_tip=True initial_code=draft_codigo_nbs initial_desc=draft_nbs_desc nbs_catalog_count=nbs_catalog|length %}
+        <div class="field fullrow">
+          <label for="id_service_desc">
+            Descrição do serviço na nota *
+            <abbr class="field-tip" title="Discriminação enviada na NFS-e (xDescServ). Até 1.000 caracteres, sem quebras de linha.">ⓘ</abbr>
+          </label>
           <textarea id="id_service_desc" name="service_description" rows="5" maxlength="1000"
                     class="field-service-desc" required data-validate="required"
-                    placeholder="Discriminação enviada na NFS-e (xDescServ). Ajuste por nota se necessário.">{% if draft_service_desc %}{{ draft_service_desc }}{% endif %}</textarea>
-          <p class="hint-line">Preenchida pelo catálogo; você pode editar nesta emissão (até 1.000 caracteres, sem quebras de linha).</p>
+                    placeholder="Discriminação enviada na NFS-e">{% if draft_service_desc %}{{ draft_service_desc }}{% endif %}</textarea>
         </div>
-        <div class="field full">
-          <label for="id_info_compl">Informações complementares</label>
+        <div class="field fullrow">
+          <label for="id_info_compl">
+            Informações complementares
+            <abbr class="field-tip" title="Opcional — aparece no DANFSe e no XML (xInfComp), até 2.000 caracteres.">ⓘ</abbr>
+          </label>
           <textarea id="id_info_compl" name="informacoes_complementares" rows="4" maxlength="2000"
-                    placeholder="Observações, referências de contrato, dados adicionais (opcional)">{% if draft_info_compl %}{{ draft_info_compl }}{% endif %}</textarea>
-          <p class="hint-line">Opcional — aparece no DANFSe e no XML (xInfComp), até 2.000 caracteres.</p>
+                    placeholder="Observações, referências de contrato (opcional)">{% if draft_info_compl %}{{ draft_info_compl }}{% endif %}</textarea>
         </div>
         <div class="field">
           <label for="id_competence_date">Competência *</label>
@@ -163,17 +170,21 @@
                  value="{{ draft_amount }}" required data-validate="amount">
         </div>
       </div>
-      <div class="wizard-nav">
-        <button type="button" class="btn btn-ghost" data-wizard-prev>Voltar</button>
+      </div>
+      <div class="card stickyfoot">
+        <div class="stickyfoot-left">
+          <button type="button" class="btn btn-ghost" data-wizard-prev>Voltar</button>
+        </div>
         <button type="button" class="btn btn-primary" data-wizard-next>Continuar</button>
       </div>
     </div>
 
     {# —— Etapa 3 · Tributação (condicional) —— #}
     <div class="wizard-pane" data-wizard-pane data-step="2">
-      <p class="step-lead">Campos conforme o perfil fiscal — nunca todos ao mesmo tempo.</p>
-      <div class="form-grid">
-        <div class="field full">
+      <div class="card section">
+      <h3>Tributação</h3>
+      <div class="formgrid formgrid--3">
+        <div class="field fullrow">
           <label for="id_provider_id">Emitir como (empresa / CNPJ) *</label>
           <select id="id_provider_id" name="provider_id" required data-validate="required">
             {% for p in providers %}
@@ -191,10 +202,13 @@
             Cadastre um CNPJ em <a href="{% url 'hub-v4-providers' %}">Empresas</a> antes de emitir.
           </p>
           {% else %}
-          <p class="hint-line">O certificado A1 deve ser do mesmo CNPJ selecionado.</p>
+          <p class="hint-line">
+            <abbr class="field-tip" title="O certificado A1 deve ser do mesmo CNPJ selecionado.">ⓘ</abbr>
+            Certificado A1 do CNPJ emitente.
+          </p>
           {% endif %}
         </div>
-        <div class="field full">
+        <div class="field fullrow">
           <label for="id_fiscal_profile_id">Perfil fiscal</label>
           <select id="id_fiscal_profile_id" name="fiscal_profile_id" data-tax-profile>
             <option value="" data-is-simples="true">Automático (primeiro do tenant)</option>
@@ -219,33 +233,29 @@
           {% endif %}
         </div>
         <div class="field">
-          <label for="id_ibge">IBGE município da prestação *</label>
+          <label for="id_ibge">
+            IBGE município da prestação *
+            <abbr class="field-tip" title="Local da prestação do serviço (7 dígitos). Pode ser diferente da sede do prestador.">ⓘ</abbr>
+          </label>
           <input id="id_ibge" name="ibge_code" maxlength="7" inputmode="numeric"
                  pattern="[0-9]{7}" placeholder="3504107"
                  value="{{ draft_ibge }}"
                  required data-validate="ibge"
-                 list="published-ibge-list"
-                 aria-describedby="ibge-help">
+                 list="published-ibge-list">
           <datalist id="published-ibge-list">
             {% for m in published_ibge %}
             <option value="{{ m.ibge_code }}">{{ m.label }}</option>
             {% endfor %}
           </datalist>
-          <p id="ibge-help" class="hint-line">
-            Local da prestação do serviço (7 dígitos). Pode ser diferente da sede do prestador.
-            {% if published_ibge %}Sugestões da matriz fiscal publicada.{% endif %}
-          </p>
         </div>
       </div>
 
       <div class="tax-panel is-visible" id="tax-panel-simples" data-tax-panel="simples">
         <div class="tax-panel-title">Simples Nacional — ISS</div>
-        <p class="hint-line">Cálculo de ISS é resolvido pelas regras do perfil (não edite alíquota aqui).</p>
       </div>
 
       <div class="tax-panel" id="tax-panel-normal" data-tax-panel="normal" hidden>
         <div class="tax-panel-title">Regime normal — IBS + CBS</div>
-        <p class="hint-line">IBS e CBS entram via motor fiscal/RTC no emit. A UI não reabre cadastro de alíquotas.</p>
       </div>
 
       <div class="tax-panel" id="tax-panel-retencao" data-tax-panel="retencao" hidden>
@@ -255,16 +265,19 @@
           <input id="id_iss_retido_hint" type="text" readonly class="is-readonly" value="">
         </div>
       </div>
-
-      <div class="wizard-nav">
-        <button type="button" class="btn btn-ghost" data-wizard-prev>Voltar</button>
+      </div>
+      <div class="card stickyfoot">
+        <div class="stickyfoot-left">
+          <button type="button" class="btn btn-ghost" data-wizard-prev>Voltar</button>
+        </div>
         <button type="button" class="btn btn-primary" data-wizard-next>Revisar</button>
       </div>
     </div>
 
     {# —— Etapa 4 · Revisão —— #}
     <div class="wizard-pane" data-wizard-pane data-step="3">
-      <div class="section-label" style="margin-top:0;">Revisão</div>
+      <div class="card section">
+      <h3>Revisão</h3>
       <div class="review-grid" id="nfse-review-grid" aria-live="polite">
         <div class="review-item review-item--wide"><span>Tomador</span><strong data-review="tomador">—</strong></div>
         <div class="review-item review-item--wide"><span>Serviço (catálogo)</span><strong data-review="servico">—</strong></div>
@@ -280,12 +293,13 @@
         <div class="review-item"><span>Valor</span><strong data-review="valor">—</strong></div>
         <div class="review-item"><span>Competência</span><strong data-review="competencia">—</strong></div>
       </div>
-      <div class="wizard-nav">
-        <button type="button" class="btn btn-ghost" data-wizard-prev>Voltar</button>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button type="button" class="btn btn-ghost" data-save-draft>
-            Salvar rascunho
-          </button>
+      </div>
+      <div class="card stickyfoot">
+        <div class="stickyfoot-left">
+          <button type="button" class="btn btn-ghost" data-wizard-prev>Voltar</button>
+        </div>
+        <div class="stickyfoot-actions">
+          <button type="button" class="btn btn-ghost" data-save-draft>Salvar rascunho</button>
           <button type="submit" class="btn btn-primary">Emitir NFS-e</button>
         </div>
       </div>

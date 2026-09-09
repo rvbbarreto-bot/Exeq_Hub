@@ -7,6 +7,7 @@ from django.utils import timezone
 
 from apps.accounts.models import DigitalCertificate
 from apps.accounts.plan_limits import provider_usage
+from apps.accounts.tenant_emission import nfse_enabled_for_tenant
 from apps.issuance.models import NfArtifact, NfIssue
 
 
@@ -20,6 +21,7 @@ def _usage_pct(block: dict) -> int | None:
 
 
 def dashboard_context(tenant) -> dict:
+    nfse_on = nfse_enabled_for_tenant(tenant)
     today = timezone.localdate()
     start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
 
@@ -88,18 +90,21 @@ def dashboard_context(tenant) -> dict:
             "url_name": "hub-v4-users",
             "cta": "Usuários",
         },
-        {
-            "key": "nf_month",
-            "label": "NFS-e neste mês",
-            "block": nf_u,
-            "pct": _usage_pct(nf_u),
-            "url_name": "hub-v4-nfse-list",
-            "cta": "NFS-e",
-        },
     ]
+    if nfse_on:
+        usage_rows.append(
+            {
+                "key": "nf_month",
+                "label": "NFS-e neste mês",
+                "block": nf_u,
+                "pct": _usage_pct(nf_u),
+                "url_name": "hub-v4-nfse-list",
+                "cta": "NFS-e",
+            }
+        )
 
     pending_actions = []
-    if rejected:
+    if nfse_on and rejected:
         pending_actions.append(
             {
                 "tone": "danger",
@@ -109,7 +114,7 @@ def dashboard_context(tenant) -> dict:
                 "url_query": "status=rejected",
             }
         )
-    if processing:
+    if nfse_on and processing:
         pending_actions.append(
             {
                 "tone": "warning",
@@ -131,7 +136,7 @@ def dashboard_context(tenant) -> dict:
                 "url_query": "",
             }
         )
-    if artifacts_pending:
+    if nfse_on and artifacts_pending:
         pending_actions.append(
             {
                 "tone": "info",
@@ -161,7 +166,7 @@ def dashboard_context(tenant) -> dict:
                 "url_query": "",
             }
         )
-    if nf_u.get("at_limit"):
+    if nfse_on and nf_u.get("at_limit"):
         pending_actions.append(
             {
                 "tone": "warning",
@@ -175,13 +180,15 @@ def dashboard_context(tenant) -> dict:
     recent = (
         base.select_related("customer", "provider", "service")
         .order_by("-created_at")[:12]
+        if nfse_on
+        else NfIssue.objects.none()
     )
 
     return {
         "kpis": {
-            "nfse_hoje": nfse_hoje,
-            "processing": processing,
-            "rejected": rejected,
+            "nfse_hoje": nfse_hoje if nfse_on else 0,
+            "processing": processing if nfse_on else 0,
+            "rejected": rejected if nfse_on else 0,
             "cert_active": cert_active,
         },
         "usage": usage,
@@ -189,6 +196,7 @@ def dashboard_context(tenant) -> dict:
         "pending_actions": pending_actions,
         "recent_issues": recent,
         "expiring_certs": expiring_soon[:5],
+        "nfse_enabled": nfse_on,
     }
 
 
@@ -310,3 +318,9 @@ def issue_timeline(issue: NfIssue) -> list[dict]:
         }
     )
     return out
+
+
+def hub_nbs_catalog() -> list[dict]:
+    from apps.master_data.nbs_import import list_published_nbs_catalog
+
+    return list_published_nbs_catalog()

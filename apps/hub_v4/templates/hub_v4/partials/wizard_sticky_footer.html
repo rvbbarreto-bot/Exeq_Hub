@@ -1,0 +1,17 @@
+<div class="card stickyfoot">
+  <div class="stickyfoot-left">
+    {% if show_prev %}
+    <button type="button" class="btn btn-ghost" data-wizard-prev>Voltar</button>
+    {% else %}
+    <span></span>
+    {% endif %}
+  </div>
+  <div class="stickyfoot-actions">
+    {% if extra_actions %}{{ extra_actions|safe }}{% endif %}
+    {% if primary_is_submit %}
+    <button type="submit" class="btn btn-primary">{{ primary_label|default:"Continuar" }}</button>
+    {% else %}
+    <button type="button" class="btn btn-primary" data-wizard-next>{{ primary_label|default:"Continuar" }}</button>
+    {% endif %}
+  </div>
+</div>

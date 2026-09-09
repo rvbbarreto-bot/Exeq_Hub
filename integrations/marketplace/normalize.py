@@ -5,6 +5,8 @@ from __future__ import annotations
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from integrations.marketplace.cancel import marketplace_payload_cancelled
+
 
 def _money_to_cents(value) -> int | None:
     if value is None or value == "":
@@ -78,6 +80,23 @@ def normalize_marketplace_order(
     """
     sku_map = sku_map or {}
     provider = (provider or "").strip().lower()
+    cancelled = marketplace_payload_cancelled(raw)
+
+    # Cancel-only (polling evento logístico)
+    ext_id = str(raw.get("external_order_id") or raw.get("id") or raw.get("orderId") or "")
+    if cancelled and ext_id and not raw.get("lines") and not raw.get("items"):
+        return {
+            "provider": provider,
+            "external_order_id": ext_id,
+            "customer_name": (raw.get("customer_name") or "Cliente marketplace").strip(),
+            "customer_phone": _phone_e164(raw.get("customer_phone") or ""),
+            "lines": [],
+            "total_cents": raw.get("total_cents"),
+            "delivery_address": raw.get("delivery_address") or "",
+            "merchant_ref": merchant_ref or raw.get("merchant_ref") or "",
+            "paid": bool(raw.get("paid", True)),
+            "cancelled": True,
+        }
 
     # Canônico
     if raw.get("external_order_id") or (
@@ -87,10 +106,12 @@ def normalize_marketplace_order(
         lines = []
         for row in lines_in:
             sku = (row.get("sku") or "").strip()
-            if row.get("external_code") and sku:
-                pass
-            elif row.get("external_code") and not sku:
-                sku = sku_map.get(str(row["external_code"]), str(row["external_code"]))
+            if not sku:
+                sku = _resolve_sku(row, sku_map)
+            elif row.get("external_code") or row.get("externalCode"):
+                ext = str(row.get("external_code") or row.get("externalCode")).strip()
+                if ext and ext in sku_map:
+                    sku = sku_map[ext]
             lines.append(
                 {
                     "sku": sku,
@@ -111,6 +132,7 @@ def normalize_marketplace_order(
             "delivery_address": raw.get("delivery_address") or "",
             "merchant_ref": merchant_ref or raw.get("merchant_ref") or "",
             "paid": bool(raw.get("paid", True)),
+            "cancelled": cancelled,
         }
 
     # iFood-like / aiqfome-like
@@ -201,6 +223,8 @@ def normalize_marketplace_order(
     if raw.get("paid") is False:
         paid = False
 
+    cancelled = marketplace_payload_cancelled(raw)
+
     return {
         "provider": provider,
         "external_order_id": str(oid),
@@ -211,4 +235,5 @@ def normalize_marketplace_order(
         "delivery_address": address,
         "merchant_ref": str(merchant),
         "paid": paid,
+        "cancelled": cancelled,
     }

@@ -27,6 +27,7 @@ from apps.food.models import (
     FoodRetentionRule,
     FoodSupplier,
 )
+from apps.nfe.models import NfeProduct
 from apps.food.operations import (
     ORDER_TRANSITIONS,
     create_purchase,
@@ -128,8 +129,12 @@ class FoodOrderDetailView(View):
     def _order_qs(self, tenant):
         return (
             FoodOrder.objects.filter(tenant=tenant)
-            .select_related("customer", "charge", "coupon")
-            .prefetch_related("lines", "payments__events")
+            .select_related("customer", "charge", "coupon", "nfce_invoice")
+            .prefetch_related(
+                "lines__product__nfe_product",
+                "payments__events",
+                "fiscal_events",
+            )
         )
 
     def get(self, request: HttpRequest, pk):
@@ -140,6 +145,18 @@ class FoodOrderDetailView(View):
         next_statuses = sorted(ORDER_TRANSITIONS.get(order.status, set()))
         status_labels = dict(FoodOrder.Status.choices)
         panel = payment_panel_context(tenant=tenant, order=order)
+        from apps.food.fiscal.hub_context import food_order_fiscal_panel_context
+        from apps.food.fiscal.observability import serialize_fiscal_event
+
+        fiscal_ctx = food_order_fiscal_panel_context(order)
+        fiscal_events = [
+            serialize_fiscal_event(ev)
+            for ev in sorted(
+                order.fiscal_events.all(),
+                key=lambda e: e.occurred_at,
+                reverse=True,
+            )[:15]
+        ]
         return render(
             request,
             self.template_name,
@@ -151,7 +168,9 @@ class FoodOrderDetailView(View):
                 next_status_choices=[
                     (s, status_labels.get(s, s)) for s in next_statuses
                 ],
+                fiscal_events=fiscal_events,
                 **panel,
+                **fiscal_ctx,
             ),
         )
 
@@ -200,6 +219,63 @@ class FoodOrderDetailView(View):
                 customer.email = email
                 customer.save(update_fields=["email", "updated_at"])
                 messages.success(request, "E-mail do cliente atualizado.")
+            elif action == "fiscal_emit":
+                from apps.food.fiscal.emit import emit_food_orders_batch
+
+                result = emit_food_orders_batch(
+                    tenant=tenant,
+                    order_ids=[str(order.id)],
+                    actor=f"hub:{user.email}",
+                )
+                if result["authorized"]:
+                    messages.success(request, "NFC-e autorizada para o pedido.")
+                elif result["failed"]:
+                    failed = result["results"][0] if result["results"] else {}
+                    messages.error(
+                        request,
+                        failed.get("message")
+                        or failed.get("reason")
+                        or failed.get("code")
+                        or "Falha na emissão NFC-e.",
+                    )
+                else:
+                    messages.info(request, "Emissão não realizada (pedido ignorado ou pulado).")
+            elif action == "fiscal_ignore":
+                from apps.food.fiscal.ignore import ignore_food_order_fiscal
+
+                reason = (request.POST.get("ignore_reason") or "").strip()
+                ignore_food_order_fiscal(
+                    tenant=tenant,
+                    order_id=order.id,
+                    reason=reason,
+                    actor=f"hub:{user.email}",
+                )
+                messages.success(request, "Pedido marcado como ignorado para emissão.")
+            elif action == "fiscal_cancel_nfce":
+                from apps.food.fiscal.nfce_sync import cancel_nfce_for_food_order
+                from apps.nfce.exceptions import (
+                    NfceDisabledError,
+                    NfceInvalidTransitionError,
+                    NfceValidationError,
+                )
+
+                just = (request.POST.get("justificativa") or "").strip()
+                try:
+                    cancel_nfce_for_food_order(
+                        tenant=tenant,
+                        order=order,
+                        justificativa=just,
+                        actor=f"hub:{user.email}",
+                    )
+                    messages.success(request, "NFC-e cancelada; status fiscal atualizado.")
+                except (
+                    FoodError,
+                    NfceDisabledError,
+                    NfceInvalidTransitionError,
+                    NfceValidationError,
+                    ValueError,
+                ) as exc:
+                    messages.error(request, str(exc) or "Falha ao cancelar NFC-e.")
         except FoodPaymentEmailRequiredError as exc:
             messages.error(
                 request,
@@ -292,12 +368,16 @@ class FoodOrderCreateView(View):
         return order
 
 
+def _nfe_product_choices(tenant):
+    return NfeProduct.objects.filter(tenant=tenant, is_active=True).order_by("code")
+
+
 class FoodProductsListView(View):
     def get(self, request: HttpRequest):
         tenant, user, role, redir = _require_food_hub(request)
         if redir:
             return redir
-        qs = FoodProduct.objects.filter(tenant=tenant).order_by("sku")
+        qs = FoodProduct.objects.filter(tenant=tenant).select_related("nfe_product").order_by("sku")
         q = (request.GET.get("q") or "").strip()
         if q:
             qs = qs.filter(Q(name__icontains=q) | Q(sku__icontains=q))
@@ -322,7 +402,7 @@ class FoodProductCreateView(View):
         tenant, user, role, redir = _require_food_writer_hub(request)
         if redir:
             return redir
-        return render(request, self.template_name, self._ctx(role))
+        return render(request, self.template_name, self._ctx(tenant, role))
 
     def post(self, request: HttpRequest):
         tenant, user, role, redir = _require_food_writer_hub(request)
@@ -331,7 +411,7 @@ class FoodProductCreateView(View):
         try:
             price_cents = _parse_money_to_cents(request.POST.get("price") or "0")
             cost_cents = _parse_money_to_cents(request.POST.get("cost") or "0")
-            create_food_product(
+            product = create_food_product(
                 tenant=tenant,
                 sku=(request.POST.get("sku") or "").strip(),
                 name=(request.POST.get("name") or "").strip(),
@@ -341,18 +421,98 @@ class FoodProductCreateView(View):
                 unit=(request.POST.get("unit") or "un").strip() or "un",
                 initial_stock=(request.POST.get("initial_stock") or "0").replace(",", "."),
             )
+            nfe_id = (request.POST.get("nfe_product_id") or "").strip()
+            if nfe_id:
+                from apps.food.fiscal.mapping import set_food_product_nfe_mapping
+
+                set_food_product_nfe_mapping(
+                    tenant=tenant, product=product, nfe_product_id=nfe_id
+                )
         except (FoodError, ValueError) as exc:
             messages.error(request, str(exc) or "Falha ao cadastrar produto.")
             return render(
                 request,
                 self.template_name,
-                {**self._ctx(role), "form": request.POST},
+                {**self._ctx(tenant, role), "form": request.POST},
             )
         messages.success(request, "Produto cadastrado.")
         return redirect("hub-v4-food-products")
 
-    def _ctx(self, role):
-        return _food_ctx(role, food_section="products", page_title="Novo produto Food")
+    def _ctx(self, tenant, role, *, product=None):
+        form = {}
+        if product is not None:
+            form = {
+                "sku": product.sku,
+                "name": product.name,
+                "price": f"{product.price_cents / 100:.2f}".replace(".", ","),
+                "cost": f"{product.cost_cents / 100:.2f}".replace(".", ","),
+                "unit": product.unit,
+                "category": product.category,
+                "nfe_product_id": str(product.nfe_product_id) if product.nfe_product_id else "",
+            }
+        return _food_ctx(
+            role,
+            food_section="products",
+            page_title="Novo produto Food" if product is None else f"Editar {product.sku}",
+            nfe_products=_nfe_product_choices(tenant),
+            product=product,
+            form=form,
+        )
+
+
+class FoodProductEditView(View):
+    template_name = "hub_v4/food/product_form.html"
+
+    def get(self, request: HttpRequest, pk):
+        tenant, user, role, redir = _require_food_writer_hub(request)
+        if redir:
+            return redir
+        product = get_object_or_404(FoodProduct, tenant=tenant, pk=pk)
+        return render(
+            request,
+            self.template_name,
+            FoodProductCreateView()._ctx(tenant, role, product=product),
+        )
+
+    def post(self, request: HttpRequest, pk):
+        tenant, user, role, redir = _require_food_writer_hub(request)
+        if redir:
+            return redir
+        product = get_object_or_404(FoodProduct, tenant=tenant, pk=pk)
+        try:
+            product.name = (request.POST.get("name") or product.name).strip()
+            product.category = (request.POST.get("category") or "").strip()
+            product.unit = (request.POST.get("unit") or product.unit).strip() or "un"
+            product.price_cents = _parse_money_to_cents(request.POST.get("price") or "0")
+            product.cost_cents = _parse_money_to_cents(request.POST.get("cost") or "0")
+            product.save(
+                update_fields=[
+                    "name",
+                    "category",
+                    "unit",
+                    "price_cents",
+                    "cost_cents",
+                    "updated_at",
+                ]
+            )
+            from apps.food.fiscal.mapping import set_food_product_nfe_mapping
+
+            nfe_id = (request.POST.get("nfe_product_id") or "").strip() or None
+            set_food_product_nfe_mapping(
+                tenant=tenant, product=product, nfe_product_id=nfe_id
+            )
+        except (FoodError, ValueError) as exc:
+            messages.error(request, str(exc) or "Falha ao salvar produto.")
+            return render(
+                request,
+                self.template_name,
+                {
+                    **FoodProductCreateView()._ctx(tenant, role, product=product),
+                    "form": request.POST,
+                },
+            )
+        messages.success(request, "Produto atualizado.")
+        return redirect("hub-v4-food-products")
 
 
 class FoodCustomersListView(View):
@@ -838,3 +998,143 @@ class FoodMarketplaceHubView(FoodPilotSectionMixin, View):
         except FoodError as exc:
             messages.error(request, str(exc))
         return redirect("hub-v4-food-marketplace")
+
+
+class FoodIfoodFiscalHubView(FoodPilotSectionMixin, View):
+    """Fila fiscal iFood — emissão supervisionada NFC-e (PO-1/PO-2)."""
+
+    pilot_section = "orders"
+
+    def get(self, request: HttpRequest):
+        tenant, user, role, redir = _require_food_hub(request)
+        if redir:
+            return redir
+        qs = (
+            FoodOrder.objects.filter(tenant=tenant, channel=FoodOrder.Channel.IFOOD)
+            .select_related("customer", "nfce_invoice")
+            .prefetch_related("lines__product__nfe_product")
+            .order_by("-created_at")
+        )
+        fiscal_filter = (request.GET.get("fiscal") or "").strip()
+        mapping_filter = (request.GET.get("mapping") or "").strip()
+        q = (request.GET.get("q") or "").strip()
+        from apps.food.fiscal.hub_filters import filter_ifood_fiscal_orders
+        from apps.food.fiscal.mapping import order_lines_mapping_summary
+
+        qs = filter_ifood_fiscal_orders(
+            qs,
+            fiscal_filter=fiscal_filter,
+            mapping_filter=mapping_filter,
+            q=q,
+        )
+
+        paginator = Paginator(qs, 30)
+        page = paginator.get_page(request.GET.get("page"))
+        order_rows = [
+            (order, order_lines_mapping_summary(order)) for order in page.object_list
+        ]
+        return render(
+            request,
+            "hub_v4/food/ifood_fiscal.html",
+            _food_ctx(
+                role,
+                food_section="orders",
+                page_title="Fiscal iFood",
+                orders=page,
+                order_rows=order_rows,
+                fiscal_filter=fiscal_filter,
+                mapping_filter=mapping_filter,
+                q=q,
+            ),
+        )
+
+    def post(self, request: HttpRequest):
+        tenant, user, role, redir = _require_food_writer_hub(request)
+        if redir:
+            return redir
+        action = (request.POST.get("action") or "emit").strip()
+
+        if action == "ignore":
+            order_id = (request.POST.get("ignore_order_id") or "").strip()
+            reason = (request.POST.get("ignore_reason") or "").strip()
+            if not order_id or not reason:
+                messages.warning(request, "Informe pedido e motivo para ignorar.")
+                return redirect("hub-v4-food-ifood-fiscal")
+            from apps.food.fiscal.ignore import ignore_food_order_fiscal
+
+            try:
+                ignore_food_order_fiscal(
+                    tenant=tenant,
+                    order_id=order_id,
+                    reason=reason,
+                    actor=f"hub:{user.email}",
+                )
+                messages.success(request, "Pedido marcado como ignorado para emissão.")
+            except FoodError as exc:
+                messages.error(request, str(exc))
+            return redirect("hub-v4-food-ifood-fiscal")
+
+        if action == "cancel_nfce":
+            order_id = (request.POST.get("cancel_order_id") or "").strip()
+            just = (request.POST.get("justificativa") or "").strip()
+            if not order_id:
+                messages.warning(request, "Pedido não informado para cancelamento.")
+                return redirect("hub-v4-food-ifood-fiscal")
+            order = get_object_or_404(
+                FoodOrder.objects.select_related("nfce_invoice"),
+                pk=order_id,
+                tenant=tenant,
+                channel=FoodOrder.Channel.IFOOD,
+            )
+            from apps.food.fiscal.nfce_sync import cancel_nfce_for_food_order
+            from apps.nfce.exceptions import (
+                NfceDisabledError,
+                NfceInvalidTransitionError,
+                NfceValidationError,
+            )
+
+            try:
+                cancel_nfce_for_food_order(
+                    tenant=tenant,
+                    order=order,
+                    justificativa=just,
+                    actor=f"hub:{user.email}",
+                )
+                messages.success(request, "NFC-e cancelada; status fiscal atualizado.")
+            except (
+                FoodError,
+                NfceDisabledError,
+                NfceInvalidTransitionError,
+                NfceValidationError,
+                ValueError,
+            ) as exc:
+                messages.error(request, str(exc) or "Falha ao cancelar NFC-e.")
+            return redirect("hub-v4-food-ifood-fiscal")
+
+        order_ids = request.POST.getlist("order_ids")
+        if not order_ids:
+            messages.warning(request, "Selecione ao menos um pedido.")
+            return redirect("hub-v4-food-ifood-fiscal")
+
+        from apps.food.fiscal.emit import emit_food_orders_batch
+
+        result = emit_food_orders_batch(
+            tenant=tenant,
+            order_ids=order_ids,
+            actor=f"hub:{user.email}",
+        )
+        messages.success(
+            request,
+            f"Lote {result['batch_id'][:8]}… — "
+            f"autorizados={result['authorized']} "
+            f"falhas={result['failed']} ignorados={result['skipped']}",
+        )
+        if result["failed"]:
+            failed = [r for r in result["results"] if r.get("status") not in {"authorized", "skipped"}]
+            if failed:
+                messages.warning(
+                    request,
+                    f"Ex.: pedido {failed[0].get('order_id', '')[:8]}… — "
+                    f"{failed[0].get('message') or failed[0].get('reason') or failed[0].get('code')}",
+                )
+        return redirect("hub-v4-food-ifood-fiscal")

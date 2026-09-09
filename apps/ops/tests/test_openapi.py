@@ -20,6 +20,13 @@ REQUIRED_PATHS = (
     "/nf-issue/",
     "/nfe/gate/",
     "/nfe/invoices/",
+    "/nfe/entrada/",
+    "/nfe/entrada/sync/",
+    "/nfe/entrada/distribution/status/",
+    "/nfe/entrada/distribution/config/",
+    "/nfe/entrada/{id}/",
+    "/nfe/entrada/{id}/manifest/",
+    "/nfe/entrada/{id}/xml/",
 )
 
 
@@ -37,6 +44,10 @@ def test_openapi_yaml_loads_with_required_paths():
     assert "Charge" in schemas
     assert "has_boleto_pdf" in schemas["Charge"]["properties"]
     assert "ElectronicProxyCreate" in schemas
+    assert "NfeEntradaDocument" in schemas
+    assert "NfeEntradaManifestRequest" in schemas
+    assert "NfeDistribuicaoStatus" in schemas
+    assert "kpis" in schemas["NfeEntradaListPage"]["properties"]
     sync_path = paths.get("/charges/{id}/sync/") or paths.get("/charges/{id}/sync")
     assert sync_path is not None
     assert "get" not in sync_path

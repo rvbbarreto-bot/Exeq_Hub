@@ -20,7 +20,15 @@ def test_legacy_app_and_cadastros_redirect_to_hub(client):
 
 @pytest.mark.django_db
 def test_ensure_platform_admin_lab_defaults():
-    call_command("ensure_platform_admin")
+    call_command(
+        "ensure_platform_admin",
+        "--email",
+        "admin@local",
+        "--password",
+        "admin",
+        "--name",
+        "admin",
+    )
     User = get_user_model()
     admin = User.objects.get(email="admin@local")
     assert admin.name == "admin"

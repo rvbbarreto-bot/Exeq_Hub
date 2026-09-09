@@ -80,6 +80,10 @@ class FoodProductSerializer(serializers.ModelSerializer):
     min_quantity = serializers.DecimalField(
         max_digits=14, decimal_places=3, required=False, write_only=True, default=0
     )
+    nfe_product_id = serializers.UUIDField(required=False, allow_null=True)
+    nfe_product_code = serializers.CharField(
+        source="nfe_product.code", read_only=True, default=""
+    )
 
     class Meta:
         model = FoodProduct
@@ -92,19 +96,22 @@ class FoodProductSerializer(serializers.ModelSerializer):
             "price_cents",
             "cost_cents",
             "is_active",
+            "nfe_product_id",
+            "nfe_product_code",
             "initial_stock",
             "min_quantity",
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "created_at", "updated_at")
+        read_only_fields = ("id", "created_at", "updated_at", "nfe_product_code")
 
     def create(self, validated_data):
         request = self.context["request"]
         initial = validated_data.pop("initial_stock", None)
         min_qty = validated_data.pop("min_quantity", 0)
+        nfe_product_id = validated_data.pop("nfe_product_id", None)
         try:
-            return create_food_product(
+            product = create_food_product(
                 tenant=request.tenant,
                 sku=validated_data["sku"],
                 name=validated_data["name"],
@@ -115,8 +122,38 @@ class FoodProductSerializer(serializers.ModelSerializer):
                 initial_stock=initial,
                 min_quantity=min_qty or 0,
             )
+            if nfe_product_id is not None:
+                from apps.food.fiscal.mapping import set_food_product_nfe_mapping
+
+                set_food_product_nfe_mapping(
+                    tenant=request.tenant,
+                    product=product,
+                    nfe_product_id=nfe_product_id,
+                )
+                product.refresh_from_db()
+            return product
         except FoodError as exc:
             raise _domain_validation(exc) from exc
+
+    def update(self, instance, validated_data):
+        request = self.context["request"]
+        nfe_product_id = validated_data.pop("nfe_product_id", serializers.empty)
+        for key, value in validated_data.items():
+            setattr(instance, key, value)
+        instance.save()
+        if nfe_product_id is not serializers.empty:
+            from apps.food.fiscal.mapping import set_food_product_nfe_mapping
+
+            try:
+                set_food_product_nfe_mapping(
+                    tenant=request.tenant,
+                    product=instance,
+                    nfe_product_id=nfe_product_id,
+                )
+            except FoodError as exc:
+                raise _domain_validation(exc) from exc
+            instance.refresh_from_db()
+        return instance
 
 
 class FoodOrderLineSerializer(serializers.ModelSerializer):

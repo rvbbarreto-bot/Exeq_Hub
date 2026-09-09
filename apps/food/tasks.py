@@ -39,3 +39,38 @@ def sync_marketplace_orders_task():
             continue
         results.append(sync_marketplace_connection(tenant=tenant, connection_id=cid))
     return results
+
+
+@shared_task(name="food.emit_ifood_batch")
+def emit_food_ifood_batch_task(tenant_id: str, order_ids: list[str], *, actor: str = "celery"):
+    from apps.accounts.models import Tenant
+    from apps.food.fiscal.emit import emit_food_orders_batch
+    from apps.food.models import FoodOrder
+
+    tenant = Tenant.objects.filter(pk=tenant_id).first()
+    if tenant is None:
+        return {"error": "tenant_not_found", "tenant_id": tenant_id}
+
+    scoped = list(
+        FoodOrder.objects.filter(
+            tenant=tenant,
+            pk__in=order_ids,
+            channel=FoodOrder.Channel.IFOOD,
+        ).values_list("pk", flat=True)
+    )
+    rejected = len(order_ids) - len(scoped)
+    result = emit_food_orders_batch(
+        tenant=tenant,
+        order_ids=[str(x) for x in scoped],
+        actor=actor,
+    )
+    if rejected:
+        result["rejected_cross_tenant"] = rejected
+    return result
+
+
+@shared_task(name="food.reconcile_ifood_fiscal")
+def reconcile_food_ifood_fiscal_task(limit: int = 50):
+    from apps.food.fiscal.reconcile import reconcile_stale_food_fiscal_processing
+
+    return reconcile_stale_food_fiscal_processing(limit=limit)

@@ -73,6 +73,7 @@ def _handle(msg: OutboxMessage) -> None:
         "nfe.poll_exhausted": _notify_nfe_poll_exhausted,
         "charge.paid": _notify_charge_paid,
         "guia_fiscal.available": _notify_guia_available,
+        "guia_fiscal.redelivery_requested": _notify_guia_available,
         "appointment.pending": _notify_appointment,
         "appointment.confirmed": _notify_appointment,
         "appointment.cancelled": _notify_appointment,
@@ -275,16 +276,12 @@ def _notify_charge_paid(msg: OutboxMessage) -> None:
 
 
 def _notify_guia_available(msg: OutboxMessage) -> None:
-    phone = _notify_phone(msg.tenant)
-    if not phone:
-        return
-    from apps.channel.services import enqueue_notification
+    from apps.das.delivery import handle_guia_delivery_outbox
 
-    enqueue_notification(
+    handle_guia_delivery_outbox(
         tenant=msg.tenant,
-        phone_e164=phone,
-        event_type=msg.event_type,
-        message_body=f"Guia fiscal disponível: {msg.aggregate_id}",
+        guia_id=msg.aggregate_id,
+        payload=msg.payload if isinstance(msg.payload, dict) else {},
     )
 
 

@@ -20,7 +20,7 @@ from apps.accounts.models import DigitalCertificate, Tenant, TenantRole
 from apps.accounts.services import ensure_system_roles
 from apps.fiscal.models import FiscalProfile, MunicipalTaxRule, TaxRuleCatalog
 from apps.master_data.models import Provider, ServiceCatalogItem, TaxRegime
-from apps.master_data.services import create_provider, create_service
+from apps.accounts.tenant_emission import default_emission_settings
 
 User = get_user_model()
 
@@ -122,7 +122,7 @@ def onboard_nfse_tenant(
             document=digits,
             status=Tenant.Status.ACTIVE,
             focus_layout="nfsen",
-            settings={},
+            settings=default_emission_settings(nfse=True, nfe=False),
         )
         created["tenant"] = True
     else:

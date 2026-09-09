@@ -1,17 +1,22 @@
 {% extends "hub_v4/base.html" %}
 
+{% block page_subtitle %}
+<div class="page-subtitle">{% if obj %}Editar tomador{% else %}Cadastro de cliente / destinatário{% endif %}</div>
+{% endblock %}
+
 {% block page_actions %}
 <a class="btn btn-ghost" href="{% url 'hub-v4-customers' %}">Voltar</a>
 {% endblock %}
 
 {% block content %}
-<div class="card">
-  <form method="post" id="customer-form">
-    {% csrf_token %}
-    <input type="hidden" name="data_source" value="{% if form %}{{ form.data_source }}{% elif obj %}{{ obj.data_source }}{% else %}manual{% endif %}">
-    <input type="hidden" name="receita_raw_payload" value="">
+<form method="post" id="customer-form" class="form-page">
+  {% csrf_token %}
+  <input type="hidden" name="data_source" value="{% if form %}{{ form.data_source }}{% elif obj %}{{ obj.data_source }}{% else %}manual{% endif %}">
+  <input type="hidden" name="receita_raw_payload" value="">
 
-    <div class="form-grid">
+  <div class="card section">
+    <h3>Identificação</h3>
+    <div class="formgrid formgrid--3">
       <div class="field">
         <label for="id_document_type">Tipo *</label>
         <select name="document_type" id="id_document_type" required>
@@ -26,15 +31,10 @@
                value="{% if form %}{{ form.document }}{% elif obj %}{{ obj.document }}{% endif %}"
                placeholder="CPF ou CNPJ">
       </div>
-      <div class="field full">
+      <div class="field fullrow">
         <label for="id_name">Nome *</label>
         <input name="name" id="id_name" required
                value="{% if form %}{{ form.name }}{% elif obj %}{{ obj.name }}{% endif %}">
-      </div>
-      <div class="field">
-        <label for="id_email">E-mail</label>
-        <input type="email" name="email" id="id_email"
-               value="{% if form %}{{ form.email }}{% elif obj %}{{ obj.email }}{% endif %}">
       </div>
       <div class="field">
         <label for="id_is_active">Ativo</label>
@@ -42,6 +42,17 @@
           <option value="1" {% if form and form.is_active != '0' %}selected{% elif not form and not obj %}selected{% elif obj and obj.is_active %}selected{% endif %}>Sim</option>
           <option value="0" {% if form and form.is_active == '0' %}selected{% elif obj and not obj.is_active %}selected{% endif %}>Não</option>
         </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="card section">
+    <h3>Contato</h3>
+    <div class="formgrid formgrid--3">
+      <div class="field">
+        <label for="id_email">E-mail</label>
+        <input type="email" name="email" id="id_email"
+               value="{% if form %}{{ form.email }}{% elif obj %}{{ obj.email }}{% endif %}">
       </div>
       <div class="field">
         <label for="id_whatsapp">WhatsApp</label>
@@ -53,7 +64,13 @@
         <input name="telefone" id="id_telefone"
                value="{% if form %}{{ form.telefone }}{% elif obj %}{{ obj.address.telefone }}{% endif %}">
       </div>
-      <div class="field full">
+    </div>
+  </div>
+
+  <div class="card section">
+    <h3>Endereço</h3>
+    <div class="formgrid formgrid--3">
+      <div class="field fullrow">
         <label for="id_logradouro">Logradouro</label>
         <input name="logradouro" id="id_logradouro"
                value="{% if form %}{{ form.logradouro }}{% elif obj %}{{ obj.address.logradouro }}{% endif %}">
@@ -85,11 +102,9 @@
                value="{% if form %}{{ form.codigo_municipio_ibge }}{% elif obj %}{{ obj.address.codigo_municipio_ibge }}{% endif %}">
       </div>
     </div>
+  </div>
 
-    <div class="wizard-nav" style="margin-top:20px;">
-      <a class="btn btn-ghost" href="{% url 'hub-v4-customers' %}">Cancelar</a>
-      <button type="submit" class="btn btn-primary">Salvar tomador</button>
-    </div>
-  </form>
-</div>
+  {% url 'hub-v4-customers' as customers_url %}
+  {% include "hub_v4/partials/form_sticky_footer.html" with back_url=customers_url cancel_url=customers_url submit_label="Salvar tomador" %}
+</form>
 {% endblock %}

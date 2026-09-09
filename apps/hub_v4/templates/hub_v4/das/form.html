@@ -1,16 +1,22 @@
 {% extends "hub_v4/base.html" %}
 
+{% block page_subtitle %}
+<div class="page-subtitle">DAS ou DARF · competência e prestador</div>
+{% endblock %}
+
 {% block page_actions %}
 <a class="btn btn-ghost" href="{% url 'hub-v4-das' %}">Voltar</a>
 {% endblock %}
 
 {% block content %}
-<div class="card">
-  <form method="post">
-    {% csrf_token %}
-    <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
-    <div class="form-grid">
-      <div class="field full">
+<form method="post" id="das-emit-form" class="form-page">
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+
+  <div class="card section">
+    <h3>Prestador</h3>
+    <div class="formgrid">
+      <div class="field fullrow">
         <label for="id_provider_id">Prestador (CNPJ) *</label>
         <select id="id_provider_id" name="provider_id" required>
           {% for p in providers %}
@@ -26,6 +32,12 @@
         </select>
         <p class="hint-line">Certificado A1 do mesmo CNPJ é obrigatório para captura real.</p>
       </div>
+    </div>
+  </div>
+
+  <div class="card section">
+    <h3>Guia</h3>
+    <div class="formgrid formgrid--3">
       <div class="field">
         <label for="id_tipo_guia">Tipo *</label>
         <select id="id_tipo_guia" name="tipo_guia" required>
@@ -47,10 +59,9 @@
         <input id="id_versao_atual" name="versao_atual" type="number" min="1" value="{% if form %}{{ form.versao_atual|default:'1' }}{% else %}1{% endif %}">
       </div>
     </div>
-    <div class="wizard-nav" style="margin-top:20px;">
-      <a class="btn btn-ghost" href="{% url 'hub-v4-das' %}">Cancelar</a>
-      <button type="submit" class="btn btn-primary">Emitir guia</button>
-    </div>
-  </form>
-</div>
+  </div>
+
+  {% url 'hub-v4-das' as das_url %}
+  {% include "hub_v4/partials/form_sticky_footer.html" with back_url=das_url cancel_url=das_url submit_label="Emitir guia" %}
+</form>
 {% endblock %}

@@ -1,14 +1,21 @@
 {% extends "hub_v4/base.html" %}
 
+{% block page_subtitle %}
+<div class="page-subtitle">{% if obj %}Editar produto{% else %}Cadastro de item do catálogo NF-e{% endif %}</div>
+{% endblock %}
+
 {% block page_actions %}
 <a class="btn btn-ghost" href="{% url 'hub-v4-nfe-products' %}">Voltar</a>
+<a class="btn btn-ghost" href="{% url 'hub-v4-nfe-product-import' %}">Importar produtos</a>
 {% endblock %}
 
 {% block content %}
-<div class="card">
-  <form method="post">
-    {% csrf_token %}
-    <div class="form-grid">
+<form method="post" id="nfe-product-form" class="form-page">
+  {% csrf_token %}
+
+  <div class="card section">
+    <h3>Identificação</h3>
+    <div class="formgrid formgrid--3">
       <div class="field">
         <label for="id_code">Código *</label>
         <input class="mono" id="id_code" name="code" required maxlength="60"
@@ -21,16 +28,42 @@
                value="{% if form %}{{ form.ncm }}{% elif obj %}{{ obj.ncm }}{% endif %}"
                placeholder="12345678">
       </div>
-      <div class="field full">
+      <div class="field">
+        <label for="id_gtin">
+          GTIN/EAN
+          <abbr class="helpicon" title="8, 12, 13 ou 14 dígitos. Deixe em branco se não houver código de barras (SEM GTIN no XML).">?</abbr>
+        </label>
+        <input class="mono" id="id_gtin" name="gtin" maxlength="14" inputmode="numeric"
+               value="{% if form %}{{ form.gtin }}{% elif obj %}{{ obj.gtin }}{% endif %}"
+               placeholder="Opcional">
+      </div>
+      <div class="field fullrow">
         <label for="id_description">Descrição *</label>
         <input id="id_description" name="description" required maxlength="120"
                value="{% if form %}{{ form.description }}{% elif obj %}{{ obj.description }}{% endif %}">
       </div>
+      <div class="field field-narrow">
+        <label for="id_is_active">
+          Ativo
+          <abbr class="helpicon" title="Desativar remove o item do seletor de emissão. Notas já emitidas não são afetadas.">?</abbr>
+        </label>
+        <select id="id_is_active" name="is_active">
+          <option value="1" {% if not obj or obj.is_active %}selected{% elif form and form.is_active != '0' %}selected{% endif %}>Sim</option>
+          <option value="0" {% if obj and not obj.is_active %}selected{% elif form and form.is_active == '0' %}selected{% endif %}>Não</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="card section">
+    <h3>Preço e unidade</h3>
+    <div class="formgrid">
       <div class="field">
         <label for="id_unit_price">Preço unitário (R$)</label>
         <input id="id_unit_price" name="unit_price" inputmode="decimal"
+               data-brl-currency
                value="{% if form %}{{ form.unit_price }}{% else %}{{ unit_price_display }}{% endif %}"
-               placeholder="0,00">
+               placeholder="0,00" autocomplete="off">
       </div>
       <div class="field">
         <label for="id_unit">Unidade</label>
@@ -45,9 +78,18 @@
           {% endfor %}
         </select>
       </div>
-      <div class="field">
-        <label for="id_origin">Origem (0–8)</label>
-        <input id="id_origin" name="origin" maxlength="1"
+    </div>
+  </div>
+
+  <div class="card section">
+    <h3>Fiscal (NF-e)</h3>
+    <div class="formgrid formgrid--3">
+      <div class="field field-narrow">
+        <label for="id_origin">
+          Origem (0–8)
+          <abbr class="helpicon" title="Código de origem da mercadoria (XML orig): 0 = nacional; 1–8 = estrangeira ou nacional com conteúdo importado.">?</abbr>
+        </label>
+        <input id="id_origin" name="origin" maxlength="1" inputmode="numeric"
                value="{% if form %}{{ form.origin }}{% elif obj %}{{ obj.origin }}{% else %}0{% endif %}">
       </div>
       <div class="field">
@@ -76,12 +118,18 @@
           {% endfor %}
         </select>
       </div>
-      <div class="field">
+      <div class="field field-narrow">
         <label for="id_csosn">CSOSN (Simples)</label>
         <input class="mono" id="id_csosn" name="csosn" maxlength="3"
                value="{% if form %}{{ form.csosn }}{% elif obj %}{{ obj.csosn }}{% else %}102{% endif %}">
       </div>
-      <div class="field">
+    </div>
+  </div>
+
+  <div class="card section">
+    <h3>Tributação avançada (opcional)</h3>
+    <div class="formgrid formgrid--3">
+      <div class="field field-narrow">
         <label for="id_icms_cst">CST ICMS</label>
         <input class="mono" id="id_icms_cst" name="icms_cst" maxlength="3"
                value="{% if form %}{{ form.icms_cst }}{% elif obj %}{{ obj.icms_cst }}{% endif %}">
@@ -92,7 +140,7 @@
                value="{% if form %}{{ form.icms_rate }}{% else %}{{ icms_rate_display }}{% endif %}"
                placeholder="0">
       </div>
-      <div class="field">
+      <div class="field field-narrow">
         <label for="id_pis_cst">CST PIS</label>
         <input class="mono" id="id_pis_cst" name="pis_cst" maxlength="2"
                value="{% if form %}{{ form.pis_cst }}{% elif obj %}{{ obj.pis_cst }}{% else %}07{% endif %}">
@@ -102,7 +150,7 @@
         <input id="id_pis_rate" name="pis_rate" inputmode="decimal"
                value="{% if form %}{{ form.pis_rate }}{% else %}{{ pis_rate_display }}{% endif %}">
       </div>
-      <div class="field">
+      <div class="field field-narrow">
         <label for="id_cofins_cst">CST COFINS</label>
         <input class="mono" id="id_cofins_cst" name="cofins_cst" maxlength="2"
                value="{% if form %}{{ form.cofins_cst }}{% elif obj %}{{ obj.cofins_cst }}{% else %}07{% endif %}">
@@ -112,21 +160,10 @@
         <input id="id_cofins_rate" name="cofins_rate" inputmode="decimal"
                value="{% if form %}{{ form.cofins_rate }}{% else %}{{ cofins_rate_display }}{% endif %}">
       </div>
-      <div class="field">
-        <label for="id_is_active">Ativo</label>
-        <select id="id_is_active" name="is_active">
-          <option value="1" {% if not obj or obj.is_active %}selected{% elif form and form.is_active != '0' %}selected{% endif %}>Sim</option>
-          <option value="0" {% if obj and not obj.is_active %}selected{% elif form and form.is_active == '0' %}selected{% endif %}>Não</option>
-        </select>
-      </div>
     </div>
-    <p class="hint-line" style="margin-top:12px;">
-      Desativar remove o item do seletor de emissão; notas já emitidas não são afetadas.
-    </p>
-    <div class="wizard-nav" style="margin-top:20px;">
-      <a class="btn btn-ghost" href="{% url 'hub-v4-nfe-products' %}">Cancelar</a>
-      <button type="submit" class="btn btn-primary">Salvar produto</button>
-    </div>
-  </form>
-</div>
+  </div>
+
+  {% url 'hub-v4-nfe-products' as products_url %}
+  {% include "hub_v4/partials/form_sticky_footer.html" with back_url=products_url cancel_url=products_url submit_label="Salvar produto" %}
+</form>
 {% endblock %}

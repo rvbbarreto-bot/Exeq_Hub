@@ -1,0 +1,376 @@
+# Fragmento OpenAPI NF-e de Entrada — merge em openapi-v4 via apps.ops.openapi_views
+# ADR-NFE-ENTRADA-001 · Captura Fiscal (distNSU + manifestação destinatário)
+openapi: 3.0.3
+info:
+  title: EXEQ Hub NF-e Entrada
+  version: 1.0.0-draft
+tags:
+  - name: nfe_entrada
+    description: |
+      Captura fiscal NF-e de entrada (NFeDistribuicaoDFe + manifestação 2102xx).
+      Feature flags: NFE_ENTRADA_ENABLED + tenant.settings.nfe_entrada_enabled.
+paths:
+  /nfe/entrada/:
+    get:
+      tags: [nfe_entrada]
+      summary: Lista documentos recebidos via distNSU
+      description: |
+        Filtros por emitente/chave, manifestação, status XML, provider e período.
+        Resposta paginada (HubPageNumberPagination) com KPIs agregados no mesmo payload.
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string }
+          description: Busca livre (emitente, CNPJ, chave, número)
+        - in: query
+          name: manifest_status
+          schema:
+            type: string
+            enum: [all, none, ciencia, confirmada, desconhecida, nao_realizada]
+        - in: query
+          name: xml_status
+          schema:
+            type: string
+            enum: [all, pending, available, error]
+        - in: query
+          name: provider_id
+          schema: { type: string, format: uuid }
+        - in: query
+          name: days
+          schema:
+            type: integer
+            description: "Janela em issue_date; 0 = sem limite; default 30 se apply_default_period"
+        - in: query
+          name: date_from
+          schema: { type: string, format: date }
+        - in: query
+          name: date_to
+          schema: { type: string, format: date }
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1 }
+        - in: query
+          name: page_size
+          schema: { type: integer, minimum: 1, maximum: 100 }
+      responses:
+        "200":
+          description: Página + KPIs
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NfeEntradaListPage" }
+        "403":
+          description: NF-e de entrada desabilitada (global ou tenant)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NfeEntradaError" }
+  /nfe/entrada/sync/:
+    post:
+      tags: [nfe_entrada]
+      summary: Dispara consulta distNSU (async Celery)
+      description: |
+        Enfileira `nfe.distribuicao_sync` para o provider informado ou o primeiro ativo.
+        Com CELERY_TASK_ALWAYS_EAGER executa inline.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NfeEntradaSyncRequest" }
+      responses:
+        "202":
+          description: Sync enfileirado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NfeEntradaSyncAccepted" }
+        "400":
+          description: Sem prestador ativo
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NfeEntradaError" }
+        "403":
+          description: Desabilitado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NfeEntradaError" }
+  /nfe/entrada/distribution/status/:
+    get:
+      tags: [nfe_entrada]
+      summary: Status do cursor NSU (ultNSU, bloqueio 656, último cStat)
+      parameters:
+        - in: query
+          name: provider_id
+          schema: { type: string, format: uuid }
+          description: Default — primeiro provider ativo
+      responses:
+        "200":
+          description: Cursor (ou `{cursors:[]}` se sem provider)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: "#/components/schemas/NfeDistribuicaoStatus" }
+                  - type: object
+                    properties:
+                      cursors:
+                        type: array
+                        items: { $ref: "#/components/schemas/NfeDistribuicaoStatus" }
+        "403":
+          description: Desabilitado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NfeEntradaError" }
+  /nfe/entrada/distribution/config/:
+    get:
+      tags: [nfe_entrada]
+      summary: Config distribuição (alias de status por provider)
+      parameters:
+        - in: query
+          name: provider_id
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Cursor + flags automáticas
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NfeDistribuicaoStatus" }
+        "400":
+          description: Sem prestador
+        "403":
+          description: Desabilitado
+    put:
+      tags: [nfe_entrada]
+      summary: Atualiza consulta automática (Beat) e intervalo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NfeDistribuicaoConfigPut" }
+      responses:
+        "200":
+          description: Cursor atualizado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NfeDistribuicaoStatus" }
+        "403":
+          description: Desabilitado
+  /nfe/entrada/{id}/:
+    get:
+      tags: [nfe_entrada]
+      summary: Detalhe do documento + histórico de manifestações
+      parameters:
+        - $ref: "#/components/parameters/NfeEntradaId"
+      responses:
+        "200":
+          description: Documento
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NfeEntradaDocumentDetail" }
+        "404":
+          description: Não encontrado
+        "403":
+          description: Desabilitado
+  /nfe/entrada/{id}/manifest/:
+    post:
+      tags: [nfe_entrada]
+      summary: Envia manifestação do destinatário (210210–210240)
+      description: |
+        Confirmação (210200), desconhecimento (210220) e operação não realizada (210240)
+        exigem `confirmed: true`. 210240 exige `justificativa` (≥15 chars no builder SEFAZ).
+      parameters:
+        - $ref: "#/components/parameters/NfeEntradaId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NfeEntradaManifestRequest" }
+      responses:
+        "201":
+          description: Manifestação homologada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NfeEntradaManifestResult" }
+        "200":
+          description: Idempotente (accepted pré-existente)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NfeEntradaManifestResult" }
+        "400":
+          description: Validação ou rejeição SEFAZ
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NfeEntradaError" }
+        "403":
+          description: Desabilitado
+  /nfe/entrada/{id}/xml/:
+    get:
+      tags: [nfe_entrada]
+      summary: Download XML armazenado (procNFe ou resNFe completo)
+      parameters:
+        - $ref: "#/components/parameters/NfeEntradaId"
+      responses:
+        "200":
+          description: application/xml
+          headers:
+            X-Checksum-SHA256:
+              schema: { type: string }
+          content:
+            application/xml:
+              schema: { type: string, format: binary }
+        "404":
+          description: XML indisponível
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NfeEntradaError" }
+        "403":
+          description: Desabilitado
+components:
+  parameters:
+    NfeEntradaId:
+      in: path
+      name: id
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    NfeEntradaError:
+      type: object
+      properties:
+        detail: { type: string }
+        code:
+          type: string
+          description: "nfe_entrada_disabled | nfe_entrada_manifestation | …"
+    NfeEntradaKpis:
+      type: object
+      properties:
+        total: { type: integer }
+        xml_pending: { type: integer }
+        manifest_pending: { type: integer }
+        xml_available: { type: integer }
+    NfeEntradaListPage:
+      type: object
+      description: Paginação DRF + kpis no root
+      properties:
+        count: { type: integer }
+        next: { type: string, format: uri, nullable: true }
+        previous: { type: string, format: uri, nullable: true }
+        results:
+          type: array
+          items: { $ref: "#/components/schemas/NfeEntradaDocument" }
+        kpis: { $ref: "#/components/schemas/NfeEntradaKpis" }
+    NfeEntradaDocument:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        provider: { type: string, format: uuid }
+        provider_name: { type: string }
+        nsu: { type: string }
+        schema_type:
+          type: string
+          enum: [resNFe, procNFe, resEvento, procEventoNFe, other]
+        access_key: { type: string, maxLength: 44 }
+        issuer_cnpj: { type: string }
+        issuer_name: { type: string }
+        recipient_cnpj: { type: string }
+        number: { type: integer, nullable: true }
+        series: { type: integer, nullable: true }
+        issue_date: { type: string, format: date, nullable: true }
+        total_cents: { type: integer, nullable: true }
+        nfe_status: { type: string }
+        xml_status:
+          type: string
+          enum: [pending, available, error]
+        manifest_status:
+          type: string
+          enum: [none, ciencia, confirmada, desconhecida, nao_realizada]
+        has_xml: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    NfeEntradaDocumentDetail:
+      allOf:
+        - { $ref: "#/components/schemas/NfeEntradaDocument" }
+        - type: object
+          properties:
+            xml_hash: { type: string }
+            raw_metadata: { type: object, additionalProperties: true }
+            manifestations:
+              type: array
+              items: { $ref: "#/components/schemas/NfeEntradaManifest" }
+    NfeEntradaManifest:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        tp_evento:
+          type: string
+          enum: ["210210", "210200", "210220", "210240"]
+        n_seq: { type: integer }
+        protocol: { type: string }
+        c_stat: { type: string }
+        x_motivo: { type: string }
+        status:
+          type: string
+          enum: [pending, accepted, rejected]
+        actor_user: { type: string, format: uuid, nullable: true }
+        correlation_id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+    NfeEntradaSyncRequest:
+      type: object
+      properties:
+        provider_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Opcional; default primeiro provider ativo
+    NfeEntradaSyncAccepted:
+      type: object
+      properties:
+        task_id: { type: string }
+        provider_id: { type: string, format: uuid }
+        message: { type: string }
+    NfeEntradaManifestRequest:
+      type: object
+      required: [tp_evento]
+      properties:
+        tp_evento:
+          type: string
+          enum: ["210210", "210200", "210220", "210240"]
+        confirmed:
+          type: boolean
+          default: false
+          description: Obrigatório true para 210200, 210220, 210240
+        justificativa:
+          type: string
+          maxLength: 255
+          description: Obrigatória para 210240
+    NfeEntradaManifestResult:
+      type: object
+      properties:
+        success: { type: boolean }
+        idempotent: { type: boolean }
+        c_stat: { type: string }
+        protocol: { type: string }
+        manifestation_id: { type: string, format: uuid }
+        manifest_status:
+          type: string
+          enum: [none, ciencia, confirmada, desconhecida, nao_realizada]
+    NfeDistribuicaoStatus:
+      type: object
+      properties:
+        provider: { type: string, format: uuid }
+        provider_name: { type: string }
+        cnpj: { type: string }
+        ult_nsu: { type: string }
+        max_nsu: { type: string }
+        last_query_at: { type: string, format: date-time, nullable: true }
+        last_c_stat: { type: string }
+        last_x_motivo: { type: string }
+        blocked_until: { type: string, format: date-time, nullable: true }
+        blocked: { type: boolean }
+        automatic_enabled: { type: boolean }
+        interval_seconds: { type: integer, minimum: 300, maximum: 86400 }
+        tp_amb:
+          type: string
+          enum: ["1", "2"]
+    NfeDistribuicaoConfigPut:
+      type: object
+      required: [provider_id]
+      properties:
+        provider_id: { type: string, format: uuid }
+        automatic_enabled: { type: boolean }
+        interval_seconds: { type: integer, minimum: 300, maximum: 86400 }

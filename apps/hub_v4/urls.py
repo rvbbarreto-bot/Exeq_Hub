@@ -1,7 +1,7 @@
 from django.urls import path
 
 from apps.food import hub_views as food_hub
-from apps.hub_v4 import views
+from apps.hub_v4 import nfe_entrada_views, views
 
 urlpatterns = [
     path("login/", views.HubLoginView.as_view(), name="hub-v4-login"),
@@ -133,6 +133,11 @@ urlpatterns = [
         views.DasDetailView.as_view(),
         name="hub-v4-das-detail",
     ),
+    path(
+        "das/<uuid:pk>/pdf/",
+        views.DasPdfDownloadView.as_view(),
+        name="hub-v4-das-pdf",
+    ),
     path("clientes/", views.CustomersListView.as_view(), name="hub-v4-customers"),
     path("clientes/novo/", views.CustomerFormView.as_view(), name="hub-v4-customer-new"),
     path(
@@ -241,6 +246,66 @@ urlpatterns = [
         "nfe/produtos/<uuid:pk>/",
         views.NfeProductFormView.as_view(),
         name="hub-v4-nfe-product-edit",
+    ),
+    path(
+        "nfe/produtos/importar/modelo/",
+        views.NfeProductImportTemplateView.as_view(),
+        name="hub-v4-nfe-product-import-template",
+    ),
+    path(
+        "nfe/produtos/importar/",
+        views.NfeProductImportView.as_view(),
+        name="hub-v4-nfe-product-import",
+    ),
+    path(
+        "nfe/produtos/importar/preview/<str:token>/",
+        views.NfeProductImportPreviewView.as_view(),
+        name="hub-v4-nfe-product-import-preview",
+    ),
+    path(
+        "nfe/produtos/importar/confirmar/<str:token>/",
+        views.NfeProductImportConfirmView.as_view(),
+        name="hub-v4-nfe-product-import-confirm",
+    ),
+    path(
+        "nfe/produtos/importar/resultado/<str:token>/",
+        views.NfeProductImportResultView.as_view(),
+        name="hub-v4-nfe-product-import-result",
+    ),
+    path(
+        "nfe/produtos/importar/relatorio/<str:token>/",
+        views.NfeProductImportReportView.as_view(),
+        name="hub-v4-nfe-product-import-report",
+    ),
+    path(
+        "nfe/entrada/",
+        nfe_entrada_views.NfeEntradaListView.as_view(),
+        name="hub-v4-nfe-entrada-list",
+    ),
+    path(
+        "nfe/entrada/config/",
+        nfe_entrada_views.NfeEntradaConfigView.as_view(),
+        name="hub-v4-nfe-entrada-config",
+    ),
+    path(
+        "nfe/entrada/sync/",
+        nfe_entrada_views.nfe_entrada_sync,
+        name="hub-v4-nfe-entrada-sync",
+    ),
+    path(
+        "nfe/entrada/<uuid:pk>/",
+        nfe_entrada_views.NfeEntradaDetailView.as_view(),
+        name="hub-v4-nfe-entrada-detail",
+    ),
+    path(
+        "nfe/entrada/<uuid:pk>/manifestar/",
+        nfe_entrada_views.nfe_entrada_manifest,
+        name="hub-v4-nfe-entrada-manifest",
+    ),
+    path(
+        "nfe/entrada/<uuid:pk>/xml/",
+        nfe_entrada_views.nfe_entrada_xml_download,
+        name="hub-v4-nfe-entrada-xml",
     ),
     path("nfce/", views.NfceListView.as_view(), name="hub-v4-nfce-list"),
     path("nfce/pdv/", views.NfcePdvView.as_view(), name="hub-v4-nfce-pdv"),

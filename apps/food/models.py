@@ -71,6 +71,14 @@ class FoodProduct(TenantOwnedModel):
     price_cents = models.BigIntegerField(default=0, verbose_name="Preço (centavos)")
     cost_cents = models.BigIntegerField(default=0, verbose_name="Custo (centavos)")
     is_active = models.BooleanField(default=True, verbose_name="Ativo")
+    nfe_product = models.ForeignKey(
+        "nfe.NfeProduct",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="food_products",
+        verbose_name="Produto fiscal (NFC-e)",
+    )
 
     class Meta:
         verbose_name = "Produto Food"
@@ -200,6 +208,63 @@ class FoodOrder(TenantOwnedModel):
         verbose_name="Ref. canal (ex. message id)",
     )
 
+    class FiscalStatus(models.TextChoices):
+        PENDING = "pending", "Pendente emissão"
+        PROCESSING = "processing", "Processando"
+        AUTHORIZED = "authorized", "Autorizada"
+        REJECTED = "rejected", "Rejeitada"
+        FAILED = "failed", "Falhou"
+        IGNORED = "ignored", "Ignorado"
+        CANCELLED = "cancelled", "Cancelada"
+
+    fiscal_status = models.CharField(
+        max_length=16,
+        choices=FiscalStatus.choices,
+        blank=True,
+        default="",
+        verbose_name="Status fiscal",
+    )
+    fiscal_warnings = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name="Avisos fiscais",
+    )
+    fiscal_rejection_code = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        verbose_name="Código rejeição fiscal",
+    )
+    fiscal_rejection_message = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name="Mensagem rejeição fiscal",
+    )
+    fiscal_emit_attempt = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Tentativas emissão fiscal",
+    )
+    fiscal_ignored_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Ignorado em",
+    )
+    fiscal_ignored_reason = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name="Motivo ignorado",
+    )
+    nfce_invoice = models.ForeignKey(
+        "nfce.NfceInvoice",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="food_orders",
+        verbose_name="NFC-e vinculada",
+    )
+
     class Meta:
         verbose_name = "Pedido Food"
         verbose_name_plural = "Pedidos Food"
@@ -226,6 +291,42 @@ class FoodOrder(TenantOwnedModel):
 
     def __str__(self) -> str:
         return f"Pedido {self.id} ({self.channel}/{self.status})"
+
+
+class FoodFiscalEvent(TenantOwnedModel):
+    """Trilha de auditoria — emissão/ignore/cancel fiscal iFood (B10)."""
+
+    class Action(models.TextChoices):
+        EMIT_START = "emit_start", "Início emissão"
+        EMIT_SKIP = "emit_skip", "Emissão ignorada"
+        EMIT_DONE = "emit_done", "Emissão concluída"
+        IGNORE = "ignore", "Ignorado"
+        CANCEL_NFCE = "cancel_nfce", "Cancelamento NFC-e"
+        SYNC_NFCE = "sync_nfce", "Sync NFC-e"
+        RECONCILE = "reconcile", "Reconcile"
+
+    order = models.ForeignKey(
+        FoodOrder,
+        on_delete=models.CASCADE,
+        related_name="fiscal_events",
+        verbose_name="Pedido",
+    )
+    action = models.CharField(max_length=32, choices=Action.choices, verbose_name="Ação")
+    actor = models.CharField(max_length=64, default="system", verbose_name="Ator")
+    from_status = models.CharField(max_length=16, blank=True, default="", verbose_name="De")
+    to_status = models.CharField(max_length=16, blank=True, default="", verbose_name="Para")
+    attempt = models.PositiveIntegerField(default=0, verbose_name="Tentativa emissão")
+    metadata = models.JSONField(null=True, blank=True, verbose_name="Metadados")
+    occurred_at = models.DateTimeField(auto_now_add=True, verbose_name="Em")
+
+    class Meta:
+        verbose_name = "Evento fiscal Food"
+        verbose_name_plural = "Eventos fiscais Food"
+        ordering = ("occurred_at",)
+        indexes = [
+            models.Index(fields=["tenant", "order", "-occurred_at"]),
+            models.Index(fields=["tenant", "action", "-occurred_at"]),
+        ]
 
 
 class FoodPayment(TenantOwnedModel):

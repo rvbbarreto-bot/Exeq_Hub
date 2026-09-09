@@ -27,7 +27,11 @@ def portal_sync_enabled() -> bool:
     return mode == "http"
 
 
-def min_sync_interval_seconds() -> int:
+def min_sync_interval_seconds(*, force: bool = False) -> int:
+    if force:
+        return int(
+            getattr(settings, "NFSE_PORTAL_SYNC_FORCE_INTERVAL_SECONDS", 30) or 30
+        )
     return int(getattr(settings, "NFSE_PORTAL_SYNC_MIN_INTERVAL_SECONDS", 300) or 300)
 
 
@@ -52,7 +56,7 @@ def should_sync_issue(issue: NfIssue, *, force: bool = False) -> bool:
             ts = timezone.make_aware(ts, timezone.get_current_timezone())
     except (TypeError, ValueError):
         return True
-    return timezone.now() - ts >= timedelta(seconds=min_sync_interval_seconds())
+    return timezone.now() - ts >= timedelta(seconds=min_sync_interval_seconds(force=force))
 
 
 def refresh_nf_issue_from_portal(issue: NfIssue) -> NfIssue:
@@ -66,13 +70,15 @@ def refresh_nf_issue_from_portal(issue: NfIssue) -> NfIssue:
     return issue
 
 
-def refresh_nf_issue_from_portal_by_id(*, tenant_id, issue_id: str) -> None:
+def refresh_nf_issue_from_portal_by_id(
+    *, tenant_id, issue_id: str, force: bool = False
+) -> None:
     issue = (
         NfIssue.objects.select_related("tenant", "provider")
         .filter(tenant_id=tenant_id, id=issue_id)
         .first()
     )
-    if issue is None or not should_sync_issue(issue):
+    if issue is None or not should_sync_issue(issue, force=force):
         return
     try:
         refresh_nf_issue_from_portal(issue)
@@ -84,49 +90,58 @@ def refresh_nf_issue_from_portal_by_id(*, tenant_id, issue_id: str) -> None:
         )
 
 
-def refresh_nfse_portal_status_batch(*, tenant_id, issue_ids: list[str]) -> dict:
+def refresh_nfse_portal_status_batch(
+    *, tenant_id, issue_ids: list[str], force: bool = False
+) -> dict:
     processed = 0
     for issue_id in issue_ids:
-        refresh_nf_issue_from_portal_by_id(tenant_id=tenant_id, issue_id=issue_id)
+        refresh_nf_issue_from_portal_by_id(
+            tenant_id=tenant_id, issue_id=issue_id, force=force
+        )
         processed += 1
+    logger.info(
+        "portal_sync batch done tenant=%s processed=%s ids=%s",
+        tenant_id,
+        processed,
+        len(issue_ids),
+    )
     return {"processed": processed}
 
 
-def collect_issue_ids_for_portal_sync(issues) -> list[str]:
+def collect_issue_ids_for_portal_sync(issues, *, force: bool = False) -> list[str]:
     limit = list_sync_limit()
     ids: list[str] = []
     for issue in issues:
         if len(ids) >= limit:
             break
-        if should_sync_issue(issue):
+        if should_sync_issue(issue, force=force):
             ids.append(str(issue.id))
     return ids
 
 
-def schedule_portal_status_refresh(*, tenant_id, issue_ids: list[str]) -> bool:
+def schedule_portal_status_refresh(
+    *,
+    tenant_id,
+    issue_ids: list[str],
+    force: bool = False,
+) -> bool:
     """Dispara sync em background — nunca bloqueia o request HTTP."""
     if not portal_sync_enabled() or not issue_ids:
         return False
 
-    def _run() -> None:
-        from apps.issuance.tasks import refresh_nfse_portal_status_batch_task
+    ids = [str(i) for i in issue_ids if i]
 
-        refresh_nfse_portal_status_batch_task.delay(str(tenant_id), issue_ids)
-
-    if getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False):
-        thread = threading.Thread(
-            target=lambda: refresh_nfse_portal_status_batch(
+    def _run_batch() -> None:
+        try:
+            refresh_nfse_portal_status_batch(
                 tenant_id=str(tenant_id),
-                issue_ids=issue_ids,
-            ),
-            daemon=True,
-        )
-        thread.start()
-        return True
+                issue_ids=ids,
+                force=force,
+            )
+        except Exception:
+            logger.exception("portal_sync batch failed tenant=%s", tenant_id)
 
-    try:
-        _run()
-    except Exception:
-        logger.exception("portal_sync schedule failed tenant=%s", tenant_id)
-        return False
+    threading.Thread(
+        target=_run_batch, daemon=True, name="nfse-portal-sync"
+    ).start()
     return True

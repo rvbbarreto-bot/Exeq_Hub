@@ -27,19 +27,40 @@
     return d.charAt(0) + "." + d.slice(1, 5) + "." + d.slice(5, 7) + "." + d.slice(7, 9);
   }
 
-  function initNbsPicker(root) {
-    qsa("[data-nbs-picker]", root || document).forEach(function (wrap) {
-      if (wrap.dataset.nbsInit === "1") return;
-      wrap.dataset.nbsInit = "1";
+  function initNbsDropdownSelect(root) {
+    qsa("[data-nbs-dropdown]", root || document).forEach(function (wrap) {
+      if (wrap.dataset.nbsDropdownInit === "1") return;
+      wrap.dataset.nbsDropdownInit = "1";
+      var catalogId = wrap.getAttribute("data-catalog-id") || "hub-nbs-catalog";
+      var catalog = parseJsonScript(catalogId);
+      if (!Array.isArray(catalog)) catalog = [];
       var codeInput = qs('input[name="codigo_nbs"]', wrap);
-      var filterInput = qs("[data-nbs-picker-filter]", wrap);
-      var selectEl = qs("[data-nbs-picker-select]", wrap);
-      if (!codeInput || !selectEl) return;
-      var searchUrl = wrap.getAttribute("data-nbs-search-url") || "/hub/nbs/search/";
-      var timer = null;
-      var pendingCode = codeInput.value || "";
+      var trigger = qs(".dropdown-select-trigger", wrap);
+      var labelEl = qs("[data-dropdown-label]", wrap);
+      var panel = qs(".dropdown-select-panel", wrap);
+      var filterInput = qs(".dropdown-select-filter", wrap);
+      var listEl = qs(".dropdown-select-list", wrap);
+      var emptyEl = qs(".dropdown-select-empty", wrap);
+      var catalogEmptyEl = qs(".dropdown-select-catalog-empty", wrap);
+      if (!codeInput || !trigger || !labelEl || !panel || !listEl) return;
 
-      function optionLabel(row) {
+      var placeholder = "— Selecione um código NBS —";
+      var maxVisible = 80;
+
+      function normalizeCode(raw) {
+        return String(raw || "").replace(/\D/g, "").slice(0, 9);
+      }
+
+      function findItem(code) {
+        code = normalizeCode(code);
+        if (code.length !== 9) return null;
+        for (var i = 0; i < catalog.length; i++) {
+          if (catalog[i].codigo === code) return catalog[i];
+        }
+        return null;
+      }
+
+      function optionText(row) {
         return (
           (row.display || formatNbsDisplay(row.codigo)) +
           " — " +
@@ -47,106 +68,117 @@
         );
       }
 
-      function ensureOption(code, description) {
-        code = String(code || "").replace(/\D/g, "").slice(0, 9);
-        if (code.length !== 9) return;
-        for (var i = 0; i < selectEl.options.length; i++) {
-          if (selectEl.options[i].value === code) {
-            selectEl.value = code;
-            codeInput.value = code;
-            return;
-          }
-        }
-        var opt = document.createElement("option");
-        opt.value = code;
-        opt.textContent =
-          formatNbsDisplay(code) + (description ? " — " + description : "");
-        selectEl.appendChild(opt);
-        selectEl.value = code;
-        codeInput.value = code;
+      function closePanel() {
+        panel.hidden = true;
+        trigger.setAttribute("aria-expanded", "false");
+        wrap.classList.remove("is-open");
       }
 
-      function setCodeOnly(code, description) {
-        code = String(code || "").replace(/\D/g, "").slice(0, 9);
+      function openPanel() {
+        panel.hidden = false;
+        trigger.setAttribute("aria-expanded", "true");
+        wrap.classList.add("is-open");
+        renderList(filterInput ? filterInput.value : "");
+        if (filterInput) {
+          filterInput.focus();
+          filterInput.select();
+        }
+      }
+
+      function setValue(code, description) {
+        code = normalizeCode(code);
         if (!code) {
           codeInput.value = "";
-          selectEl.value = "";
+          labelEl.textContent = placeholder;
           return;
         }
-        pendingCode = code;
-        ensureOption(code, description);
+        var item = findItem(code);
+        var desc = description || (item && item.description) || "";
+        codeInput.value = code;
+        labelEl.textContent = formatNbsDisplay(code) + (desc ? " — " + desc : "");
       }
 
-      wrap.setNbsCode = setCodeOnly;
+      wrap.setNbsCode = setValue;
 
-      function renderOptions(items) {
-        var selected = codeInput.value || pendingCode || "";
-        selectEl.innerHTML = "";
-        var placeholder = document.createElement("option");
-        placeholder.value = "";
-        if (!items.length) {
-          placeholder.textContent =
-            "Nenhum código — importe o catálogo NBS (import_nbs_list)";
-        } else {
-          placeholder.textContent = "— Selecione um código NBS —";
+      function renderList(filter) {
+        var q = (filter || "").trim().toLowerCase();
+        var digits = q.replace(/\D/g, "");
+        listEl.innerHTML = "";
+        if (catalogEmptyEl) catalogEmptyEl.hidden = catalog.length > 0;
+
+        if (!catalog.length) {
+          if (emptyEl) emptyEl.hidden = true;
+          return;
         }
-        selectEl.appendChild(placeholder);
-        items.forEach(function (row) {
-          var opt = document.createElement("option");
-          opt.value = row.codigo || "";
-          opt.textContent = optionLabel(row);
-          selectEl.appendChild(opt);
+
+        var shown = 0;
+        catalog.forEach(function (row) {
+          if (shown >= maxVisible) return;
+          var hay = (
+            (row.display || "") +
+            " " +
+            row.codigo +
+            " " +
+            (row.description || "")
+          ).toLowerCase();
+          var match =
+            !q ||
+            hay.indexOf(q) >= 0 ||
+            (digits && String(row.codigo).indexOf(digits) === 0);
+          if (!match) return;
+          shown++;
+          var li = document.createElement("li");
+          li.className = "dropdown-select-option";
+          li.setAttribute("role", "option");
+          li.setAttribute("data-code", row.codigo);
+          li.textContent = optionText(row);
+          if (codeInput.value === row.codigo) li.setAttribute("aria-selected", "true");
+          listEl.appendChild(li);
         });
-        if (selected) {
-          ensureOption(selected, wrap.getAttribute("data-nbs-initial-desc") || "");
+
+        if (emptyEl) emptyEl.hidden = shown > 0 || !q;
+        if (shown >= maxVisible && q) {
+          var more = document.createElement("li");
+          more.className = "dropdown-select-more hint-line";
+          more.textContent = "Refine o filtro para ver mais códigos…";
+          listEl.appendChild(more);
         }
       }
 
-      function loadOptions(q) {
-        fetch(searchUrl + "?q=" + encodeURIComponent(q || "") + "&limit=50", {
-          headers: { Accept: "application/json" },
-          credentials: "same-origin",
-        })
-          .then(function (r) {
-            return r.json();
-          })
-          .then(function (data) {
-            if (data && (data.ok || data.results)) {
-              renderOptions(data.results || []);
-            }
-          })
-          .catch(function () {
-            selectEl.innerHTML =
-              '<option value="">Erro ao carregar lista NBS</option>';
-          });
-      }
-
-      selectEl.addEventListener("change", function () {
-        codeInput.value = selectEl.value || "";
-        pendingCode = codeInput.value;
+      trigger.addEventListener("click", function (e) {
+        e.preventDefault();
+        if (panel.hidden) openPanel();
+        else closePanel();
       });
 
       if (filterInput) {
         filterInput.addEventListener("input", function () {
-          clearTimeout(timer);
-          var q = (filterInput.value || "").trim();
-          timer = setTimeout(function () {
-            loadOptions(q);
-          }, 280);
+          renderList(filterInput.value);
+        });
+        filterInput.addEventListener("keydown", function (e) {
+          if (e.key === "Escape") closePanel();
         });
       }
 
-      loadOptions("");
+      listEl.addEventListener("click", function (e) {
+        var opt = e.target.closest("[data-code]");
+        if (!opt) return;
+        setValue(opt.getAttribute("data-code"), "");
+        closePanel();
+      });
+
+      document.addEventListener("click", function (e) {
+        if (!wrap.contains(e.target)) closePanel();
+      });
+
+      renderList("");
       if (codeInput.value) {
-        setCodeOnly(
-          codeInput.value,
-          wrap.getAttribute("data-nbs-initial-desc") || ""
-        );
+        setValue(codeInput.value, wrap.getAttribute("data-initial-desc") || "");
       }
     });
   }
 
-  initNbsPicker(document);
+  initNbsDropdownSelect(document);
   function showError(msg) {
     var box = qs("#wizard-step-error");
     if (!box) return;
@@ -180,7 +212,41 @@
     }
   });
 
-  /* Wizard */
+  /* Sidebar collapse (desktop) + accordion groups */
+  var collapseBtn = qs("[data-sidebar-collapse]");
+  if (collapseBtn) {
+    collapseBtn.addEventListener("click", function () {
+      if (window.matchMedia("(max-width: 1023px)").matches) {
+        document.body.classList.toggle("drawer-open");
+        return;
+      }
+      document.body.classList.toggle("sidebar-collapsed");
+      try {
+        localStorage.setItem(
+          "hub_v4_sidebar_collapsed",
+          document.body.classList.contains("sidebar-collapsed") ? "1" : "0"
+        );
+      } catch (e) {}
+    });
+    try {
+      if (localStorage.getItem("hub_v4_sidebar_collapsed") === "1") {
+        document.body.classList.add("sidebar-collapsed");
+      }
+    } catch (e2) {}
+  }
+
+  qsa("[data-nav-accordion]", document).forEach(function (acc) {
+    var trigger = qs(".nav-accordion-trigger", acc);
+    var panel = qs(".nav-accordion-panel", acc);
+    if (!trigger || !panel) return;
+    trigger.addEventListener("click", function () {
+      var open = acc.classList.toggle("is-open");
+      trigger.setAttribute("aria-expanded", open ? "true" : "false");
+      panel.hidden = !open;
+    });
+  });
+
+  /* Drawer legacy toggle (mobile header) */
   var wiz = qs("[data-wizard]");
   if (wiz) {
     var panes = qsa("[data-wizard-pane]", wiz);
@@ -248,7 +314,7 @@
       if (!opt || !opt.value) {
         qs("#id_lc116").value = "";
         if (descEl) descEl.value = "";
-        var nbsWrap = qs("[data-nbs-picker]", form);
+        var nbsWrap = qs("[data-nbs-dropdown]", form);
         if (nbsWrap && nbsWrap.setNbsCode) {
           nbsWrap.setNbsCode("", "");
         } else {
@@ -262,7 +328,7 @@
       var svc = serviceFromSelect(sel);
       var svcNbs = (svc && svc.codigo_nbs) || opt.getAttribute("data-nbs") || "";
       var svcNbsDesc = (svc && svc.nbs_description) || "";
-      var nbsWrap = qs("[data-nbs-picker]", form);
+      var nbsWrap = qs("[data-nbs-dropdown]", form);
       if (nbsWrap && nbsWrap.setNbsCode) {
         if (fromChange || !String((qs('input[name="codigo_nbs"]', form) || {}).value || "").trim()) {
           nbsWrap.setNbsCode(svcNbs, svcNbsDesc);
@@ -839,6 +905,32 @@
       });
     }
   })();
+
+  function formatBrlFromDigits(digits) {
+    if (!digits) return "";
+    var cents = parseInt(digits, 10);
+    if (!isFinite(cents)) return "";
+    return (cents / 100).toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
+
+  function initBrlCurrencyInputs(root) {
+    qsa("[data-brl-currency]", root || document).forEach(function (input) {
+      if (input.dataset.brlInit === "1") return;
+      input.dataset.brlInit = "1";
+      function applyMask() {
+        var digits = String(input.value || "").replace(/\D/g, "");
+        input.value = formatBrlFromDigits(digits);
+      }
+      input.addEventListener("input", applyMask);
+      input.addEventListener("blur", applyMask);
+      if (input.value) applyMask();
+    });
+  }
+
+  initBrlCurrencyInputs(document);
 
   qsa("[data-char-counter-for]").forEach(function (counterEl) {
     var targetId = counterEl.getAttribute("data-char-counter-for");

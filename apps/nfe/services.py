@@ -445,6 +445,7 @@ def _snapshot_for_emit(invoice: NfeInvoice, validation: dict[str, Any]) -> dict[
                 "origin": it.origin,
                 "csosn": it.csosn,
                 "icms_cst": it.icms_cst,
+                "gtin": getattr(it.product, "gtin", "") if it.product_id else "",
                 "taxes": it.taxes,
             }
         )
@@ -891,6 +892,7 @@ def create_product(
     cofins_cst: str = "07",
     cofins_rate_bp: int = 0,
     cest: str = "",
+    gtin: str = "",
     ipi_cst: str = "",
     ip_enq: str = "",
     ipi_rate_bp: int = 0,
@@ -904,6 +906,7 @@ def create_product(
     if NfeProduct.objects.filter(tenant=tenant, code=code_norm).exists():
         raise NfeValidationError(f"Já existe produto com código {code_norm}")
     ncm_digits = "".join(ch for ch in str(ncm or "") if ch.isdigit())[:8]
+    from apps.fiscal.goods_validate import normalize_gtin
     from apps.nfe.cross_validate import validate_product_fields
 
     prod_errors = validate_product_fields(
@@ -921,6 +924,8 @@ def create_product(
         ipi_cst=ipi_cst,
         ip_enq=ip_enq,
         ipi_rate_bp=ipi_rate_bp,
+        tenant=tenant,
+        context="catalog",
     )
     if prod_errors:
         raise NfeValidationError(prod_errors[0])
@@ -947,6 +952,7 @@ def create_product(
         cofins_cst=(cofins_cst or "07")[:2],
         cofins_rate_bp=max(0, int(cofins_rate_bp or 0)),
         cest="".join(ch for ch in str(cest or "") if ch.isdigit())[:7],
+        gtin=normalize_gtin(gtin),
         ipi_cst=(ipi_cst or "")[:2],
         ip_enq=(ip_enq or "")[:3],
         ipi_rate_bp=max(0, int(ipi_rate_bp or 0)),
@@ -973,6 +979,7 @@ def update_product(
     cofins_cst: str | None = None,
     cofins_rate_bp: int | None = None,
     cest: str | None = None,
+    gtin: str | None = None,
     ipi_cst: str | None = None,
     ip_enq: str | None = None,
     ipi_rate_bp: int | None = None,
@@ -1015,6 +1022,8 @@ def update_product(
             ipi_cst=product.ipi_cst if ipi_cst is None else ipi_cst,
             ip_enq=product.ip_enq if ip_enq is None else ip_enq,
             ipi_rate_bp=product.ipi_rate_bp if ipi_rate_bp is None else ipi_rate_bp,
+            tenant=product.tenant,
+            context="catalog",
         )
         if prod_errors:
             raise NfeValidationError(prod_errors[0])
@@ -1047,6 +1056,10 @@ def update_product(
         product.cofins_rate_bp = max(0, int(cofins_rate_bp))
     if cest is not None:
         product.cest = "".join(ch for ch in str(cest) if ch.isdigit())[:7]
+    if gtin is not None:
+        from apps.fiscal.goods_validate import normalize_gtin
+
+        product.gtin = normalize_gtin(gtin)
     if ipi_cst is not None:
         product.ipi_cst = (ipi_cst or "")[:2]
     if ip_enq is not None:
@@ -1055,5 +1068,26 @@ def update_product(
         product.ipi_rate_bp = max(0, int(ipi_rate_bp))
     if is_active is not None:
         product.is_active = bool(is_active)
+    from apps.nfe.cross_validate import validate_product_fields
+
+    prod_errors = validate_product_fields(
+        ncm=product.ncm,
+        unit=product.unit,
+        cfop_internal=product.cfop_internal,
+        cfop_interstate=product.cfop_interstate,
+        csosn=product.csosn,
+        icms_cst=product.icms_cst,
+        pis_cst=product.pis_cst,
+        cofins_cst=product.cofins_cst,
+        origin=product.origin,
+        cest=product.cest,
+        ipi_cst=product.ipi_cst,
+        ip_enq=product.ip_enq,
+        ipi_rate_bp=product.ipi_rate_bp,
+        tenant=product.tenant,
+        context="catalog",
+    )
+    if prod_errors:
+        raise NfeValidationError(prod_errors[0])
     product.save()
     return product

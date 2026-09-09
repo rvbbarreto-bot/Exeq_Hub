@@ -15,6 +15,7 @@ from apps.nfe.cross_validate import (
 
 
 def test_cross_validate_mode_off(settings):
+    settings.GOODS_CROSS_VALIDATE = "off"
     settings.NFE_CROSS_VALIDATE = "off"
     assert cross_validate_mode() == "off"
     result = cross_validate_product(
@@ -38,6 +39,7 @@ def test_cross_validate_mode_default_warn(settings):
 
 
 def test_invoice_item_off_mode(settings):
+    settings.GOODS_CROSS_VALIDATE = "off"
     settings.NFE_CROSS_VALIDATE = "off"
     result = cross_validate_invoice_item(
         line_number=2,

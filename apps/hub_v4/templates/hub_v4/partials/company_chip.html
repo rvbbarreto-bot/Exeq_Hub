@@ -1,0 +1,16 @@
+{% if active_provider %}
+<div class="companychip">
+  <span class="companychip-label">Empresa ativa</span>
+  <b>{{ active_provider.trade_name|default:active_provider.legal_name }}</b>
+  <span class="companychip-doc mono">{{ active_provider.document }}</span>
+  {% if provider_usage %}
+  <span class="companychip-pill">{{ provider_usage.label }}</span>
+  {% endif %}
+  <a class="companychip-link" href="{% url 'hub-v4-providers' %}">Trocar</a>
+</div>
+{% elif provider_usage %}
+<div class="companychip companychip--empty">
+  <span class="companychip-label">Empresa ativa</span>
+  <a class="companychip-link" href="{% url 'hub-v4-provider-new' %}">Cadastrar primeiro CNPJ</a>
+</div>
+{% endif %}

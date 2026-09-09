@@ -23,7 +23,7 @@ def _load_yaml(path: Path) -> Any:
 
 
 def _merge_openapi(base: dict, fragment: dict) -> dict:
-    """Merge paths/tags/schemas do fragmento NF-e no documento principal."""
+    """Merge paths/tags/schemas do fragmento no documento principal."""
     if not isinstance(fragment, dict):
         return base
     paths = base.setdefault("paths", {})
@@ -44,15 +44,15 @@ def _merge_openapi(base: dict, fragment: dict) -> dict:
             target = base_comp.setdefault(section, {})
             if isinstance(target, dict) and isinstance(frag_comp[section], dict):
                 target.update(frag_comp[section])
-    # bump note in description if nfe paths present
-    info = base.setdefault("info", {})
-    desc = str(info.get("description") or "")
-    if "/nfe/gate/" in paths and "NF-e modelo 55" not in desc:
-        info["description"] = (
-            desc.rstrip()
-            + "\n    NF-e modelo 55 (paths /nfe/*; feature flag NFE_ENABLED; ver openapi-nfe-v1.yaml).\n"
-        )
     return base
+
+
+def _append_info_note(base: dict, *, path_needle: str, note: str) -> None:
+    paths = base.get("paths") or {}
+    if path_needle not in paths or note in str((base.get("info") or {}).get("description") or ""):
+        return
+    info = base.setdefault("info", {})
+    info["description"] = (str(info.get("description") or "").rstrip() + "\n    " + note + "\n")
 
 
 @lru_cache(maxsize=1)
@@ -85,6 +85,21 @@ def load_openapi_dict() -> dict:
         elif nfe is not None:
             # YAML valid load but wrong root — ignore, keep base
             pass
+    entrada_path = Path(settings.BASE_DIR) / "Docs" / "openapi-nfe-entrada-v1.yaml"
+    if entrada_path.exists():
+        entrada = _load_yaml(entrada_path)
+        if isinstance(entrada, dict):
+            data = _merge_openapi(data, entrada)
+    _append_info_note(
+        data,
+        path_needle="/nfe/gate/",
+        note="NF-e modelo 55 (paths /nfe/* emissão; feature flag NFE_ENABLED; ver openapi-nfe-v1.yaml).",
+    )
+    _append_info_note(
+        data,
+        path_needle="/nfe/entrada/",
+        note="NF-e de entrada (distNSU + manifestação; NFE_ENTRADA_ENABLED; ver openapi-nfe-entrada-v1.yaml).",
+    )
     return data
 
 

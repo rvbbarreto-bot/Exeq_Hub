@@ -91,6 +91,20 @@ def _login(client, ctx):
 
 
 @pytest.mark.django_db
+def test_hub_emit_nfe_form_catalog_prefill_data(client, hub_nfe_emit):
+    """Select produto deve expor dados do catálogo para prefill JS (preço, NCM, etc.)."""
+    _login(client, hub_nfe_emit)
+    product = hub_nfe_emit["product"]
+    r = client.get(reverse("hub-v4-nfe-emit"))
+    assert r.status_code == 200
+    body = r.content.decode()
+    assert f'data-price-cents="{product.unit_price_cents}"' in body
+    assert f'data-ncm="{product.ncm}"' in body
+    assert f'data-code="{product.code}"' in body
+    assert 'fillFromCatalog' in body
+
+
+@pytest.mark.django_db
 def test_hub_emit_nfe_with_product(client, hub_nfe_emit):
     _login(client, hub_nfe_emit)
     r = client.get(reverse("hub-v4-nfe-emit"))

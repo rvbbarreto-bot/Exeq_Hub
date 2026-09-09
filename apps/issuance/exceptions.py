@@ -9,6 +9,10 @@ class IssueNotFoundError(DomainError):
     code = "issue_not_found"
 
 
+class NfseDisabledError(DomainError):
+    code = "nfse_disabled"
+
+
 class FocusCancelFailedError(DomainError):
     code = "FOCUS_CANCEL_FAILED"
 

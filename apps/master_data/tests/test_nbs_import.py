@@ -8,6 +8,7 @@ from apps.master_data.nbs_import import (
     NbsImportError,
     format_nbs_display_code,
     import_nbs_xlsx,
+    list_published_nbs_catalog,
     normalize_nbs_code,
     publish_nbs_version,
     search_nbs,
@@ -59,6 +60,17 @@ def test_publish_nbs_supersedes_previous(tmp_path):
     v1.refresh_from_db()
     assert v1.status == NbsCatalogVersion.Status.SUPERSEDED
     assert v2.status == NbsCatalogVersion.Status.PUBLISHED
+
+
+@pytest.mark.django_db
+def test_list_published_nbs_catalog(tmp_path):
+    xlsx = tmp_path / "anexo_b_nbs.xlsx"
+    _write_nbs_xlsx(xlsx)
+    import_nbs_xlsx(path=xlsx, version_label="nbs-list", publish=True)
+    rows = list_published_nbs_catalog()
+    assert len(rows) == 2
+    assert rows[0]["codigo"] == "115013000"
+    assert rows[0]["display"] == "1.1501.30.00"
 
 
 @pytest.mark.django_db

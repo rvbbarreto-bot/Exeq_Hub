@@ -73,12 +73,22 @@ def _login(client, hub_nfce):
 
 
 @pytest.mark.django_db
+def test_hub_nfce_pdv_renders_catalog_price_data(client, hub_nfce):
+    _login(client, hub_nfce)
+    pdv = client.get(reverse("hub-v4-nfce-pdv"))
+    assert pdv.status_code == 200
+    body = pdv.content.decode()
+    assert 'data-price-cents="1500"' in body
+    assert "fillUnitPriceFromCatalog" in body
+    assert hub_nfce["product"].code in body
+
+
 def test_hub_nfce_nav_and_pdv_emit(client, hub_nfce):
     _login(client, hub_nfce)
     dash = client.get(reverse("hub-v4-dashboard"))
     body = dash.content.decode()
     assert reverse("hub-v4-nfce-list") in body
-    assert "NFC-e Avulsa" in body
+    assert "Emissão NFC-e avulsa" in body
 
     pdv = client.get(reverse("hub-v4-nfce-pdv"))
     assert pdv.status_code == 200

@@ -445,6 +445,12 @@ def create_nf_issue(
     if existing and existing.status != NfIssue.Status.DRAFT:
         return existing
 
+    from apps.accounts.tenant_emission import nfse_enabled_for_tenant
+    from apps.issuance.exceptions import NfseDisabledError
+
+    if not nfse_enabled_for_tenant(tenant):
+        raise NfseDisabledError("NFS-e não habilitada para este tenant (nfse_enabled)")
+
     draft = None
     if existing and existing.status == NfIssue.Status.DRAFT:
         draft = existing

@@ -21,6 +21,12 @@ from apps.food.views import (
     FoodRetentionRuleViewSet,
     FoodSupplierViewSet,
 )
+from apps.food.fiscal_views import (
+    FoodIfoodEmitBatchView,
+    FoodIfoodFiscalDetailView,
+    FoodIfoodFiscalIgnoreView,
+    FoodIfoodFiscalListView,
+)
 from apps.food.webhook_views import MercadoPagoFoodWebhookView
 
 router = DefaultRouter()
@@ -76,6 +82,26 @@ urlpatterns = [
         "food/webhooks/mercadopago",
         MercadoPagoFoodWebhookView.as_view(),
         name="food-webhooks-mercadopago",
+    ),
+    path(
+        "food/ifood/fiscal/",
+        FoodIfoodFiscalListView.as_view(),
+        name="food-ifood-fiscal-list",
+    ),
+    path(
+        "food/ifood/fiscal/<uuid:order_id>/",
+        FoodIfoodFiscalDetailView.as_view(),
+        name="food-ifood-fiscal-detail",
+    ),
+    path(
+        "food/ifood/fiscal/<uuid:order_id>/ignore/",
+        FoodIfoodFiscalIgnoreView.as_view(),
+        name="food-ifood-fiscal-ignore",
+    ),
+    path(
+        "food/ifood/emit-batch/",
+        FoodIfoodEmitBatchView.as_view(),
+        name="food-ifood-emit-batch",
     ),
     *router.urls,
 ]

@@ -370,6 +370,7 @@ def save_nfe_product_from_post(*, tenant, post, obj=None):
     icms_bp = _parse_percent_to_bp(post.get("icms_rate") or "0")
     pis_bp = _parse_percent_to_bp(post.get("pis_rate") or "0")
     cofins_bp = _parse_percent_to_bp(post.get("cofins_rate") or "0")
+    gtin = (post.get("gtin") or "").strip()
 
     try:
         if obj is None:
@@ -390,6 +391,7 @@ def save_nfe_product_from_post(*, tenant, post, obj=None):
                 pis_rate_bp=pis_bp,
                 cofins_cst=cofins_cst,
                 cofins_rate_bp=cofins_bp,
+                gtin=gtin,
                 is_active=is_active,
             )
         return update_product(
@@ -409,6 +411,7 @@ def save_nfe_product_from_post(*, tenant, post, obj=None):
             pis_rate_bp=pis_bp,
             cofins_cst=cofins_cst,
             cofins_rate_bp=cofins_bp,
+            gtin=gtin,
             is_active=is_active,
         )
     except (NfeDisabledError, NfeValidationError) as exc:

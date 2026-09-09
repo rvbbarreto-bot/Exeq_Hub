@@ -110,8 +110,8 @@ def test_hub_v4_nav_labels_no_artefatos_menu(client, hub_user):
     assert "Artefatos" not in html or "Documentos" in html
     # Sidebar IA-nav labels
     assert "NFS-e" in html
-    assert "Cobranças" in html
-    assert "Guias DAS" in html
+    assert "Cobrança" in html
+    assert "Apuração Guia DAS" in html
     assert "Clientes" in html
     assert "Empresas" in html
     assert "Usuários" in html or "Usuarios" in html

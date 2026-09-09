@@ -11,6 +11,7 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from apps.food.exceptions import (
+    FoodError,
     FoodInvalidOrderError,
     FoodInvalidTransitionError,
     FoodOrderNotFoundError,
@@ -213,6 +214,10 @@ def transition_order_status(*, tenant, order_id, to_status: str) -> FoodOrder:
         )
     order.status = to_status
     order.save(update_fields=["status", "updated_at"])
+    from apps.food.fiscal.readiness import refresh_food_order_fiscal_state
+
+    if order.channel == FoodOrder.Channel.IFOOD:
+        refresh_food_order_fiscal_state(order)
     return order
 
 
@@ -463,7 +468,16 @@ def import_marketplace_order(
             )
         except FoodInvalidTransitionError:
             pass
+
+    from apps.food.fiscal.readiness import refresh_food_order_fiscal_state
+
+    if provider == FoodOrder.Channel.IFOOD:
+        refresh_food_order_fiscal_state(order)
     return order
+
+
+def _import_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in payload.items() if k != "cancelled"}
 
 
 def sync_marketplace_connection(
@@ -499,6 +513,7 @@ def sync_marketplace_connection(
         "merchant_ref": connection.merchant_ref,
         "fetched": 0,
         "imported": 0,
+        "updated": 0,
         "skipped": 0,
         "errors": [],
         "order_ids": [],
@@ -536,6 +551,35 @@ def sync_marketplace_connection(
             if not payload.get("external_order_id"):
                 result["errors"].append({"message": "pedido sem id externo"})
                 continue
+
+            from apps.food.fiscal.marketplace_sync import apply_marketplace_logistic_sync
+
+            if payload.get("cancelled"):
+                idem = f"mp:{connection.provider}:{payload['external_order_id']}"
+                existed = FoodOrder.objects.filter(
+                    tenant=tenant, idempotency_key=idem
+                ).exists()
+                if payload.get("lines") and not existed:
+                    order = import_marketplace_order(
+                        tenant=tenant, **_import_payload(payload)
+                    )
+                    result["imported"] += 1
+                    result["order_ids"].append(str(order.id))
+                sync_row = apply_marketplace_logistic_sync(
+                    tenant=tenant,
+                    provider=connection.provider,
+                    payload=payload,
+                )
+                if sync_row.get("action") == "cancelled":
+                    result["updated"] += 1
+                    if sync_row.get("order_id") not in result["order_ids"]:
+                        result["order_ids"].append(sync_row["order_id"])
+                elif sync_row.get("action") == "skipped":
+                    result["skipped"] += 1
+                elif sync_row.get("action") == "error":
+                    result["errors"].append(sync_row)
+                continue
+
             if not payload.get("lines"):
                 result["errors"].append(
                     {
@@ -548,7 +592,7 @@ def sync_marketplace_connection(
             existed = FoodOrder.objects.filter(
                 tenant=tenant, idempotency_key=idem
             ).exists()
-            order = import_marketplace_order(tenant=tenant, **payload)
+            order = import_marketplace_order(tenant=tenant, **_import_payload(payload))
             if existed:
                 result["skipped"] += 1
             else:

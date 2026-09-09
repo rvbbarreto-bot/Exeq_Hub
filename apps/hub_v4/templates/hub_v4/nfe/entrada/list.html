@@ -1,0 +1,125 @@
+{% extends "hub_v4/base.html" %}
+{% load hub_v4_tags %}
+
+{% block page_subtitle %}
+{% if page.object_list %}
+<div class="page-subtitle">{{ page.paginator.count }} documento{{ page.paginator.count|pluralize }} recebido{{ page.paginator.count|pluralize }}</div>
+{% else %}
+<div class="page-subtitle">Captura fiscal · Distribuição DFe AN</div>
+{% endif %}
+{% endblock %}
+
+{% block page_actions %}
+{% if can_write %}
+<form method="post" action="{% url 'hub-v4-nfe-entrada-sync' %}" style="display:inline;">
+  {% csrf_token %}
+  {% if provider_id %}<input type="hidden" name="provider_id" value="{{ provider_id }}">{% endif %}
+  <button type="submit" class="btn btn-primary">Consultar AN</button>
+</form>
+<a class="btn btn-ghost" href="{% url 'hub-v4-nfe-entrada-config' %}{% if provider_id %}?provider_id={{ provider_id }}{% endif %}">Configuração</a>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="kpi-row" style="margin-bottom:12px;">
+  {% kpi_card "Total" kpis.total tone="total" %}
+  {% kpi_card "XML pendente" kpis.xml_pending tone="err" %}
+  {% kpi_card "Sem manifestação" kpis.manifest_pending tone="skip" %}
+  {% kpi_card "XML disponível" kpis.xml_available tone="ok" %}
+</div>
+
+{% if cursor %}
+<div class="card" style="margin-bottom:12px;">
+  <div class="section-label" style="margin-top:0;">Cursor NSU · {{ cursor.cnpj }}</div>
+  <div class="form-grid">
+    <div><span style="color:var(--text-muted);font-size:.8rem;">ultNSU</span><div class="mono">{{ cursor.ult_nsu }}</div></div>
+    <div><span style="color:var(--text-muted);font-size:.8rem;">maxNSU</span><div class="mono">{{ cursor.max_nsu }}</div></div>
+    <div><span style="color:var(--text-muted);font-size:.8rem;">Último cStat</span><div>{{ cursor.last_c_stat|default:"—" }} {{ cursor.last_x_motivo|truncatechars:40 }}</div></div>
+    <div><span style="color:var(--text-muted);font-size:.8rem;">Automático</span><div>{% if cursor.automatic_enabled %}Ativo{% else %}Inativo{% endif %}</div></div>
+  </div>
+</div>
+{% endif %}
+
+<form class="card filters" method="get">
+  <div class="field" style="flex:2;">
+    <label for="q">Buscar</label>
+    <input id="q" name="q" type="search" value="{{ q }}" placeholder="Emitente, CNPJ, chave, número…">
+  </div>
+  <div class="field">
+    <label for="manifest_status">Manifestação</label>
+    <select id="manifest_status" name="manifest_status">
+      <option value="all" {% if manifest_status == 'all' %}selected{% endif %}>Todas</option>
+      <option value="none" {% if manifest_status == 'none' %}selected{% endif %}>Sem manifestação</option>
+      <option value="ciencia" {% if manifest_status == 'ciencia' %}selected{% endif %}>Ciência</option>
+      <option value="confirmada" {% if manifest_status == 'confirmada' %}selected{% endif %}>Confirmada</option>
+      <option value="desconhecida" {% if manifest_status == 'desconhecida' %}selected{% endif %}>Desconhecida</option>
+      <option value="nao_realizada" {% if manifest_status == 'nao_realizada' %}selected{% endif %}>Não realizada</option>
+    </select>
+  </div>
+  <div class="field">
+    <label for="xml_status">XML</label>
+    <select id="xml_status" name="xml_status">
+      <option value="all" {% if xml_status == 'all' %}selected{% endif %}>Todos</option>
+      <option value="pending" {% if xml_status == 'pending' %}selected{% endif %}>Pendente</option>
+      <option value="available" {% if xml_status == 'available' %}selected{% endif %}>Disponível</option>
+      <option value="error" {% if xml_status == 'error' %}selected{% endif %}>Erro</option>
+    </select>
+  </div>
+  {% if providers|length > 1 %}
+  <div class="field">
+    <label for="provider_id">Empresa</label>
+    <select id="provider_id" name="provider_id">
+      {% for p in providers %}
+      <option value="{{ p.id }}" {% if provider_id == p.id|stringformat:"s" %}selected{% endif %}>{{ p.legal_name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% elif provider_id %}
+  <input type="hidden" name="provider_id" value="{{ provider_id }}">
+  {% endif %}
+  <button type="submit" class="btn btn-primary">Aplicar</button>
+</form>
+
+{% if page.object_list %}
+<div class="card table-card">
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Série/Nº</th>
+        <th>Emitente</th>
+        <th>Manifestação</th>
+        <th>XML</th>
+        <th class="num">Valor</th>
+        <th>Emissão</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for doc in page %}
+      <tr>
+        <td class="mono">{{ doc.series|default:"—" }}/{{ doc.number|default:"—" }}</td>
+        <td>
+          <div>{{ doc.issuer_name|default:"—"|truncatechars:32 }}</div>
+          <div style="color:var(--text-muted);font-size:.8rem;" class="mono">{{ doc.issuer_cnpj|default:"—" }}</div>
+        </td>
+        <td>{% entrada_manifest_badge doc.manifest_status %}</td>
+        <td>{% entrada_xml_badge doc.xml_status %}</td>
+        <td class="num">{% if doc.total_cents %}{{ doc.total_cents|cents_brl }}{% else %}—{% endif %}</td>
+        <td>{{ doc.issue_date|date:"d/m/Y"|default:"—" }}</td>
+        <td><a class="btn btn-ghost btn-sm" href="{% url 'hub-v4-nfe-entrada-detail' doc.id %}">Abrir</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% if page.has_other_pages %}
+<nav class="pagination" aria-label="Paginação">
+  {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}&q={{ q|urlencode }}&manifest_status={{ manifest_status }}&xml_status={{ xml_status }}&provider_id={{ provider_id }}">Anterior</a>{% endif %}
+  <span>Página {{ page.number }} de {{ page.paginator.num_pages }}</span>
+  {% if page.has_next %}<a href="?page={{ page.next_page_number }}&q={{ q|urlencode }}&manifest_status={{ manifest_status }}&xml_status={{ xml_status }}&provider_id={{ provider_id }}">Próxima</a>{% endif %}
+</nav>
+{% endif %}
+{% else %}
+{% empty_state "Nenhuma NF-e de entrada" "Consulte a SEFAZ/AN para capturar documentos destinados ao CNPJ." "Consultar AN" "" %}
+{% endif %}
+{% endblock %}

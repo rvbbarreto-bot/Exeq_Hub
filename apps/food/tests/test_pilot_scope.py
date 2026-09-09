@@ -69,8 +69,9 @@ def test_pilot_scope_constants():
     assert "production" in PILOT_HUB_SECTIONS
     assert "purchases" not in PILOT_HUB_SECTIONS
     assert hub_section_in_pilot("orders")
-    assert not hub_section_in_pilot("marketplace")
+    assert hub_section_in_pilot("marketplace")
     assert admin_model_in_pilot("FoodProduct")
+    assert admin_model_in_pilot("FoodMarketplaceConnection")
     assert not admin_model_in_pilot("FoodCampaign")
     assert "FoodPayment" in PILOT_ADMIN_MODELS
 
@@ -112,7 +113,6 @@ def test_hub_out_of_pilot_returns_404_page(client, hub_food_pilot):
         "hub-v4-food-purchases",
         "hub-v4-food-intelligence",
         "hub-v4-food-retention",
-        "hub-v4-food-marketplace",
     ):
         r = client.get(reverse(url_name))
         assert r.status_code == 404
@@ -127,6 +127,7 @@ def test_hub_pilot_sections_accessible(client, hub_food_pilot):
         "hub-v4-food-products",
         "hub-v4-food-customers",
         "hub-v4-food-production",
+        "hub-v4-food-marketplace",
     ):
         assert client.get(reverse(url_name)).status_code == 200
 

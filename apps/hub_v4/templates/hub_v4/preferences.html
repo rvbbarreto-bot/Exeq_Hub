@@ -1,87 +1,180 @@
 {% extends "hub_v4/base.html" %}
+{% load hub_v4_tags %}
+
+{% block page_subtitle %}
+<div class="page-subtitle">Conta, plano e entrega automática DAS/DARF</div>
+{% endblock %}
 
 {% block content %}
-<div class="card">
-  <div class="section-label" style="margin-top:0;">Preferências</div>
+<div class="card section">
+  <h3>Conta</h3>
   <div class="form-grid">
     <div>
-      <div style="color:var(--text-muted);font-size:.8rem;">Usuário</div>
-      <div><strong>{{ user.name }}</strong><br>{{ user.email }}</div>
+      <span style="color:var(--text-muted);font-size:.8rem;">Usuário</span>
+      <div><strong>{{ user.name }}</strong></div>
+      <div class="hint-line">{{ user.email }}</div>
     </div>
     <div>
-      <div style="color:var(--text-muted);font-size:.8rem;">Escritório / tenant</div>
-      <div><strong>{{ tenant.legal_name }}</strong><br>{{ tenant.slug }} · {{ tenant.document }}</div>
+      <span style="color:var(--text-muted);font-size:.8rem;">Escritório</span>
+      <div><strong>{{ tenant.legal_name }}</strong></div>
+      <div class="hint-line mono">{{ tenant.slug }} · {{ tenant.document }}</div>
     </div>
-    <div class="full">
-      <div style="color:var(--text-muted);font-size:.8rem;">Tema</div>
-      <div><strong>EXEQ Ledger</strong> (tema oficial V4)</div>
-    </div>
-    <div class="full">
-      <div style="color:var(--text-muted);font-size:.8rem;">Papel</div>
+    <div>
+      <span style="color:var(--text-muted);font-size:.8rem;">Papel</span>
       <div>{{ role_code }}</div>
     </div>
+    <div>
+      <span style="color:var(--text-muted);font-size:.8rem;">Tema</span>
+      <div><strong>EXEQ Ledger</strong></div>
+    </div>
+  </div>
+</div>
+
+<div class="card section">
+  <h3>Plano e limites</h3>
+  <div class="form-grid">
     <div class="full">
-      <div style="color:var(--text-muted);font-size:.8rem;">Plano comercial</div>
+      <span style="color:var(--text-muted);font-size:.8rem;">Plano comercial</span>
       <div>
         {% if usage.plan_name %}
         <strong>{{ usage.plan_name }}</strong>
         <span class="chip">{{ usage.plan_code }}</span>
-        {% if usage.subscription_status %}
-        · {{ usage.subscription_status }}
-        {% endif %}
+        {% if usage.subscription_status %} · {{ usage.subscription_status }}{% endif %}
         {% else %}
-        <span>Sem assinatura formal</span>
+        Sem assinatura formal
         {% if usage.source == "settings_override" or usage.source == "settings" %}
         · limite via settings
         {% endif %}
         {% endif %}
       </div>
     </div>
-    <div class="full">
-      <div style="color:var(--text-muted);font-size:.8rem;">CNPJs emitentes (uso do plano)</div>
+    <div>
+      <span style="color:var(--text-muted);font-size:.8rem;">CNPJs emitentes</span>
       <div>
         {% if usage %}
         <strong>{{ usage.label }}</strong>
-        {% if usage.at_limit %} · limite atingido{% endif %}
-        · <a href="{% url 'hub-v4-providers' %}">Gerenciar empresas</a>
-        {% else %}
-        —
-        {% endif %}
+        {% if usage.at_limit %}<span class="chip chip-danger">Limite</span>{% endif %}
+        {% else %}—{% endif %}
       </div>
+      <a class="hint-line" href="{% url 'hub-v4-providers' %}">Gerenciar empresas →</a>
     </div>
     {% if usage.users %}
-    <div class="full">
-      <div style="color:var(--text-muted);font-size:.8rem;">Usuários ativos</div>
+    <div>
+      <span style="color:var(--text-muted);font-size:.8rem;">Usuários ativos</span>
       <div>
         <strong>{{ usage.users.label }}</strong>
-        {% if usage.users.at_limit %} · limite atingido{% endif %}
-        · <a href="{% url 'hub-v4-users' %}">Gerenciar usuários</a>
+        {% if usage.users.at_limit %}<span class="chip chip-danger">Limite</span>{% endif %}
       </div>
+      <a class="hint-line" href="{% url 'hub-v4-users' %}">Gerenciar usuários →</a>
     </div>
     {% endif %}
     {% if usage.nf_month %}
-    <div class="full">
-      <div style="color:var(--text-muted);font-size:.8rem;">NFS-e neste mês</div>
-      <div><strong>{{ usage.nf_month.label }}</strong>{% if usage.nf_month.at_limit %} · limite atingido{% endif %}</div>
+    <div>
+      <span style="color:var(--text-muted);font-size:.8rem;">NFS-e neste mês</span>
+      <div>
+        <strong>{{ usage.nf_month.label }}</strong>
+        {% if usage.nf_month.at_limit %}<span class="chip chip-danger">Limite</span>{% endif %}
+      </div>
     </div>
     {% endif %}
-    <div class="full">
-      <div style="color:var(--text-muted);font-size:.8rem;">NF-e (produto · modelo 55)</div>
+  </div>
+</div>
+
+<div class="card section">
+  <h3>Módulos fiscais</h3>
+  <div class="form-grid">
+    <div>
+      <span style="color:var(--text-muted);font-size:.8rem;">NFS-e (serviço)</span>
+      <div>
+        {% if nfse_enabled_nav %}
+        {% status_badge "active" %}
+        <a class="hint-line" href="{% url 'hub-v4-nfse-list' %}">Abrir NFS-e →</a>
+        {% else %}
+        {% status_badge "inactive" %}
+        <div class="hint-line"><code>nfse_enabled</code> no tenant</div>
+        {% endif %}
+      </div>
+    </div>
+    <div>
+      <span style="color:var(--text-muted);font-size:.8rem;">NF-e (produto · 55)</span>
       <div>
         {% if nfe_enabled_nav %}
-        <strong>Habilitada</strong> neste tenant ·
-        <a href="{% url 'hub-v4-nfe-list' %}">Abrir NF-e</a>
+        {% status_badge "active" %}
+        <a class="hint-line" href="{% url 'hub-v4-nfe-list' %}">Abrir NF-e →</a>
         {% elif nfe_product_enabled %}
-        Módulo global ligado; este tenant ainda sem <code>nfe_enabled</code> nas configurações.
+        <span class="chip">Módulo global ligado</span>
+        <div class="hint-line">Marque NF-e no cadastro do tenant (Admin).</div>
         {% else %}
-        Módulo global desligado (<code>NFE_ENABLED=false</code>).
+        {% status_badge "inactive" %}
+        <div class="hint-line"><code>NFE_ENABLED=false</code> no servidor</div>
         {% endif %}
       </div>
     </div>
   </div>
-  <p style="margin-top:16px;color:var(--text-muted);font-size:.9rem;">
-    Operação do escritório: <a href="{% url 'hub-v4-dashboard' %}">Hub</a>.
-    Cadastros de empresas e tomadores ficam neste Hub — sem depender do Admin da plataforma.
+  <p class="hint-line" style="margin-bottom:0;margin-top:12px;">
+    Operação do escritório: <a href="{% url 'hub-v4-dashboard' %}">Painel Hub</a>.
   </p>
 </div>
+
+{% if can_edit_delivery %}
+<form method="post" id="prefs-das-form" class="form-page">
+  {% csrf_token %}
+  <div class="card section">
+    <h3>Entrega DAS/DARF ao contador</h3>
+    <p class="hint-line">Após emissão, o Hub envia PDF e dados de pagamento ao contador (e-mail e WhatsApp).</p>
+
+    <div class="prefs-master-toggle">
+      <label class="checkbox-row">
+        <input type="checkbox" name="das_enabled" value="1" {% if das_enabled %}checked{% endif %}>
+        Entrega automática habilitada
+      </label>
+    </div>
+
+    <div class="section-label">Contatos</div>
+    <div class="formgrid formgrid--3">
+      <div class="field">
+        <label for="das_accountant_email">E-mail do contador</label>
+        <input id="das_accountant_email" name="das_accountant_email" type="email"
+               value="{{ das_accountant_email }}" placeholder="contador@escritorio.com.br">
+      </div>
+      <div class="field">
+        <label for="das_accountant_whatsapp">WhatsApp contador (E.164)</label>
+        <input id="das_accountant_whatsapp" name="das_accountant_whatsapp"
+               value="{{ das_accountant_whatsapp }}" placeholder="+5511999999999">
+      </div>
+      <div class="field">
+        <label for="notify_phone">WhatsApp ops (alertas)</label>
+        <input id="notify_phone" name="notify_phone" value="{{ notify_phone }}"
+               placeholder="+5511999999999">
+      </div>
+      <div class="field fullrow">
+        <label for="nfe_notify_email">E-mail NF-e (fallback opcional)</label>
+        <input id="nfe_notify_email" name="nfe_notify_email" type="email"
+               value="{{ nfe_notify_email }}" placeholder="fiscal@empresa.com.br">
+        <p class="hint-line" style="margin:6px 0 0;">Usado quando o e-mail do contador DAS estiver vazio.</p>
+      </div>
+    </div>
+
+    <div class="section-label">Canais automáticos</div>
+    <div class="checkbox-stack">
+      <label class="checkbox-row">
+        <input type="checkbox" name="das_email_auto" value="1" {% if das_email_auto %}checked{% endif %}>
+        Enviar e-mail automaticamente
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" name="das_whatsapp_auto" value="1" {% if das_whatsapp_auto %}checked{% endif %}>
+        Enviar WhatsApp automaticamente
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" name="das_use_nfe_notify_email" value="1"
+               {% if das_use_nfe_notify_email %}checked{% endif %}>
+        Usar e-mail NF-e se contador DAS estiver vazio
+      </label>
+    </div>
+  </div>
+
+  {% url 'hub-v4-dashboard' as dash_url %}
+  {% include "hub_v4/partials/form_sticky_footer.html" with back_url=dash_url submit_label="Salvar entrega DAS" submit_form="prefs-das-form" %}
+</form>
+{% endif %}
 {% endblock %}

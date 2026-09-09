@@ -1,3 +1,5 @@
+import base64
+
 import pytest
 
 from integrations.evolution.client import EvolutionHttpGateway, EvolutionStubGateway
@@ -83,7 +85,7 @@ def test_evolution_http_send_media(monkeypatch, settings):
     assert "sendMedia/exeq" in captured["url"]
     assert captured["json"]["mediatype"] == "document"
     assert captured["json"]["fileName"] == "DANFSe.pdf"
-    assert captured["json"]["media"].startswith("data:application/pdf;base64,")
+    assert captured["json"]["media"] == base64.b64encode(b"%PDF-1.4").decode("ascii")
 
 
 def test_meta_http_send_media(monkeypatch, settings):

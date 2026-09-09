@@ -31,6 +31,8 @@ python manage.py migrate
 pytest
 ```
 
+**Banco lab:** Postgres (`5433`) é a fonte única para Hub/runserver. `EXEQ_TEST_SQLITE=1` só vale em `pytest` (gate PO — ver `Docs/ADR_LAB_DB_001_Gate_SQLite.md`); não coloque no `.env`.
+
 Opcional (async real):
 ```bash
 celery -A config worker -l info

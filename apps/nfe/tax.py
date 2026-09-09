@@ -329,11 +329,15 @@ def build_validation(
             pis_cst=pis_cst,
             cofins_cst=cofins_cst,
             cest=getattr(it.product, "cest", "") if it.product_id else "",
+            csosn=csosn or "",
             ipi_cst=getattr(it.product, "ipi_cst", "") if it.product_id else "",
             ip_enq=getattr(it.product, "ip_enq", "") if it.product_id else "",
             ipi_rate_bp=int(getattr(it.product, "ipi_rate_bp", 0) or 0) if it.product_id else 0,
             issue_date=invoice.issue_date,
             crt=str(getattr(provider, "tax_regime", "") or ""),
+            tenant=invoice.tenant,
+            context="emit",
+            http_emit=require_ie,
         )
         for err in item_cross["errors"]:
             errors.append({"field": err["field"], "message": err["message"]})

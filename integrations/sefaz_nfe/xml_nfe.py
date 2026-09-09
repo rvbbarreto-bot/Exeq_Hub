@@ -8,7 +8,7 @@ from xml.etree import ElementTree as ET
 
 from lxml import etree
 
-from integrations.nfse.xml_safe import UnsafeXmlError, safe_fromstring
+from integrations.sefaz_nfe.prod_fields import prod_c_ean
 from integrations.sefaz_nfe.access_key import UF_IBGE_CODE, build_access_key
 
 NFE_NS = "http://www.portalfiscal.inf.br/nfe"
@@ -210,8 +210,9 @@ def build_nfe_xml(*, snapshot: dict[str, Any], access_key: str | None = None) ->
         v_un = (v_prod / qty) if qty > 0 else Decimal(unit_cents) / Decimal(100)
         v_un = v_un.quantize(Decimal("0.0000000001"), rounding=ROUND_HALF_UP)
 
+        ean = prod_c_ean(it)
         _el(prod, "cProd", str(it.get("code") or "PROD")[:60])
-        _el(prod, "cEAN", "SEM GTIN")
+        _el(prod, "cEAN", ean)
         _el(prod, "xProd", str(it.get("description") or "PRODUTO")[:120])
         _el(prod, "NCM", str(it.get("ncm") or "00000000")[:8])
         _el(prod, "CFOP", str(it.get("cfop") or "5102")[:4])
@@ -219,7 +220,7 @@ def build_nfe_xml(*, snapshot: dict[str, Any], access_key: str | None = None) ->
         _el(prod, "qCom", _qty_str(qty))
         _el(prod, "vUnCom", f"{v_un:.10f}")
         _el(prod, "vProd", f"{v_prod:.2f}")
-        _el(prod, "cEANTrib", "SEM GTIN")
+        _el(prod, "cEANTrib", ean)
         _el(prod, "uTrib", str(it.get("unit") or "UN")[:6])
         _el(prod, "qTrib", _qty_str(qty))
         _el(prod, "vUnTrib", f"{v_un:.10f}")
