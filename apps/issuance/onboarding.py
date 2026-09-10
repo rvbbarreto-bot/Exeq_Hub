@@ -14,7 +14,11 @@ from typing import Any
 from django.contrib.auth import get_user_model
 from django.db import transaction
 
-from apps.accounts.certificates import assert_certificate_usable, upload_a1_certificate
+from apps.accounts.certificates import (
+    DEFAULT_KEY_USAGE,
+    assert_certificate_usable,
+    upload_a1_certificate,
+)
 from apps.accounts.membership_services import ensure_membership
 from apps.accounts.models import DigitalCertificate, Tenant, TenantRole
 from apps.accounts.services import ensure_system_roles
@@ -280,7 +284,7 @@ def onboard_nfse_tenant(
                 pfx_bytes=pfx_bytes,
                 password=pfx_password,
                 provider=provider,
-                key_usage=["das", "nfse"],
+                key_usage=list(DEFAULT_KEY_USAGE),
                 make_primary=True,
             )
             certificate_id = str(cert.id)

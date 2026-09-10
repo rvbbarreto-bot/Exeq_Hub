@@ -8,7 +8,7 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
-from apps.accounts.certificates import get_primary_certificate
+from apps.accounts.certificates import certificate_purpose_ok, get_primary_certificate
 from apps.accounts.models import DigitalCertificate
 from apps.master_data.models import Provider
 from apps.nfe.ie_validation import validate_emitter_ie
@@ -251,6 +251,24 @@ def build_gate_payload(
             if cert and cert.status not in usable:
                 cert_label = f"Cert A1 inutilizável ({cert.status})"
         checks.append({"id": "cert", "ok": cert_ok, "label": cert_label, "must": True})
+
+        cert_nfe_ok = True
+        cert_nfe_label = "Cert A1 permissão NF-e (stub)"
+        if mode == "http" and cert is not None and cert_ok:
+            cert_nfe_ok, cert_nfe_label = certificate_purpose_ok(
+                tenant=tenant, cnpj=provider.document, purpose="nfe"
+            )
+        elif mode == "http" and cert is None:
+            cert_nfe_ok = False
+            cert_nfe_label = "Cert A1 ausente para NF-e HTTP"
+        checks.append(
+            {
+                "id": "cert_nfe_usage",
+                "ok": cert_nfe_ok,
+                "label": cert_nfe_label,
+                "must": mode != "stub",
+            }
+        )
 
         # warning < 30d (must=false)
         cert_expiring = False

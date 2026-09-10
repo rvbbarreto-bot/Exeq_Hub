@@ -10,7 +10,7 @@ from typing import Any
 
 from django.conf import settings
 
-from apps.accounts.certificates import get_primary_certificate
+from apps.accounts.certificates import certificate_purpose_ok, get_primary_certificate
 from apps.accounts.models import DigitalCertificate, Tenant
 from apps.fiscal.rtc_emit_readiness import assess_rtc_emit_readiness
 from apps.master_data.models import Customer, Provider, TaxRegime
@@ -67,6 +67,12 @@ def build_homolog_preflight(
         DigitalCertificate.Status.EXPIRING,
     }:
         blockers.append(f"cert_status_{cert.status}")
+    elif mode == "http" and cert is not None:
+        nfe_ok, _ = certificate_purpose_ok(
+            tenant=tenant, cnpj=provider.document, purpose="nfe"
+        )
+        if not nfe_ok:
+            blockers.append("cert_nfe_usage")
 
     uf = (provider.address or {}).get("uf") if isinstance(provider.address, dict) else ""
     return {

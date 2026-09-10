@@ -18,6 +18,11 @@ USABLE_STATUSES = frozenset(
     }
 )
 
+# A1 e-CNPJ — mesmo PFX para DAS, NFS-e e SEFAZ produto (NF-e/NFC-e/entrada).
+DEFAULT_KEY_USAGE: tuple[str, ...] = ("das", "nfse", "nfe")
+
+LEGACY_KEY_USAGE: frozenset[str] = frozenset({"das", "nfse"})
+
 
 def _status_for_validity(*, not_after: datetime) -> str:
     now = datetime.now(timezone.utc)
@@ -52,6 +57,38 @@ def get_primary_certificate(*, tenant, cnpj: str) -> DigitalCertificate | None:
     if cert is None:
         return None
     return refresh_certificate_status(cert)
+
+
+def default_key_usage_for_tenant(tenant) -> list[str]:
+    """Usos default do upload — opt-in do tenant (independe de NFE_ENABLED global)."""
+    from apps.accounts.tenant_emission import (
+        nfce_tenant_opt_in,
+        nfe_tenant_opt_in,
+        nfse_enabled_for_tenant,
+    )
+
+    usages: list[str] = ["das"]
+    if nfse_enabled_for_tenant(tenant):
+        usages.append("nfse")
+    if nfe_tenant_opt_in(tenant) or nfce_tenant_opt_in(tenant):
+        usages.append("nfe")
+    if usages == ["das"]:
+        return list(DEFAULT_KEY_USAGE)
+    return list(dict.fromkeys(usages))
+
+
+def certificate_purpose_ok(
+    *,
+    tenant,
+    cnpj: str,
+    purpose: str,
+) -> tuple[bool, str]:
+    """Valida purpose sem exceção — para gates e readiness."""
+    try:
+        assert_certificate_usable(tenant=tenant, cnpj=cnpj, purpose=purpose)
+    except CertificateNotUsableError as exc:
+        return False, str(exc)
+    return True, f"Cert A1 OK ({purpose})"
 
 
 def assert_certificate_usable(
@@ -133,7 +170,11 @@ def upload_a1_certificate(
     if prev is not None:
         version = prev.version + 1
 
-    usages = key_usage if key_usage is not None else ["das", "nfse"]
+    usages = (
+        list(key_usage)
+        if key_usage is not None
+        else default_key_usage_for_tenant(tenant)
+    )
     cert = DigitalCertificate.objects.create(
         tenant=tenant,
         provider=provider,
@@ -245,9 +286,35 @@ def load_primary_pfx_material(
     return pfx_bytes, password
 
 
+def backfill_legacy_key_usage(*, dry_run: bool = False) -> int:
+    """
+    Certificados com default legado ['das','nfse'] ganham 'nfe'.
+    Retorna quantidade atualizada.
+    """
+    updated = 0
+    qs = DigitalCertificate.objects.exclude(status=DigitalCertificate.Status.REVOKED)
+    for cert in qs.iterator():
+        usages = list(cert.key_usage or [])
+        if not usages or "nfe" in usages:
+            continue
+        if set(usages) <= LEGACY_KEY_USAGE:
+            new_usages = list(dict.fromkeys([*usages, "nfe"]))
+            if new_usages != usages:
+                updated += 1
+                if not dry_run:
+                    cert.key_usage = new_usages
+                    cert.save(update_fields=["key_usage", "updated_at"])
+    return updated
+
+
 __all__ = [
+    "DEFAULT_KEY_USAGE",
+    "LEGACY_KEY_USAGE",
     "PfxParseError",
     "assert_certificate_usable",
+    "backfill_legacy_key_usage",
+    "certificate_purpose_ok",
+    "default_key_usage_for_tenant",
     "get_primary_certificate",
     "load_primary_pfx_material",
     "refresh_certificate_status",

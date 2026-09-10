@@ -96,6 +96,9 @@
         Válido até {{ row.cert.not_after|date:"d/m/Y" }}
         {% if row.cert.is_primary %} · Principal{% endif %}
         · v{{ row.cert.version }}
+        {% if row.cert.key_usage %}
+        <br>Usos: {% for u in row.cert.key_usage %}<span class="chip chip-muted">{{ u|upper }}</span>{% if not forloop.last %} {% endif %}{% endfor %}
+        {% endif %}
       </div>
       {% endif %}
     </div>

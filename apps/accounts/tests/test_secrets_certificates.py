@@ -10,6 +10,7 @@ from cryptography.x509.oid import NameOID
 
 from apps.accounts.certificates import (
     assert_certificate_usable,
+    default_key_usage_for_tenant,
     scan_expiring_certificates,
     upload_a1_certificate,
 )
@@ -77,7 +78,7 @@ def test_upload_a1_parses_validity(tenant_a, tmp_path, settings):
     )
     assert cert.status == DigitalCertificate.Status.ACTIVE
     assert cert.is_primary is True
-    assert cert.key_usage == ["das", "nfse"]
+    assert cert.key_usage == default_key_usage_for_tenant(tenant_a)
     assert cert.not_after > datetime.now(timezone.utc)
     assert cert.stored_file.purpose == "certificate"
     assert cert.password_secret_id is not None

@@ -84,7 +84,11 @@ from integrations.nfse.cancel_motivos import NFSE_CANCEL_MOTIVOS
 from shared.exceptions import AuthenticationError
 from shared.validators import validate_cnpj
 from shared.crypto import CryptoError
-from apps.accounts.certificates import PfxParseError, upload_a1_certificate
+from apps.accounts.certificates import (
+    PfxParseError,
+    default_key_usage_for_tenant,
+    upload_a1_certificate,
+)
 
 
 def _require_writer_hub(request: HttpRequest):
@@ -2462,6 +2466,7 @@ class CertificatesView(View):
                 provider=provider,
                 actor_user=user,
                 make_primary=make_primary,
+                key_usage=default_key_usage_for_tenant(tenant),
             )
         except PfxParseError as exc:
             messages.error(request, str(exc) or "PFX inválido ou senha incorreta.")

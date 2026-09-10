@@ -7,7 +7,7 @@ from typing import Any
 from django.conf import settings
 from django.utils import timezone
 
-from apps.accounts.certificates import get_primary_certificate
+from apps.accounts.certificates import certificate_purpose_ok, get_primary_certificate
 from apps.accounts.models import DigitalCertificate
 from apps.master_data.models import Provider
 from apps.nfce.models import NfceNumberSeries, TenantCscToken
@@ -169,6 +169,24 @@ def build_gate_payload(
             cert_ok = cert is not None and cert.status in usable
             cert_label = f"Cert A1 {cert.status}" if cert else "Cert A1 ausente"
         checks.append({"id": "cert", "ok": cert_ok, "label": cert_label, "must": True})
+
+        cert_nfe_ok = True
+        cert_nfe_label = "Cert A1 permissão SEFAZ (stub)"
+        if mode == "http" and cert is not None and cert_ok:
+            cert_nfe_ok, cert_nfe_label = certificate_purpose_ok(
+                tenant=tenant, cnpj=provider.document, purpose="nfe"
+            )
+        elif mode == "http" and cert is None:
+            cert_nfe_ok = False
+            cert_nfe_label = "Cert A1 ausente para NFC-e HTTP"
+        checks.append(
+            {
+                "id": "cert_nfe_usage",
+                "ok": cert_nfe_ok,
+                "label": cert_nfe_label,
+                "must": mode != "stub",
+            }
+        )
 
         csc = TenantCscToken.objects.filter(
             tenant=tenant, provider=provider, tp_amb=amb, is_active=True
