@@ -17,11 +17,11 @@
   {% kpi_card "NFS-e hoje" kpis.nfse_hoje %}
   {% kpi_card "Em processamento" kpis.processing %}
   {% kpi_card "Rejeitadas" kpis.rejected %}
-  {% kpi_card "Certificados" kpis.cert_active "ativos" %}
+  {% kpi_card "Certificados" kpis.cert.value kpis.cert.hint kpis.cert.tone kpis.cert.status %}
 </div>
 {% else %}
 <div class="kpi-grid">
-  {% kpi_card "Certificados" kpis.cert_active "ativos" %}
+  {% kpi_card "Certificados" kpis.cert.value kpis.cert.hint kpis.cert.tone kpis.cert.status %}
 </div>
 {% endif %}
 

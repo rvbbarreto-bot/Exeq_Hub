@@ -12,7 +12,9 @@ from shared.validators import validate_cnpj, validate_cpf
 
 
 def addr_from_post(post) -> dict[str, str]:
-    return {
+    from apps.master_data.customer_validation import normalize_customer_address
+
+    raw = {
         "logradouro": (post.get("logradouro") or "").strip(),
         "numero": (post.get("numero") or "").strip(),
         "complemento": (post.get("complemento") or "").strip(),
@@ -24,6 +26,7 @@ def addr_from_post(post) -> dict[str, str]:
         "telefone": (post.get("telefone_receita") or post.get("telefone") or "").strip(),
         "email": (post.get("email_receita") or post.get("email_addr") or "").strip(),
     }
+    return normalize_customer_address(raw)
 
 
 def cadastral_from_post(post) -> dict[str, Any]:
@@ -104,6 +107,8 @@ def save_provider_from_post(*, tenant, post, obj: Provider | None = None) -> Pro
 
 
 def save_customer_from_post(*, tenant, post, obj: Customer | None = None) -> Customer:
+    from apps.master_data.customer_validation import validate_customer_fiscal_address
+
     document_type = (post.get("document_type") or Customer.DocumentType.CNPJ).strip()
     if document_type not in {Customer.DocumentType.CPF, Customer.DocumentType.CNPJ}:
         document_type = Customer.DocumentType.CNPJ
@@ -118,6 +123,7 @@ def save_customer_from_post(*, tenant, post, obj: Customer | None = None) -> Cus
     email = (post.get("email") or "").strip()
     is_active = (post.get("is_active") or "1") in {"1", "true", "on", "yes"}
     cadastral = cadastral_from_post(post)
+    validate_customer_fiscal_address(cadastral.get("address"))
 
     if obj is None:
         return create_customer(

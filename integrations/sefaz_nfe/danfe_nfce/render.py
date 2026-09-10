@@ -9,7 +9,8 @@ from reportlab.graphics.barcode import qr
 from reportlab.lib.units import cm
 from reportlab.pdfgen import canvas
 
-from integrations.sefaz_nfe.danfe.render import _fonts, _format_key
+from integrations.sefaz_nfe.danfe.formatters import format_access_key
+from integrations.sefaz_nfe.danfe.render_moc import _fonts
 from integrations.sefaz_nfe.danfe_nfce.fields import DanfceFields, extract_danfce_fields
 from integrations.sefaz_nfe.danfe_nfce.format import (
     format_br_money,
@@ -300,7 +301,7 @@ def _render_fields(fields: DanfceFields) -> bytes:
         center("Consulte pela Chave de Acesso em", size=5.5)
         center_wrap(fields.url_chave, size=5)
     if fields.access_key:
-        center(_format_key(fields.access_key), size=5.5)
+        center(format_access_key(fields.access_key), size=5.5)
     y -= line_h * 0.15
 
     # Divisão V — QR Code (antes do footer, com espaço garantido)

@@ -281,6 +281,7 @@
       <div class="review-grid" id="nfse-review-grid" aria-live="polite">
         <div class="review-item review-item--wide"><span>Tomador</span><strong data-review="tomador">—</strong></div>
         <div class="review-item review-item--wide"><span>Serviço (catálogo)</span><strong data-review="servico">—</strong></div>
+        <div class="review-item review-item--wide"><span>Código NBS</span><strong data-review="nbs">—</strong></div>
         <div class="review-item review-item--stack review-item--text">
           <span>Descrição na nota</span>
           <div class="review-text" data-review="descricao">{% if draft_service_desc %}{{ draft_service_desc }}{% else %}—{% endif %}</div>
@@ -308,15 +309,18 @@
 </div>
 
 <div class="modal-backdrop" id="modal-confirm-emit" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
-  <div class="modal">
+  <div class="modal modal--nfse-confirm">
     <h3 id="confirm-title">Emitir NFS-e?</h3>
-    <p class="hint-line">Esta operação enviará a nota para autorização.</p>
-    <p style="margin:0;"><strong>Tomador:</strong> <span data-sum-tomador>—</span></p>
-    <p style="margin:4px 0;"><strong>Valor:</strong> <span data-sum-amount>—</span></p>
-    <p style="margin:0 0 4px;"><strong>Competência:</strong> <span data-sum-comp>—</span></p>
-    <p style="margin:0 0 4px;"><strong>Serviço:</strong> <span data-sum-servico>—</span></p>
-    <p style="margin:0 0 4px;"><strong>Descrição:</strong> <span data-sum-descricao>—</span></p>
-    <p style="margin:0;" id="modal-info-compl-line" hidden><strong>Compl.:</strong> <span data-sum-info-compl>—</span></p>
+    <p class="hint-line modal--nfse-confirm-lead">Esta operação enviará a nota para autorização.</p>
+    <dl class="modal-summary">
+      <div><dt>Tomador</dt><dd data-sum-tomador>—</dd></div>
+      <div><dt>Valor</dt><dd data-sum-amount>—</dd></div>
+      <div><dt>Competência</dt><dd data-sum-comp>—</dd></div>
+      <div><dt>Serviço</dt><dd data-sum-servico>—</dd></div>
+      <div><dt>Código NBS</dt><dd data-sum-nbs>—</dd></div>
+      <div><dt>Descrição</dt><dd data-sum-descricao>—</dd></div>
+      <div id="modal-info-compl-line" hidden><dt>Compl.</dt><dd data-sum-info-compl>—</dd></div>
+    </dl>
     <div class="actions">
       <button type="button" class="btn btn-ghost" data-modal-cancel>Cancelar</button>
       <button type="button" class="btn btn-primary" data-modal-confirm>Emitir</button>

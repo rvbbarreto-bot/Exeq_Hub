@@ -135,12 +135,23 @@ class StubNfeProvider:
         except Exception:  # noqa: BLE001
             signed_xml = None
 
+        protocol = f"STUB{uuid4().hex[:12].upper()}"
+        proc_xml = signed_xml
+        if signed_xml:
+            from integrations.sefaz_nfe.nfe_proc import authorized_xml_bytes
+
+            proc_xml = authorized_xml_bytes(
+                signed_nfe_xml=signed_xml,
+                access_key=key,
+                protocol=protocol,
+                tp_amb=str(header.get("tp_amb") or "2"),
+            )
         return NfeEmitResult(
             status="authorized",
             access_key=key,
-            protocol=f"STUB{uuid4().hex[:12].upper()}",
+            protocol=protocol,
             raw=sanitize_sefaz_raw({"mode": "stub", "note": "sem SEFAZ"}),
-            signed_xml=signed_xml,
+            signed_xml=proc_xml,
         )
 
     def consultar(
@@ -331,12 +342,24 @@ class HttpNfeProvider:
 
         key = resp.access_key or access_key_fallback
         if status == "authorized":
+            from integrations.sefaz_nfe.nfe_proc import authorized_xml_bytes
+
+            proc_xml = authorized_xml_bytes(
+                signed_nfe_xml=signed_xml,
+                sefaz_body=getattr(resp, "body", None),
+                access_key=key,
+                protocol=resp.protocol,
+                tp_amb=str((raw or {}).get("tpAmb") or ""),
+                dh_recbto=getattr(resp, "dh_recbto", "") or "",
+                c_stat=resp.c_stat,
+                x_motivo=resp.x_motivo,
+            )
             return NfeEmitResult(
                 status="authorized",
                 access_key=key,
                 protocol=resp.protocol,
                 raw=raw,
-                signed_xml=signed_xml,
+                signed_xml=proc_xml,
             )
         if status == "polling":
             return NfeEmitResult(

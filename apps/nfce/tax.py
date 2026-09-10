@@ -8,6 +8,7 @@ from typing import Any
 from apps.master_data.models import TaxRegime
 from apps.nfce.models import NfceInvoice
 from apps.nfce.rtc import aggregate_rtc_totals, build_item_rtc, nfce_rtc_mode
+from apps.nfe.csosn import map_csosn_to_xml_group
 from apps.nfe.tax import (
     TAX_ENGINE_VERSION,
     _ibge_digits,
@@ -18,22 +19,6 @@ from apps.nfe.tax import (
 )
 
 NFCE_TAX_ENGINE_VERSION = f"nfce-{TAX_ENGINE_VERSION}"
-
-
-def map_csosn_to_xml_group(csosn: str) -> str:
-    code = (csosn or "").strip().zfill(3)
-    return {
-        "101": "ICMSSN101",
-        "102": "ICMSSN102",
-        "103": "ICMSSN102",
-        "201": "ICMSSN201",
-        "202": "ICMSSN202",
-        "203": "ICMSSN202",
-        "300": "ICMSSN102",
-        "400": "ICMSSN400",
-        "500": "ICMSSN500",
-        "900": "ICMSSN900",
-    }.get(code, "ICMSSN102")
 
 
 def build_validation(

@@ -32,6 +32,18 @@ DEBUG = env("DJANGO_DEBUG", "true").lower() == "true"
 _allowed = env("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,testserver") or ""
 ALLOWED_HOSTS: list[str] = [h.strip() for h in _allowed.split(",") if h.strip()]
 
+_csrf_origins = env("CSRF_TRUSTED_ORIGINS", "") or ""
+CSRF_TRUSTED_ORIGINS: list[str] = [
+    o.strip() for o in _csrf_origins.split(",") if o.strip()
+]
+if DEBUG and not CSRF_TRUSTED_ORIGINS:
+    CSRF_TRUSTED_ORIGINS = [
+        "http://127.0.0.1:8000",
+        "http://localhost:8000",
+    ]
+
+CSRF_FAILURE_VIEW = "apps.hub_v4.csrf.hub_csrf_failure"
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -402,6 +414,13 @@ NFE_SYNC_POLL = (env("NFE_SYNC_POLL", "false") or "false").lower() in ("1", "tru
 NFE_RECONCILE_STALE_SECONDS = int(env("NFE_RECONCILE_STALE_SECONDS", "120") or "120")
 # RF-41: path opcional para XSD oficial (vazio = só preflight estrutural)
 NFE_XSD_PATH = env("NFE_XSD_PATH", "")
+
+# IBPT — tributos aproximados (Lei 12.741) para vTotTrib NF-e
+IBPT_ENABLED = (env("IBPT_ENABLED", "false") or "false").lower() in ("1", "true", "yes")
+IBPT_DATA_PATH = env("IBPT_DATA_PATH", "")
+
+# DANFE — diretório opcional de logos por CNPJ ({cnpj}.png)
+NFE_DANFE_LOGO_DIR = env("NFE_DANFE_LOGO_DIR", "")
 
 # NF-e entrada — distribuição DFe + manifestação (ADR-NFE-ENTRADA-001)
 NFE_ENTRADA_ENABLED = (env("NFE_ENTRADA_ENABLED", "false") or "false").lower() in (

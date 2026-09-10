@@ -179,6 +179,32 @@
   }
 
   initNbsDropdownSelect(document);
+
+  function initReadinessTemplateForm() {
+    var form = qs("[data-readiness-template-form]");
+    if (!form) return;
+    var select = qs("[data-template-select]", form);
+    if (!select) return;
+    var panels = qsa("[data-template-panel]", form);
+    function showPanel(templateId) {
+      panels.forEach(function (panel) {
+        var match = panel.getAttribute("data-template-panel") === templateId;
+        panel.hidden = !match;
+        if (!match) {
+          qsa('input[type="checkbox"]', panel).forEach(function (cb) {
+            cb.checked = false;
+          });
+        }
+      });
+    }
+    select.addEventListener("change", function () {
+      showPanel(select.value);
+    });
+    showPanel(select.value);
+  }
+
+  initReadinessTemplateForm();
+
   function showError(msg) {
     var box = qs("#wizard-step-error");
     if (!box) return;
@@ -393,6 +419,22 @@
       return (opt.getAttribute("data-description") || "").trim();
     }
 
+    function normalizeNbsCode(raw) {
+      return String(raw || "").replace(/\D/g, "").slice(0, 9);
+    }
+
+    function selectedNbsText() {
+      var nbsWrap = qs("[data-nbs-dropdown]", form);
+      if (!nbsWrap) return "—";
+      var codeInput = qs('input[name="codigo_nbs"]', nbsWrap);
+      var labelEl = qs("[data-dropdown-label]", nbsWrap);
+      var code = codeInput ? normalizeNbsCode(codeInput.value) : "";
+      if (!code) return "(não informado)";
+      var label = labelEl ? String(labelEl.textContent || "").trim() : "";
+      if (label && label !== "— Selecione um código NBS —") return label;
+      return formatNbsDisplay(code);
+    }
+
     function setReviewText(key, text, emptyLabel) {
       var el =
         qs('[data-review="' + key + '"]', form) ||
@@ -422,6 +464,7 @@
       var map = {
         tomador: tomador,
         servico: servico,
+        nbs: selectedNbsText(),
         tributacao: perfil,
         valor: amount ? "R$ " + amount : "—",
         competencia: compDate,
@@ -694,6 +737,8 @@
           var sumS = qs("[data-sum-servico]");
           if (sumS)
             sumS.textContent = selectedText(qs("#id_service_id", form));
+          var sumNbs = qs("[data-sum-nbs]");
+          if (sumNbs) sumNbs.textContent = selectedNbsText();
           var sumDesc = qs("[data-sum-descricao]");
           if (sumDesc) {
             var descText =

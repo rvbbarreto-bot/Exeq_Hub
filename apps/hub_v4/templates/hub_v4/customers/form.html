@@ -68,11 +68,14 @@
   </div>
 
   <div class="card section">
-    <h3>Endereço</h3>
+    <h3>Endereço fiscal</h3>
+    <p class="hint-line" style="margin-top:0;margin-bottom:12px;">
+      Logradouro, UF e código IBGE são obrigatórios para emissão de NF-e (modelo 55).
+    </p>
     <div class="formgrid formgrid--3">
       <div class="field fullrow">
-        <label for="id_logradouro">Logradouro</label>
-        <input name="logradouro" id="id_logradouro"
+        <label for="id_logradouro">Logradouro *</label>
+        <input name="logradouro" id="id_logradouro" required
                value="{% if form %}{{ form.logradouro }}{% elif obj %}{{ obj.address.logradouro }}{% endif %}">
       </div>
       <div class="field">
@@ -93,13 +96,17 @@
                value="{% if form %}{{ form.municipio }}{% elif obj %}{{ obj.address.municipio }}{% endif %}">
       </div>
       <div class="field">
-        <label for="id_uf">UF</label>
-        <input name="uf" id="id_uf" maxlength="2" value="{% if form %}{{ form.uf }}{% elif obj %}{{ obj.address.uf }}{% endif %}">
+        <label for="id_uf">UF *</label>
+        <input name="uf" id="id_uf" maxlength="2" minlength="2" required
+               pattern="[A-Za-z]{2}" title="Sigla com 2 letras (ex.: SP)"
+               value="{% if form %}{{ form.uf }}{% elif obj %}{{ obj.address.uf }}{% endif %}">
       </div>
       <div class="field">
-        <label for="id_codigo_municipio_ibge">IBGE</label>
+        <label for="id_codigo_municipio_ibge">Código IBGE *</label>
         <input class="mono" name="codigo_municipio_ibge" id="id_codigo_municipio_ibge"
-               value="{% if form %}{{ form.codigo_municipio_ibge }}{% elif obj %}{{ obj.address.codigo_municipio_ibge }}{% endif %}">
+               required minlength="7" maxlength="7" inputmode="numeric"
+               pattern="[0-9]{7}" title="7 dígitos do município (ex.: 3504107)"
+               value="{% if form %}{{ form.codigo_municipio_ibge }}{% elif obj %}{{ obj.address.codigo_municipio_ibge|default:obj.address.codigo_ibge }}{% endif %}">
       </div>
     </div>
   </div>

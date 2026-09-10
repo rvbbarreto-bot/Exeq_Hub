@@ -83,6 +83,34 @@ def test_hub_nfce_pdv_renders_catalog_price_data(client, hub_nfce):
     assert hub_nfce["product"].code in body
 
 
+@pytest.mark.django_db
+def test_hub_nfce_pdv_shows_friendly_csc_message(client, hub_nfce, settings):
+    settings.NFCE_HTTP_MODE = "http"
+    _login(client, hub_nfce)
+    pdv = client.get(reverse("hub-v4-nfce-pdv"))
+    assert pdv.status_code == 200
+    body = pdv.content.decode()
+    assert "contador" in body.lower()
+    assert "CSC" in body
+    assert "CSC não cadastrado" not in body
+    assert '[{"id": "csc"' not in body
+
+    emit = client.post(
+        reverse("hub-v4-nfce-pdv"),
+        {
+            "idempotency_key": "hub-pdv-csc",
+            "provider_id": str(hub_nfce["provider"].id),
+            "line_product_id": [str(hub_nfce["product"].id)],
+            "line_quantity": ["1"],
+            "payment_method": "99",
+        },
+    )
+    assert emit.status_code == 200
+    body2 = emit.content.decode()
+    assert "contador" in body2.lower()
+    assert '[{"id": "csc"' not in body2
+
+
 def test_hub_nfce_nav_and_pdv_emit(client, hub_nfce):
     _login(client, hub_nfce)
     dash = client.get(reverse("hub-v4-dashboard"))
@@ -121,6 +149,51 @@ def test_hub_nfce_nav_and_pdv_emit(client, hub_nfce):
     assert pdf.status_code == 200
     assert pdf["Content-Type"] == "application/pdf"
     assert pdf.content.startswith(b"%PDF")
+
+
+@pytest.mark.django_db
+def test_hub_nfce_detail_draft_layout(client, hub_nfce):
+    from decimal import Decimal
+
+    from django.utils import timezone
+
+    from apps.nfce.models import NfceInvoice, NfceInvoiceItem
+
+    inv = NfceInvoice.objects.create(
+        tenant=hub_nfce["tenant"],
+        provider=hub_nfce["provider"],
+        idempotency_key="draft-layout-1",
+        status=NfceInvoice.Status.DRAFT,
+        series=1,
+        number=None,
+        issue_date=timezone.localdate(),
+        total_cents=76,
+        omit_dest=True,
+    )
+    NfceInvoiceItem.objects.create(
+        invoice=inv,
+        line_number=1,
+        product=hub_nfce["product"],
+        code=hub_nfce["product"].code,
+        description="COOKIE TRADICIONAL",
+        ncm="19053100",
+        cfop="5102",
+        quantity=Decimal("1"),
+        unit_price_cents=76,
+        total_cents=76,
+        csosn="102",
+    )
+    _login(client, hub_nfce)
+    detail = client.get(reverse("hub-v4-nfce-detail", args=[inv.id]))
+    assert detail.status_code == 200
+    body = detail.content.decode()
+    assert "None" not in body
+    assert "1/—" in body
+    assert "Rascunho" in body
+    assert "Resumo do cupom" in body
+    assert "COOKIE TRADICIONAL" in body
+    assert "table-card" in body
+    assert "detail-header" in body
 
 
 @pytest.mark.django_db

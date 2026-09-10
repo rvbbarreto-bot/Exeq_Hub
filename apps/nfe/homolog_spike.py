@@ -46,7 +46,10 @@ def build_homolog_preflight(
             }
         )
 
+    from apps.nfe.ie_validation import validate_emitter_ie
+
     ie = (provider.state_registration or "").strip()
+    ie_ok, _ = validate_emitter_ie(ie, http_mode=(mode == "http"))
     rtc = assess_rtc_emit_readiness(
         document_model="55",
         issue_date=issue_date or date.today(),
@@ -55,7 +58,7 @@ def build_homolog_preflight(
         must_fail.extend([{"id": b, "ok": False, "must": True} for b in rtc["blockers"]])
 
     blockers = [c.get("id") or c.get("label") for c in must_fail]
-    if mode == "http" and not ie and not (ie.upper() in {"ISENTO", "ISENTA"}):
+    if mode == "http" and not ie_ok:
         blockers.append("ie_missing")
     if mode == "http" and cert is None:
         blockers.append("cert_missing")
@@ -94,6 +97,7 @@ def run_homolog_spike(
     ncm: str = "21069090",
     rtc_mode: str | None = None,
     issue_date: date | None = None,
+    tp_amb: str = "2",
 ) -> tuple[NfeInvoice, dict[str, Any]]:
     """Emite 1 NF-e spike; retorna invoice + preflight/evidence base."""
     preflight = build_homolog_preflight(
@@ -112,7 +116,7 @@ def run_homolog_spike(
         "NFE_ENABLED": True,
         "NFE_HTTP_MODE": mode,
         "NFE_HTTP_DRY_RUN": dry_run if mode == "http" else False,
-        "NFE_DEFAULT_TP_AMB": "2",
+        "NFE_DEFAULT_TP_AMB": str(tp_amb or "2")[:1],
     }
     if rtc_mode:
         overrides["NFE_RTC_MODE"] = rtc_mode
@@ -209,3 +213,71 @@ def write_spike_evidence(
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(evidence, ensure_ascii=False, indent=2), encoding="utf-8")
     return evidence
+
+
+def run_smoke_e2e(
+    *,
+    tenant: Tenant,
+    provider: Provider,
+    customer: Customer,
+    mode: str = "stub",
+    tp_amb: str = "2",
+    dry_run: bool = False,
+    valor_cents: int = 1500,
+) -> dict[str, Any]:
+    """
+    Pipeline smoke: preflight → emit → XML/DANFE → compare estrutural.
+    Homolog (tpAmb=2) em stub; produção (tpAmb=1) exige cert+IE via preflight http.
+    """
+    from apps.nfe.artifacts import (
+        ensure_authorized_artifacts,
+        get_artifact,
+        has_danfe_pdf,
+        has_xml_authorized,
+        read_artifact_bytes,
+    )
+    from apps.nfe.models import NfeArtifact
+    from integrations.sefaz_nfe.danfe.compare import compare_structural
+
+    preflight = build_homolog_preflight(
+        tenant=tenant,
+        provider=provider,
+        http_mode=mode,
+    )
+    inv, _ = run_homolog_spike(
+        tenant=tenant,
+        provider=provider,
+        customer=customer,
+        mode=mode,
+        dry_run=dry_run,
+        valor_cents=valor_cents,
+        tp_amb=tp_amb,
+    )
+    artifacts = ensure_authorized_artifacts(inv) if inv.status == NfeInvoice.Status.AUTHORIZED else []
+    structural_ok = False
+    structural_missing: tuple[str, ...] = ()
+    pdf_art = get_artifact(inv, NfeArtifact.Kind.DANFE_PDF)
+    if pdf_art is not None:
+        pdf_bytes = read_artifact_bytes(pdf_art)
+        if pdf_bytes:
+            cmp = compare_structural(pdf_bytes)
+            structural_ok = cmp.ok
+            structural_missing = cmp.missing
+
+    return {
+        "preflight": preflight,
+        "invoice_id": str(inv.id),
+        "status": inv.status,
+        "access_key": inv.access_key or "",
+        "tp_amb": tp_amb,
+        "mode": mode,
+        "artifacts_created": len(artifacts),
+        "xml_authorized": has_xml_authorized(inv),
+        "danfe_pdf": has_danfe_pdf(inv),
+        "structural_ok": structural_ok,
+        "structural_missing": list(structural_missing),
+        "smoke_ok": inv.status == NfeInvoice.Status.AUTHORIZED
+        and has_xml_authorized(inv)
+        and has_danfe_pdf(inv)
+        and structural_ok,
+    }

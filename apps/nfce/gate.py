@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from django.conf import settings
@@ -253,7 +252,9 @@ def assert_can_emit(
     failed = [
         c for c in payload.get("checks") or [] if c.get("must") and not c.get("ok")
     ]
-    raise NfceGateError(json.dumps(failed, ensure_ascii=False))
+    from apps.nfce.user_messages import format_nfce_gate_errors
+
+    raise NfceGateError(format_nfce_gate_errors(failed))
 
 
 def build_config_payload(*, tenant, provider_id: str | None = None) -> dict[str, Any]:

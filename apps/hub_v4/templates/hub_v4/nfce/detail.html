@@ -1,59 +1,180 @@
 {% extends "hub_v4/base.html" %}
 {% load hub_v4_tags %}
-{% block content %}
-<div class="page-header">
-  <h1>NFC-e {{ invoice.series }}/{{ invoice.number }}</h1>
-  {% if docs.xml %}
-  <a class="btn btn-primary" href="{% url 'hub-v4-nfce-doc-download' invoice.id 'xml' %}">Baixar XML</a>
-  {% endif %}
-  {% if docs.pdf %}
-  <a class="btn btn-ghost" href="{% url 'hub-v4-nfce-doc-download' invoice.id 'pdf' %}">Baixar cupom PDF</a>
-  {% endif %}
-  <a class="btn btn-ghost" href="{% url 'hub-v4-nfce-list' %}">Lista</a>
-  <a class="btn btn-ghost" href="{% url 'hub-v4-nfce-pdv' %}">Nova avulsa</a>
-</div>
-<dl class="detail-grid">
-  <dt>Status</dt><dd>{{ invoice.get_status_display }}</dd>
-  <dt>Chave</dt><dd><code>{{ invoice.access_key|default:"—" }}</code></dd>
-  <dt>Protocolo</dt><dd>{{ invoice.protocol|default:"—" }}</dd>
-  <dt>Total</dt><dd class="num">{{ invoice.total_cents|default:0|cents_brl }}</dd>
-  <dt>Emitente</dt><dd>{{ invoice.provider.legal_name }}</dd>
-  <dt>Identificação</dt>
-  <dd>
-    {% if invoice.omit_dest %}Sem identificação{% else %}
-    CPF {{ invoice.identification_snapshot.document|default:"—" }}
-    {% endif %}
-  </dd>
-</dl>
-{% if invoice.items.all %}
-<h2>Itens</h2>
-<table class="data-table">
-  <thead><tr><th>#</th><th>Descrição</th><th>NCM</th><th>CFOP</th><th>CSOSN</th><th>Total</th></tr></thead>
-  <tbody>
-    {% for it in invoice.items.all %}
-    <tr>
-      <td>{{ it.line_number }}</td>
-      <td>{{ it.description }}</td>
-      <td>{{ it.ncm }}</td>
-      <td>{{ it.cfop }}</td>
-      <td>{{ it.csosn|default:"—" }}</td>
-      <td class="num">{{ it.total_cents|default:0|cents_brl }}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+
+{% block page_subtitle %}
+<div class="page-subtitle">Modelo 65 · {% if invoice.status == "draft" %}rascunho{% else %}cupom fiscal{% endif %}</div>
+{% endblock %}
+
+{% block page_actions %}
+{% if docs.pdf %}
+<a class="btn btn-primary" href="{% url 'hub-v4-nfce-doc-download' invoice.id 'pdf' %}">Baixar cupom PDF</a>
 {% endif %}
+{% if docs.xml %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-nfce-doc-download' invoice.id 'xml' %}">Baixar XML</a>
+{% endif %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-nfce-list' %}">Lista</a>
+<a class="btn btn-ghost" href="{% url 'hub-v4-nfce-pdv' %}">Nova avulsa</a>
+{% endblock %}
+
+{% block content %}
+<div class="card detail-header">
+  <div class="detail-header-main">
+    <h2 class="detail-title">NFC-e {{ nfce_number }}</h2>
+    <p class="detail-subtitle">
+      {{ invoice.provider.legal_name }}
+      · CNPJ <span class="mono">{{ invoice.provider.document }}</span>
+      · {{ invoice.issue_date|date:"d/m/Y" }}
+    </p>
+  </div>
+  {% status_badge invoice.status %}
+</div>
+
+{% if invoice.status == "draft" %}
+<div class="banner banner-warning" role="status">
+  Rascunho — cupom ainda não enviado à SEFAZ. Revise os itens e conclua a emissão quando o emitente estiver pronto.
+</div>
+{% elif invoice.status == "rejected" or invoice.status == "failed" %}
+<div class="card rejection-alert">
+  <div class="rejection-alert-head">
+    <span class="rejection-alert-icon" aria-hidden="true">!</span>
+    <div>
+      <div class="rejection-alert-title">{{ invoice.get_status_display }}</div>
+      <p class="rejection-alert-message">
+        {{ invoice.rejection_message|default:"A SEFAZ recusou ou não concluiu esta NFC-e." }}
+      </p>
+    </div>
+  </div>
+  {% if invoice.rejection_code %}
+  <p class="rejection-alert-code">Referência: <span class="mono">cStat {{ invoice.rejection_code }}</span></p>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="section-label" style="margin-top:0;">Resumo do cupom</div>
+  <div class="fiscal-summary-grid">
+    <div class="fiscal-summary-kpi">
+      <span>Total</span>
+      <strong class="num fiscal-summary-value">{{ invoice.total_cents|default:0|cents_brl }}</strong>
+    </div>
+    <div class="detail-field">
+      <span>Série / Número</span>
+      <div class="num"><strong>{{ nfce_number }}</strong></div>
+    </div>
+    <div class="detail-field">
+      <span>Ambiente</span>
+      <div>{{ tp_amb_label }}</div>
+    </div>
+    <div class="detail-field">
+      <span>Pagamento</span>
+      <div>{{ payment_label }}</div>
+    </div>
+    <div class="detail-field">
+      <span>Consumidor</span>
+      <div>{{ consumer_label }}</div>
+    </div>
+    <div class="detail-field">
+      <span>Natureza</span>
+      <div>{{ invoice.nature_operation|default:"VENDA" }}</div>
+    </div>
+    {% if invoice.access_key %}
+    <div class="detail-field detail-field--full">
+      <span>Chave de acesso</span>
+      <div class="mono detail-chave">{{ invoice.access_key }}</div>
+    </div>
+    {% endif %}
+    {% if invoice.protocol %}
+    <div class="detail-field">
+      <span>Protocolo</span>
+      <div class="mono">{{ invoice.protocol }}</div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if invoice.items.all %}
+<div class="card table-card nfce-items-card">
+  <div class="section-label nfce-items-head">
+    <span>Itens</span>
+    <span class="chip">{{ items_count }} produto{{ items_count|pluralize }}</span>
+  </div>
+  <div class="table-wrap desktop-only">
+    <table class="data">
+      <thead>
+        <tr>
+          <th class="num">#</th>
+          <th>Descrição</th>
+          <th>NCM</th>
+          <th>CFOP</th>
+          <th>CSOSN</th>
+          <th class="num">Qtd</th>
+          <th class="num">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for it in invoice.items.all %}
+        <tr>
+          <td class="num">{{ it.line_number }}</td>
+          <td>
+            <strong>{{ it.description }}</strong>
+            {% if it.code %}<div class="meta-muted mono">{{ it.code }}</div>{% endif %}
+          </td>
+          <td class="mono">{{ it.ncm }}</td>
+          <td class="mono">{{ it.cfop }}</td>
+          <td class="mono">{{ it.csosn|default:"—" }}</td>
+          <td class="num">{{ it.quantity }}</td>
+          <td class="num"><strong>{{ it.total_cents|default:0|cents_brl }}</strong></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="6" class="num" style="text-align:right;font-weight:600;color:var(--text-muted);">Total</td>
+          <td class="num"><strong>{{ invoice.total_cents|default:0|cents_brl }}</strong></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  <div class="rowcards mobile-only">
+    {% for it in invoice.items.all %}
+    <div class="rowcard">
+      <div class="rowcard-top">
+        <span class="rowcard-title">{{ it.description }}</span>
+        <strong class="num">{{ it.total_cents|default:0|cents_brl }}</strong>
+      </div>
+      <div class="rowcard-kv">Item<b class="num">#{{ it.line_number }}</b></div>
+      <div class="rowcard-kv">Qtd<b class="num">{{ it.quantity }}</b></div>
+      <div class="rowcard-kv">NCM<b class="mono">{{ it.ncm }}</b></div>
+      <div class="rowcard-kv">CFOP<b class="mono">{{ it.cfop }}</b></div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% else %}
+<div class="card">
+  {% empty_state "Nenhum item" "Este rascunho ainda não possui produtos." "Nova avulsa →" "/hub/nfce/pdv/" %}
+</div>
+{% endif %}
+
 {% if can_cancel %}
-<section class="card card-danger" style="margin-top:1.5rem;">
-  <h2>Cancelar NFC-e</h2>
+<div class="card card-danger">
+  <div class="section-label section-label--danger" style="margin-top:0;">Cancelar NFC-e</div>
+  <p class="hint-line">Ação irreversível na SEFAZ. Justificativa entre 15 e 255 caracteres.</p>
   <form method="post" action="{% url 'hub-v4-nfce-cancel' invoice.id %}"
         onsubmit="return confirm('Confirma o cancelamento desta NFC-e?');">
     {% csrf_token %}
-    <label for="id_justificativa">Justificativa (15–255 caracteres)</label>
-    <textarea id="id_justificativa" name="justificativa" rows="3" required minlength="15"
-              placeholder="Motivo do cancelamento…"></textarea>
-    <button type="submit" class="btn btn-danger">Confirmar cancelamento</button>
+    <div class="form-grid">
+      <div class="field full">
+        <label for="id_justificativa">Justificativa *</label>
+        <textarea id="id_justificativa" name="justificativa" rows="3" required minlength="15" maxlength="255"
+                  placeholder="Motivo do cancelamento…"></textarea>
+      </div>
+    </div>
+    <div class="wizard-nav form-sticky-footer">
+      <span></span>
+      <button type="submit" class="btn btn-danger">Confirmar cancelamento</button>
+    </div>
   </form>
-</section>
+</div>
 {% endif %}
 {% endblock %}

@@ -25,6 +25,7 @@ from apps.nfe.homolog_spike import (
     ALE_TENANT_SLUG,
     build_homolog_preflight,
     run_homolog_spike,
+    run_smoke_e2e,
     write_spike_evidence,
 )
 
@@ -50,6 +51,17 @@ class Command(BaseCommand):
             "--preflight-only",
             action="store_true",
             help="Só checklist cert+IE+gate, sem emitir",
+        )
+        parser.add_argument(
+            "--smoke-e2e",
+            action="store_true",
+            help="Pipeline stub: emit + XML/DANFE + compare estrutural",
+        )
+        parser.add_argument(
+            "--tp-amb",
+            choices=("1", "2"),
+            default="2",
+            help="1=produção 2=homolog (smoke/produção real exige cert+IE)",
         )
 
     def handle(self, *args, **options):
@@ -93,11 +105,41 @@ class Command(BaseCommand):
             self.stdout.write(f"preflight saved → {out.resolve()}")
             return
 
+        tp_amb = str(options["tp_amb"])[:1]
+
         customer = (
             Customer.objects.filter(tenant=tenant, is_active=True).order_by("created_at").first()
         )
         if customer is None:
             raise CommandError("Cadastre um Customer no tenant antes do spike.")
+
+        if options["smoke_e2e"]:
+            smoke_mode = "stub" if tp_amb == "2" else mode
+            if tp_amb == "1" and mode == "http" and not preflight["ok"]:
+                raise CommandError(
+                    f"Smoke produção bloqueado: {preflight['blockers']}"
+                )
+            smoke = run_smoke_e2e(
+                tenant=tenant,
+                provider=provider,
+                customer=customer,
+                mode=smoke_mode,
+                tp_amb=tp_amb,
+                dry_run=dry_run,
+                valor_cents=int(options["valor_cents"]),
+            )
+            out = Path(options["out"])
+            out.write_text(
+                __import__("json").dumps(smoke, ensure_ascii=False, indent=2, default=str),
+                encoding="utf-8",
+            )
+            self.stdout.write(f"smoke_ok={smoke['smoke_ok']} tpAmb={tp_amb}")
+            self.stdout.write(f"evidence={out.resolve()}")
+            if smoke["smoke_ok"]:
+                self.stdout.write(self.style.SUCCESS("SMOKE E2E PASS"))
+            else:
+                raise CommandError(f"Smoke E2E falhou: {smoke}")
+            return
 
         try:
             inv, _pf = run_homolog_spike(
@@ -111,6 +153,7 @@ class Command(BaseCommand):
                 ncm=options["ncm"],
                 rtc_mode=rtc_mode,
                 issue_date=issue_date,
+                tp_amb=tp_amb,
             )
         except NfeValidationError as exc:
             raise CommandError(str(exc)) from exc

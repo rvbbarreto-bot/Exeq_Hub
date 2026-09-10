@@ -225,6 +225,14 @@ def cross_validate_product(
             errors.append(
                 {"rule": "RULE-L3-CST", "field": field, "message": f"CST {label} {code} inválido"}
             )
+        if is_sn and code in {"01", "02", "03"}:
+            errors.append(
+                {
+                    "rule": "RULE-L3-SN-PC",
+                    "field": field,
+                    "message": f"CST {label} {code} é de regime normal; use 49 ou 99 no Simples Nacional",
+                }
+            )
 
     rtc_mode = nfe_rtc_mode()
     cls_status = resolve_goods_classification().get("status")

@@ -10,6 +10,9 @@
 {% endblock %}
 
 {% block content %}
+{% if gate_message %}
+<div class="banner banner-warning" role="alert" style="margin-bottom:16px;">{{ gate_message }}</div>
+{% endif %}
 <form method="post" id="nfce-avulsa-form">
   {% csrf_token %}
   <input type="hidden" name="idempotency_key" value="{{ form.idempotency_key|default:idempotency_key }}">

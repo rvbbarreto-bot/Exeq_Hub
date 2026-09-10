@@ -67,7 +67,7 @@
 
 {% if rows %}
 <div class="card section">
-  <h3>Certificados cadastrados</h3>
+  <h3>{% if active_provider %}Certificado — {{ active_provider.trade_name|default:active_provider.legal_name }}{% else %}Certificados cadastrados{% endif %}</h3>
   <div class="cert-grid">
     {% for row in rows %}
     <div class="cert-card">
@@ -102,6 +102,8 @@
     {% endfor %}
   </div>
 </div>
+{% elif can_write and providers and active_provider %}
+{% empty_state "Nenhum certificado para esta empresa" "A empresa em uso ({{ active_provider.legal_name }} · CNPJ {{ active_provider.document }}) ainda não possui A1. Envie o certificado para emitir NFS-e e guias DAS." "Enviar A1" "#upload-a1" %}
 {% elif can_write and providers %}
 {% empty_state "Nenhum certificado" "Envie o A1 desta empresa para emitir NFS-e e guias DAS." "Enviar A1" "#upload-a1" %}
 {% elif can_write %}

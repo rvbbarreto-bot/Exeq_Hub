@@ -9,6 +9,14 @@
 {% endblock %}
 
 {% block content %}
+{% if validation_alert %}
+<div class="banner banner-warning nfe-validation-alert" role="alert">
+  <p style="margin:0 0 10px;">{{ validation_alert.message }}</p>
+  {% if validation_alert.action_url %}
+  <a class="btn btn-ghost btn-sm" href="{{ validation_alert.action_url }}">{{ validation_alert.action_label }}</a>
+  {% endif %}
+</div>
+{% endif %}
 <form method="post" id="nfe-emit-form" class="form-page">
   {% csrf_token %}
   <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">

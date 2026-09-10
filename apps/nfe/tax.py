@@ -6,6 +6,9 @@ from decimal import Decimal
 from typing import Any
 
 from apps.master_data.models import TaxRegime
+from apps.nfe.csosn import map_csosn_to_xml_group
+from apps.nfe.ibpt import compute_v_tot_trib_cents
+from apps.nfe.ie_validation import emitter_ie_error
 from apps.nfe.models import NfeInvoice
 
 # U5: bump semântico — RTC hooks nulos + interestadual
@@ -106,6 +109,17 @@ def _money_cents(qty: Decimal, unit_cents: int, discount: int = 0) -> int:
     return max(total, 0)
 
 
+_REGIME_NORMAL_PC_CST = frozenset({"01", "02", "03"})
+_SN_DEFAULT_PC_CST = "49"
+
+
+def _normalize_sn_pc_cst(cst: str | None) -> str:
+    code = (cst or _SN_DEFAULT_PC_CST)[:2]
+    if code in _REGIME_NORMAL_PC_CST:
+        return _SN_DEFAULT_PC_CST
+    return code
+
+
 def calculate_item_taxes(
     *,
     tax_regime: str,
@@ -138,6 +152,7 @@ def calculate_item_taxes(
         taxes["icms"] = {
             "regime": "sn",
             "csosn": code,
+            "xml_group": map_csosn_to_xml_group(code),
             "base_cents": 0,
             "rate_bp": 0,
             "value_cents": 0,
@@ -169,8 +184,15 @@ def calculate_item_taxes(
             "value_cents": base * r // 10000,
         }
 
-    taxes["pis"] = _pc(pis_cst, pis_rate_bp)
-    taxes["cofins"] = _pc(cofins_cst, cofins_rate_bp)
+    if tax_regime == TaxRegime.SIMPLES:
+        pis_code = _normalize_sn_pc_cst(pis_cst)
+        cofins_code = _normalize_sn_pc_cst(cofins_cst)
+    else:
+        pis_code = (pis_cst or "07")[:2]
+        cofins_code = (cofins_cst or "07")[:2]
+
+    taxes["pis"] = _pc(pis_code, pis_rate_bp if tax_regime != TaxRegime.SIMPLES else 0)
+    taxes["cofins"] = _pc(cofins_code, cofins_rate_bp if tax_regime != TaxRegime.SIMPLES else 0)
     return taxes
 
 
@@ -186,13 +208,10 @@ def build_validation(
 
     if not provider.document:
         errors.append({"field": "provider", "message": "emitente sem CNPJ"})
-    if require_ie and not (getattr(provider, "state_registration", None) or "").strip():
-        errors.append(
-            {
-                "field": "provider.state_registration",
-                "message": "IE do emitente obrigatória para HTTP SEFAZ",
-            }
-        )
+    if require_ie:
+        ie_err = emitter_ie_error(getattr(provider, "state_registration", None), http_mode=True)
+        if ie_err:
+            errors.append({"field": "provider.state_registration", "message": ie_err})
     addr = provider.address or {}
     emit_uf = _uf(addr)
     if not emit_uf:
@@ -378,6 +397,7 @@ def build_validation(
         items_taxes.append(
             {
                 "line_number": it.line_number,
+                "ncm": it.ncm,
                 "total_cents": line_total,
                 "taxes": tax,
             }
@@ -414,6 +434,16 @@ def build_validation(
 
     from apps.nfe.catalog import catalog_meta, catalog_version_label
 
+    v_tot_trib_cents = compute_v_tot_trib_cents(
+        [
+            {
+                "ncm": it.get("ncm"),
+                "total_cents": it.get("total_cents"),
+            }
+            for it in items_taxes
+        ],
+        emit_uf=emit_uf,
+    )
     totals = {
         "products_cents": products_cents,
         "freight_cents": freight,
@@ -423,6 +453,7 @@ def build_validation(
         "icms_base_cents": icms_base_total,
         "pis_cents": pis_total,
         "cofins_cents": cofins_total,
+        "v_tot_trib_cents": v_tot_trib_cents,
         "tax_engine_version": TAX_ENGINE_VERSION,
         "catalog_version": catalog_version_label(),
         "catalog_versions": catalog_meta(),

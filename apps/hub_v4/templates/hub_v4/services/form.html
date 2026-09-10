@@ -51,9 +51,21 @@
   <div class="card section">
     <h3>Código NBS</h3>
     <div class="formgrid">
-      {% with nbs_code=form.codigo_nbs|default:obj.codigo_nbs|default:"" nbs_desc=obj.nbs_item.description|default:"" %}
+      {% if form %}
+      {% with nbs_code=form.codigo_nbs|default:"" nbs_desc="" %}
       {% include "hub_v4/partials/nbs_dropdown_select.html" with show_tip=False initial_code=nbs_code initial_desc=nbs_desc nbs_catalog_count=nbs_catalog|length %}
       {% endwith %}
+      {% elif obj %}
+      {% with nbs_code=obj.codigo_nbs|default:"" %}
+      {% if obj.nbs_item %}
+      {% include "hub_v4/partials/nbs_dropdown_select.html" with show_tip=False initial_code=nbs_code initial_desc=obj.nbs_item.description|default:"" nbs_catalog_count=nbs_catalog|length %}
+      {% else %}
+      {% include "hub_v4/partials/nbs_dropdown_select.html" with show_tip=False initial_code=nbs_code initial_desc="" nbs_catalog_count=nbs_catalog|length %}
+      {% endif %}
+      {% endwith %}
+      {% else %}
+      {% include "hub_v4/partials/nbs_dropdown_select.html" with show_tip=False initial_code="" initial_desc="" nbs_catalog_count=nbs_catalog|length %}
+      {% endif %}
       <p class="hint-line fullrow">Selecione na lista (Anexo B). Formato exibido: n.nnnn.nn.nn</p>
     </div>
   </div>

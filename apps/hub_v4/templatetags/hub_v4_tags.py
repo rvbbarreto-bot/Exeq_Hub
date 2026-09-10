@@ -4,8 +4,14 @@ register = template.Library()
 
 
 @register.inclusion_tag("hub_v4/components/kpi_card.html")
-def kpi_card(label, value, hint="", tone="total"):
-    return {"label": label, "value": value, "hint": hint, "tone": tone}
+def kpi_card(label, value, hint="", tone="total", status=False):
+    return {
+        "label": label,
+        "value": value,
+        "hint": hint,
+        "tone": tone,
+        "status": status,
+    }
 
 
 @register.inclusion_tag("hub_v4/components/status_badge.html")

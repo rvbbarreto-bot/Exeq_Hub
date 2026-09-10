@@ -11,7 +11,7 @@ from shared.storage import get_storage
 
 logger = logging.getLogger(__name__)
 
-DANFE_LAYOUT_VERSION = "exeq-danfe-0.1"
+from integrations.sefaz_nfe.danfe.render_moc import LAYOUT_VERSION as DANFE_LAYOUT_VERSION
 
 
 def has_artifact(invoice: NfeInvoice, kind: str) -> bool:
@@ -189,11 +189,23 @@ def ensure_danfe_pdf(
         return None
 
     try:
+        from apps.nfe.danfe_logo import resolve_provider_logo_bytes
         from integrations.sefaz_nfe.danfe import render_danfe_pdf
 
+        provider = (
+            invoice.provider
+            if getattr(invoice, "provider_id", None)
+            else None
+        )
+        if provider is None and getattr(invoice, "provider_id", None):
+            from apps.master_data.models import Provider
+
+            provider = Provider.objects.filter(pk=invoice.provider_id).first()
+        logo_bytes = resolve_provider_logo_bytes(provider)
         pdf = render_danfe_pdf(
             data_xml,
             cancelled=cancelled or invoice.status == NfeInvoice.Status.CANCELLED,
+            logo_bytes=logo_bytes,
         )
     except Exception:  # noqa: BLE001 — D-10
         logger.exception("nfe_danfe_render_failed invoice=%s", invoice.id)

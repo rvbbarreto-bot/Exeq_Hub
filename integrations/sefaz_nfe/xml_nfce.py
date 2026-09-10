@@ -19,7 +19,7 @@ from integrations.sefaz_nfe.xml_nfe import (
     _qty,
     _qty_str,
 )
-from apps.nfce.tax import map_csosn_to_xml_group
+from apps.nfe.csosn import map_csosn_to_xml_group
 from integrations.sefaz_nfe.prod_fields import prod_c_ean
 
 ET.register_namespace("", NFE_NS)

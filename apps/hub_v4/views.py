@@ -14,6 +14,8 @@ from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.decorators import method_decorator
+from django.middleware.csrf import get_token
+from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views import View
 from django.views.decorators.http import require_GET, require_http_methods
@@ -136,15 +138,32 @@ def _greeting_user(user) -> str:
     return f"{prefix}, {first}"
 
 
+@method_decorator(never_cache, name="dispatch")
 @method_decorator(ensure_csrf_cookie, name="dispatch")
 class HubLoginView(View):
     template_name = "hub_v4/login.html"
+
+    def _login_context(self, request: HttpRequest, *, error: str | None = None) -> dict:
+        ctx: dict = {
+            "tenant_slug_prefill": (request.GET.get("tenant") or "").strip(),
+        }
+        if error:
+            ctx["error"] = error
+        elif request.GET.get("err") == "csrf":
+            ctx["error"] = (
+                "Sessão expirada ou formulário desatualizado. "
+                "Recarregue a página e tente novamente."
+            )
+        elif request.GET.get("logged_out") == "1":
+            ctx["success"] = "Você saiu com sucesso."
+        return ctx
 
     def get(self, request: HttpRequest):
         tenant, user, role, redir = require_hub(request)
         if redir is None:
             return redirect("hub-v4-dashboard")
-        return render(request, self.template_name)
+        get_token(request)
+        return render(request, self.template_name, self._login_context(request))
 
     def post(self, request: HttpRequest):
         tenant_slug = (request.POST.get("tenant_slug") or "").strip()
@@ -155,11 +174,11 @@ class HubLoginView(View):
                 tenant_slug=tenant_slug, email=email, password=password
             )
         except AuthenticationError as exc:
-            return render(
-                request,
-                self.template_name,
-                {"error": str(exc) or "Credenciais inválidas."},
-            )
+            get_token(request)
+            ctx = self._login_context(request, error=str(exc) or "Credenciais inválidas.")
+            ctx["tenant_slug_prefill"] = tenant_slug or ctx["tenant_slug_prefill"]
+            ctx["email_prefill"] = email
+            return render(request, self.template_name, ctx)
         set_hub_session(
             request,
             user=user,
@@ -174,7 +193,8 @@ class HubLoginView(View):
 @require_http_methods(["POST"])
 def hub_logout(request: HttpRequest):
     clear_hub_session(request)
-    return redirect("hub-v4-login")
+    request.session.flush()
+    return redirect(f"{reverse('hub-v4-login')}?logged_out=1")
 
 
 class DashboardView(View):
@@ -184,7 +204,9 @@ class DashboardView(View):
             return redir
         if role in FOOD_ONLY_ROLES:
             return redirect("hub-v4-food-orders")
-        ctx = dashboard_context(tenant)
+        active = get_active_provider(request, tenant)
+        active_cnpj = active.document if active else None
+        ctx = dashboard_context(tenant, cnpj=active_cnpj)
         ctx.update(
             {
                 "nav": "dashboard",
@@ -1553,11 +1575,36 @@ class NfeEmitView(View):
         return render(request, self.template_name, self._ctx(tenant, role, request))
 
     def post(self, request: HttpRequest):
+        from apps.nfe.exceptions import NfeValidationError
+
         tenant, user, role, redir = _require_nfe_hub(request, write=True)
         if redir:
             return redir
         try:
             inv = self._emit_from_post(request, tenant, actor=user.email or "hub")
+        except NfeValidationError as exc:
+            from apps.nfe.user_messages import parse_nfe_validation_error
+
+            msg, _, action = parse_nfe_validation_error(exc)
+            ctx = {**self._ctx(tenant, role, request), "form": request.POST}
+            validation_alert = {"message": msg}
+            if action:
+                if action.get("hint") == "customer":
+                    cid = (request.POST.get("customer_id") or "").strip()
+                    if cid:
+                        validation_alert["action_url"] = reverse(
+                            "hub-v4-customer-edit", args=[cid]
+                        )
+                        validation_alert["action_label"] = action["label"]
+                elif action.get("hint") == "provider":
+                    pid = (request.POST.get("provider_id") or "").strip()
+                    if pid:
+                        validation_alert["action_url"] = reverse(
+                            "hub-v4-provider-edit", args=[pid]
+                        )
+                        validation_alert["action_label"] = action["label"]
+            ctx["validation_alert"] = validation_alert
+            return render(request, self.template_name, ctx)
         except Exception as exc:
             messages.error(request, str(exc) or "Falha ao emitir NF-e.")
             return render(
@@ -1601,13 +1648,7 @@ class NfeEmitView(View):
         }
 
     def _emit_from_post(self, request, tenant, *, actor: str) -> NfeInvoice:
-        from apps.nfe.exceptions import (
-            NfeDisabledError,
-            NfeGateError,
-            NfeInvalidTransitionError,
-            NfeValidationError,
-            NfeVersionConflictError,
-        )
+        from apps.nfe.exceptions import NfeValidationError
 
         provider = get_object_or_404(
             Provider, pk=request.POST.get("provider_id"), tenant=tenant
@@ -1683,18 +1724,8 @@ class NfeEmitView(View):
             )
             replace_items(inv, items=[item])
             return emit_invoice(inv, actor=actor)
-        except (
-            NfeDisabledError,
-            NfeGateError,
-            NfeInvalidTransitionError,
-            NfeValidationError,
-            NfeVersionConflictError,
-        ) as exc:
-            detail = str(exc)
-            # API dumps field_errors as JSON string no validation
-            if detail.startswith("{"):
-                raise ValueError(f"Validação NF-e: {detail}") from exc
-            raise ValueError(detail) from exc
+        except NfeValidationError:
+            raise
 
 
 class NfeDetailView(View):
@@ -2141,7 +2172,22 @@ class NfcePdvView(View):
         try:
             inv = self._emit_from_post(request, tenant, actor=user.email or "hub")
         except Exception as exc:
-            messages.error(request, str(exc) or "Falha ao emitir NFC-e.")
+            from apps.nfce.exceptions import NfceGateError
+            from apps.nfce.user_messages import format_nfce_gate_errors
+
+            msg = str(exc) or "Falha ao emitir NFC-e."
+            if isinstance(exc, NfceGateError):
+                msg = str(exc)
+            else:
+                try:
+                    import json
+
+                    parsed = json.loads(msg)
+                    if isinstance(parsed, list):
+                        msg = format_nfce_gate_errors(parsed)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            messages.error(request, msg)
             return render(
                 request,
                 self.template_name,
@@ -2163,6 +2209,8 @@ class NfcePdvView(View):
 
     def _ctx(self, tenant, role, request):
         from apps.hub_v4.nfce_pdv import NFCE_PDV_PAYMENT_METHODS
+        from apps.nfce.gate import build_gate_payload
+        from apps.nfce.user_messages import format_nfce_gate_errors
 
         providers = list(
             Provider.objects.filter(tenant=tenant, is_active=True).order_by("legal_name")
@@ -2171,6 +2219,15 @@ class NfcePdvView(View):
             NfeProduct.objects.filter(tenant=tenant, is_active=True).order_by("code")[:200]
         )
         active = get_active_provider(request, tenant)
+        preferred = (request.POST.get("provider_id") or request.GET.get("provider") or "").strip()
+        provider_id = preferred or (str(active.id) if active else "")
+        gate = build_gate_payload(tenant=tenant, provider_id=provider_id or None)
+        gate_message = ""
+        if not gate.get("can_create"):
+            failed = [
+                c for c in gate.get("checks") or [] if c.get("must") and not c.get("ok")
+            ]
+            gate_message = format_nfce_gate_errors(failed)
         return {
             "nav": "nfce",
             "page_title": "NFC-e Avulsa",
@@ -2178,9 +2235,11 @@ class NfcePdvView(View):
             "providers": providers,
             "products": products,
             "payment_methods": NFCE_PDV_PAYMENT_METHODS,
-            "active_provider_id": str(active.id) if active else "",
+            "active_provider_id": provider_id or (str(active.id) if active else ""),
             "idempotency_key": f"hub-nfce-{uuid.uuid4()}",
             "nfce_http_mode": getattr(dj_settings, "NFCE_HTTP_MODE", "stub"),
+            "gate_can_create": gate.get("can_create"),
+            "gate_message": gate_message,
         }
 
     def _emit_from_post(self, request, tenant, *, actor: str):
@@ -2226,14 +2285,37 @@ class NfceDetailView(View):
             tenant=tenant,
         )
         acts = allowed_actions(invoice)
+        from apps.hub_v4.nfce_pdv import NFCE_PDV_PAYMENT_METHODS
+
+        nfce_number = (
+            f"{invoice.series}/{invoice.number}"
+            if invoice.number is not None
+            else f"{invoice.series}/—"
+        )
+        payment_labels = dict(NFCE_PDV_PAYMENT_METHODS)
+        if invoice.omit_dest:
+            consumer_label = "Sem identificação do consumidor"
+        else:
+            snap = invoice.identification_snapshot or {}
+            doc = snap.get("document") or "—"
+            dtype = (snap.get("document_type") or "cpf").upper()
+            consumer_label = f"{dtype} {doc}"
+        items = list(invoice.items.all())
         return render(
             request,
             "hub_v4/nfce/detail.html",
             {
                 "nav": "nfce",
-                "page_title": f"NFC-e {invoice.series}/{invoice.number or '—'}",
+                "page_title": f"NFC-e {nfce_number}",
                 "role_code": role,
                 "invoice": invoice,
+                "nfce_number": nfce_number,
+                "payment_label": payment_labels.get(
+                    invoice.payment_method, invoice.payment_method
+                ),
+                "tp_amb_label": "Produção" if invoice.tp_amb == "1" else "Homologação",
+                "consumer_label": consumer_label,
+                "items_count": len(items),
                 "can_cancel": "cancel" in acts and role in WRITE_ROLES,
                 "docs": {
                     "xml": resolve_authorized_xml_bytes(invoice) is not None
@@ -2415,10 +2497,11 @@ class CertificatesView(View):
         active_id = preferred or (str(active.id) if active else "")
         if preferred and not any(str(p.id) == preferred for p in providers):
             active_id = str(active.id) if active else ""
+        active_cnpj = active.document if active else None
         return {
             "nav": "certificates",
             "page_title": "Certificados",
-            "rows": certificate_rows(tenant),
+            "rows": certificate_rows(tenant, cnpj=active_cnpj),
             "role_code": role,
             "can_write": role in WRITE_ROLES,
             "providers": providers,
@@ -2951,7 +3034,9 @@ class UserInviteView(View):
         if send_mail:
             from apps.accounts.invite_email import send_tenant_invite_email
 
-            login_url = request.build_absolute_uri(reverse("hub-v4-login"))
+            login_url = request.build_absolute_uri(
+                f"{reverse('hub-v4-login')}?tenant={tenant.slug}"
+            )
             try:
                 send_tenant_invite_email(
                     tenant=tenant,

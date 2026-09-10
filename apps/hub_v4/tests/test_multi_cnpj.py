@@ -142,6 +142,10 @@ def test_active_company_header_and_wizard(client, hub_ctx):
     assert "Emitir como" in wh
     assert str(p.id) in wh
 
+    providers_html = client.get(reverse("hub-v4-providers")).content.decode()
+    assert "Em uso" in providers_html
+    assert ">Ativa</span>" not in providers_html
+
 
 @pytest.mark.django_db
 def test_hub_customer_create(client, hub_ctx):
@@ -156,10 +160,36 @@ def test_hub_customer_create(client, hub_ctx):
             "email": "tomador@example.com",
             "is_active": "1",
             "data_source": "manual",
+            "logradouro": "Rua Teste",
+            "municipio": "Atibaia",
             "uf": "SP",
+            "codigo_municipio_ibge": "3504107",
         },
     )
     assert r.status_code == 302
     from apps.master_data.models import Customer
 
     assert Customer.objects.filter(tenant=tenant, name="Tomador QA").exists()
+
+
+@pytest.mark.django_db
+def test_hub_customer_requires_fiscal_address(client, hub_ctx):
+    tenant, user = hub_ctx
+    _login(client, tenant, user)
+    r = client.post(
+        reverse("hub-v4-customer-new"),
+        {
+            "document_type": "cpf",
+            "document": "52998224725",
+            "name": "Sem Endereco",
+            "is_active": "1",
+            "data_source": "manual",
+            "logradouro": "Rua A",
+            "uf": "SP",
+        },
+    )
+    assert r.status_code == 200
+    assert "IBGE" in r.content.decode()
+    from apps.master_data.models import Customer
+
+    assert not Customer.objects.filter(tenant=tenant, name="Sem Endereco").exists()
