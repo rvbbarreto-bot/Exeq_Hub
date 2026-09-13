@@ -31,7 +31,7 @@ def test_format_nfce_validation_ie_hint():
     errors = [{"field": "provider.state_registration", "message": "IE obrigatória"}]
     msg = format_nfce_validation_errors(errors)
     assert "Inscrição Estadual" in msg
-    assert "Isento" in msg
+    assert "ISENTO" in msg
 
 
 def test_format_nfce_rejection_legacy_ssl():

@@ -29,6 +29,9 @@ from apps.nfce.user_messages import format_nfce_gate_errors
 
 
 def main() -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
     parser = argparse.ArgumentParser(description="NFC-e produção — readiness gate")
     parser.add_argument("--tenant", default="ALE", help="slug do tenant")
     parser.add_argument("--cnpj", default="", help="CNPJ emitente (opcional)")
