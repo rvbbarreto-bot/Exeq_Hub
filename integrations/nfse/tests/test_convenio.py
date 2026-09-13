@@ -110,3 +110,30 @@ def test_convenio_http_496_sem_mtls_nao_apto():
     assert status.aderente is False
     assert status.source == "http_error"
     assert "496" in str(status.raw.get("error") or "")
+
+
+@override_settings(NFSE_CONVENIO_MODE="http", ADN_PARAM_BASE_URL="https://adn.test")
+def test_check_convenio_batch_multi_ibge():
+    from unittest.mock import MagicMock, patch
+
+    from integrations.nfse.convenio import check_convenio_batch
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.headers = {"content-type": "application/json"}
+    mock_resp.json.return_value = {"situacao": "apto"}
+
+    mock_client = MagicMock()
+    mock_client.get.return_value = mock_resp
+    mock_client.__enter__ = MagicMock(return_value=mock_client)
+    mock_client.__exit__ = MagicMock(return_value=False)
+
+    with patch("httpx.Client", return_value=mock_client):
+        rows = check_convenio_batch(
+            ["3504107", "3550308"],
+            environment="production",
+            force_refresh=True,
+        )
+    assert len(rows) == 2
+    assert all(r.aderente for r in rows)
+    assert mock_client.get.call_count >= 2

@@ -27,6 +27,13 @@ def hub_user(db):
 
 
 @pytest.mark.django_db
+def test_hub_login_sets_csrf_cookie(client):
+    r = client.get(reverse("hub-v4-login"))
+    assert r.status_code == 200
+    assert "csrftoken" in r.cookies
+
+
+@pytest.mark.django_db
 def test_hub_v4_login_and_dashboard(client, hub_user):
     tenant, user = hub_user
     r = client.get(reverse("hub-v4-dashboard"))
@@ -103,8 +110,8 @@ def test_hub_v4_nav_labels_no_artefatos_menu(client, hub_user):
     assert "Artefatos" not in html or "Documentos" in html
     # Sidebar IA-nav labels
     assert "NFS-e" in html
-    assert "Cobranças" in html
-    assert "Guias DAS" in html
+    assert "Cobrança" in html
+    assert "Apuração Guia DAS" in html
     assert "Clientes" in html
     assert "Empresas" in html
     assert "Usuários" in html or "Usuarios" in html
@@ -112,3 +119,86 @@ def test_hub_v4_nav_labels_no_artefatos_menu(client, hub_user):
     assert "Integrações" in html
     assert "Preferências" in html
     assert "/admin/" not in html
+
+
+@pytest.mark.django_db
+def test_hub_logout_and_tenant_label(client, hub_user):
+    tenant, user = hub_user
+    client.post(
+        reverse("hub-v4-login"),
+        {
+            "tenant_slug": tenant.slug,
+            "email": user.email,
+            "password": "Secret123!",
+        },
+    )
+    dash = client.get(reverse("hub-v4-dashboard"))
+    assert dash.status_code == 200
+    body = dash.content.decode()
+    assert tenant.slug in body
+    assert "Sair" in body
+
+    out = client.post(reverse("hub-v4-logout"))
+    assert out.status_code == 302
+    assert reverse("hub-v4-login") in out["Location"]
+    assert "logged_out=1" in out["Location"]
+    login = client.get(out["Location"])
+    assert login.status_code == 200
+    assert "Você saiu com sucesso" in login.content.decode()
+    assert client.get(reverse("hub-v4-dashboard")).status_code == 302
+
+
+@pytest.mark.django_db
+def test_hub_logout_csrf_failure_redirects(client, hub_user):
+    from django.test import Client
+
+    tenant, user = hub_user
+    client.post(
+        reverse("hub-v4-login"),
+        {
+            "tenant_slug": tenant.slug,
+            "email": user.email,
+            "password": "Secret123!",
+        },
+    )
+    strict = Client(enforce_csrf_checks=True)
+    strict.cookies = client.cookies
+    r = strict.post(reverse("hub-v4-logout"))
+    assert r.status_code == 302
+    assert "logged_out=1" in r.url
+    login = strict.get(r.url)
+    assert login.status_code == 200
+    assert "Você saiu com sucesso" in login.content.decode()
+    assert strict.get(reverse("hub-v4-dashboard")).status_code == 302
+
+
+@pytest.mark.django_db
+def test_hub_login_no_cache(client):
+    r = client.get(reverse("hub-v4-login"))
+    assert r.status_code == 200
+    cache_control = r.headers.get("Cache-Control", "")
+    assert "no-store" in cache_control or "max-age=0" in cache_control
+
+
+@pytest.mark.django_db
+def test_hub_login_prefills_tenant_from_query(client):
+    r = client.get(reverse("hub-v4-login"), {"tenant": "exeq"})
+    assert r.status_code == 200
+    assert b'value="exeq"' in r.content
+
+
+@pytest.mark.django_db
+def test_hub_login_csrf_failure_redirects(client):
+    from django.test import Client
+
+    strict = Client(enforce_csrf_checks=True)
+    r = strict.post(
+        reverse("hub-v4-login"),
+        {"tenant_slug": "x", "email": "y@z.com", "password": "z"},
+    )
+    assert r.status_code == 302
+    assert "err=csrf" in r.url
+
+    r2 = strict.get(r.url)
+    assert r2.status_code == 200
+    assert b"formul" in r2.content.lower() and b"desatualizado" in r2.content.lower()

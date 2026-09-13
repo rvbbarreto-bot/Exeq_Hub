@@ -1,0 +1,40 @@
+<div class="field fullrow">
+  <label for="{{ trigger_id|default:'id_nbs_dropdown' }}">
+    Código NBS
+    {% if show_tip %}
+    <abbr class="field-tip" title="{{ tip_text|default:'Selecione na lista nacional (Anexo B). Formato: n.nnnn.nn.nn — editável por nota.' }}">ⓘ</abbr>
+    {% endif %}
+  </label>
+  <div
+    class="dropdown-select"
+    data-nbs-dropdown
+    data-catalog-id="{{ catalog_script_id|default:'hub-nbs-catalog' }}"
+    data-initial-desc="{{ initial_desc|default:''|escape }}"
+  >
+    <input type="hidden" id="{{ hidden_id|default:'id_codigo_nbs' }}" name="codigo_nbs" value="{{ initial_code|default:'' }}">
+    <button
+      type="button"
+      class="dropdown-select-trigger"
+      id="{{ trigger_id|default:'id_nbs_dropdown' }}"
+      aria-haspopup="listbox"
+      aria-expanded="false"
+    >
+      <span class="dropdown-select-label" data-dropdown-label>— Selecione um código NBS —</span>
+      <span class="dropdown-select-chevron" aria-hidden="true">▾</span>
+    </button>
+    <div class="dropdown-select-panel" hidden>
+      <input
+        type="search"
+        class="dropdown-select-filter"
+        placeholder="Filtrar por código ou descrição"
+        autocomplete="off"
+        aria-label="Filtrar códigos NBS"
+      >
+      <ul class="dropdown-select-list" role="listbox" tabindex="-1"></ul>
+      <p class="dropdown-select-empty hint-line" hidden>Nenhum código corresponde ao filtro.</p>
+      <p class="dropdown-select-catalog-empty hint-line" {% if nbs_catalog_count %}hidden{% endif %}>
+        Catálogo NBS não importado — execute <code>import_nbs_list</code> no servidor.
+      </p>
+    </div>
+  </div>
+</div>

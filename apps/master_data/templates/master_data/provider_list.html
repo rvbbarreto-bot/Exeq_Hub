@@ -1,17 +1,25 @@
 {% extends "master_data/base.html" %}
 {% block title %}Prestadores · EXEQ Hub{% endblock %}
 {% block content %}
-<div class="exeq-card">
-  <div class="exeq-actions" style="justify-content:space-between;margin-top:0;">
-    <div>
-      <h1>Prestadores</h1>
-      <p class="lead">CNPJ com consulta à Receita (dados públicos).</p>
-    </div>
-    <a class="exeq-btn exeq-btn-primary" href="{% url 'cadastro-provider-new' %}">+ Novo</a>
+<div class="exeq-page-header">
+  <div>
+    <p class="exeq-crumb">Cadastros · Prestadores</p>
+    <h1>Prestadores cadastrados</h1>
   </div>
+  <div class="exeq-actions">
+    <a class="exeq-btn exeq-btn-primary" href="{% url 'cadastro-provider-new' %}">+ Novo prestador</a>
+  </div>
+</div>
+
+<div class="exeq-card">
   <table class="exeq-table">
     <thead>
-      <tr><th>CNPJ</th><th>Razão social</th><th>Origem</th><th></th></tr>
+      <tr>
+        <th>CNPJ</th>
+        <th>Razão social</th>
+        <th>Origem</th>
+        <th></th>
+      </tr>
     </thead>
     <tbody>
       {% for item in items %}

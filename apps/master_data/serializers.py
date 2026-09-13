@@ -37,10 +37,25 @@ class ProviderSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "created_at", "updated_at", "last_lookup_at")
 
     def create(self, validated_data):
+        from apps.accounts.plan_limits import PlanLimitError
+
         try:
             return create_provider(tenant=self.context["request"].tenant, **validated_data)
+        except PlanLimitError as exc:
+            raise serializers.ValidationError({"non_field_errors": [str(exc)]}) from exc
         except ValueError as exc:
             raise serializers.ValidationError({"document": str(exc)}) from exc
+
+    def update(self, instance, validated_data):
+        from apps.accounts.plan_limits import PlanLimitError, assert_can_add_active_provider
+
+        will_activate = validated_data.get("is_active", instance.is_active)
+        if will_activate and not instance.is_active:
+            try:
+                assert_can_add_active_provider(instance.tenant)
+            except PlanLimitError as exc:
+                raise serializers.ValidationError({"is_active": [str(exc)]}) from exc
+        return super().update(instance, validated_data)
 
 
 class CustomerSerializer(serializers.ModelSerializer):
@@ -78,12 +93,14 @@ class ServiceCatalogItemSerializer(serializers.ModelSerializer):
             "description",
             "lc116_item",
             "codigo_tributacao_nacional_iss",
+            "codigo_nbs",
+            "nbs_item",
             "display_label",
             "is_active",
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "display_label", "created_at", "updated_at")
+        read_only_fields = ("id", "display_label", "nbs_item", "created_at", "updated_at")
 
     def get_display_label(self, obj) -> str:
         from apps.master_data.national_service_import import service_catalog_display_label

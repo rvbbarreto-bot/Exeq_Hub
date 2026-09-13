@@ -5,6 +5,7 @@ from apps.master_data.views import (
     CepLookupView,
     CustomerLookupDocumentView,
     CustomerViewSet,
+    NbsSearchView,
     ProviderLookupDocumentView,
     ProviderViewSet,
     ServiceCatalogItemViewSet,
@@ -30,6 +31,11 @@ urlpatterns = [
         "master-data/lookup-cep",
         CepLookupView.as_view(),
         name="master-data-lookup-cep",
+    ),
+    path(
+        "master-data/nbs/search",
+        NbsSearchView.as_view(),
+        name="master-data-nbs-search",
     ),
     *router.urls,
 ]

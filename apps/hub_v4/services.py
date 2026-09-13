@@ -5,9 +5,58 @@ from __future__ import annotations
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.accounts.certificates import get_primary_certificate
 from apps.accounts.models import DigitalCertificate
 from apps.accounts.plan_limits import provider_usage
+from apps.accounts.tenant_emission import nfse_enabled_for_tenant
 from apps.issuance.models import NfArtifact, NfIssue
+
+CERT_EXPIRING_DAYS = 30
+
+
+def _cnpj_digits(cnpj: str | None) -> str:
+    return "".join(ch for ch in (cnpj or "") if ch.isdigit())
+
+
+def certificate_validity(*, today, not_after) -> tuple[int, str, str, int]:
+    """days, label, tone (ok|warn|err), sort_key — alinhado à tela de certificados."""
+    nd = not_after.date() if hasattr(not_after, "date") else not_after
+    days = (nd - today).days
+    if days < 0:
+        return days, f"Expirado há {abs(days)} dias", "err", 3
+    if days <= CERT_EXPIRING_DAYS:
+        return days, f"Expira em {days} dias", "warn", 1
+    return days, "Ativo", "ok", 2
+
+
+def certificate_kpi(tenant, *, cnpj: str | None = None) -> dict:
+    """KPI Certificados do dashboard — empresa em uso; sem A1 → 0 ativos."""
+    if not _cnpj_digits(cnpj):
+        return {
+            "value": 0,
+            "hint": "ativos",
+            "tone": "total",
+            "status": False,
+            "days": None,
+        }
+    cert = get_primary_certificate(tenant=tenant, cnpj=cnpj)
+    if cert is None:
+        return {
+            "value": 0,
+            "hint": "ativos",
+            "tone": "total",
+            "status": False,
+            "days": None,
+        }
+    today = timezone.localdate()
+    days, label, tone, _ = certificate_validity(today=today, not_after=cert.not_after)
+    return {
+        "value": label,
+        "hint": "",
+        "tone": tone,
+        "status": True,
+        "days": days,
+    }
 
 
 def _usage_pct(block: dict) -> int | None:
@@ -19,7 +68,8 @@ def _usage_pct(block: dict) -> int | None:
     return min(100, max(0, int(round(100 * used / limit))))
 
 
-def dashboard_context(tenant) -> dict:
+def dashboard_context(tenant, *, cnpj: str | None = None) -> dict:
+    nfse_on = nfse_enabled_for_tenant(tenant)
     today = timezone.localdate()
     start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
 
@@ -35,17 +85,17 @@ def dashboard_context(tenant) -> dict:
     ).count()
     rejected = base.filter(status=NfIssue.Status.REJECTED).count()
 
-    certs = DigitalCertificate.objects.filter(tenant=tenant)
-    cert_active = certs.filter(
-        status__in=[
-            DigitalCertificate.Status.ACTIVE,
-            DigitalCertificate.Status.EXPIRING,
-        ]
-    ).count()
+    cert_kpi = certificate_kpi(tenant, cnpj=cnpj)
+    certs = DigitalCertificate.objects.filter(tenant=tenant).exclude(
+        status=DigitalCertificate.Status.REVOKED,
+    )
+    digits = _cnpj_digits(cnpj)
+    if digits:
+        certs = certs.filter(cnpj=digits)
     expiring_soon = []
-    for cert in certs.exclude(status=DigitalCertificate.Status.REVOKED):
-        days = (cert.not_after.date() - today).days
-        if days <= 30:
+    for cert in certs:
+        days, _, _, _ = certificate_validity(today=today, not_after=cert.not_after)
+        if days <= CERT_EXPIRING_DAYS:
             expiring_soon.append({"cert": cert, "days": days})
     expiring_soon.sort(key=lambda x: x["days"])
 
@@ -88,18 +138,21 @@ def dashboard_context(tenant) -> dict:
             "url_name": "hub-v4-users",
             "cta": "Usuários",
         },
-        {
-            "key": "nf_month",
-            "label": "NFS-e neste mês",
-            "block": nf_u,
-            "pct": _usage_pct(nf_u),
-            "url_name": "hub-v4-nfse-list",
-            "cta": "NFS-e",
-        },
     ]
+    if nfse_on:
+        usage_rows.append(
+            {
+                "key": "nf_month",
+                "label": "NFS-e neste mês",
+                "block": nf_u,
+                "pct": _usage_pct(nf_u),
+                "url_name": "hub-v4-nfse-list",
+                "cta": "NFS-e",
+            }
+        )
 
     pending_actions = []
-    if rejected:
+    if nfse_on and rejected:
         pending_actions.append(
             {
                 "tone": "danger",
@@ -109,7 +162,7 @@ def dashboard_context(tenant) -> dict:
                 "url_query": "status=rejected",
             }
         )
-    if processing:
+    if nfse_on and processing:
         pending_actions.append(
             {
                 "tone": "warning",
@@ -131,7 +184,7 @@ def dashboard_context(tenant) -> dict:
                 "url_query": "",
             }
         )
-    if artifacts_pending:
+    if nfse_on and artifacts_pending:
         pending_actions.append(
             {
                 "tone": "info",
@@ -161,7 +214,7 @@ def dashboard_context(tenant) -> dict:
                 "url_query": "",
             }
         )
-    if nf_u.get("at_limit"):
+    if nfse_on and nf_u.get("at_limit"):
         pending_actions.append(
             {
                 "tone": "warning",
@@ -175,20 +228,23 @@ def dashboard_context(tenant) -> dict:
     recent = (
         base.select_related("customer", "provider", "service")
         .order_by("-created_at")[:12]
+        if nfse_on
+        else NfIssue.objects.none()
     )
 
     return {
         "kpis": {
-            "nfse_hoje": nfse_hoje,
-            "processing": processing,
-            "rejected": rejected,
-            "cert_active": cert_active,
+            "nfse_hoje": nfse_hoje if nfse_on else 0,
+            "processing": processing if nfse_on else 0,
+            "rejected": rejected if nfse_on else 0,
+            "cert": cert_kpi,
         },
         "usage": usage,
         "usage_rows": usage_rows,
         "pending_actions": pending_actions,
         "recent_issues": recent,
         "expiring_certs": expiring_soon[:5],
+        "nfse_enabled": nfse_on,
     }
 
 
@@ -222,25 +278,20 @@ def nfse_queryset(tenant, *, status: str = "", q: str = ""):
     return qs
 
 
-def certificate_rows(tenant):
+def certificate_rows(tenant, *, cnpj: str | None = None):
+    """Certificados do tenant; se cnpj informado, só da empresa em uso."""
     today = timezone.localdate()
     rows = []
-    qs = (
-        DigitalCertificate.objects.filter(tenant=tenant)
-        .select_related("provider")
-        .order_by("not_after")
-    )
+    qs = DigitalCertificate.objects.filter(tenant=tenant).select_related("provider")
+    if cnpj:
+        digits = "".join(ch for ch in cnpj if ch.isdigit())
+        if digits:
+            qs = qs.filter(cnpj=digits)
+    qs = qs.order_by("not_after")
     for cert in qs:
-        days = (cert.not_after.date() - today).days
-        if days < 0:
-            label = f"Expirado há {abs(days)} dias"
-            sort_key = 3
-        elif days <= 30:
-            label = f"Expira em {days} dias"
-            sort_key = 1
-        else:
-            label = "Ativo"
-            sort_key = 2
+        days, label, _, sort_key = certificate_validity(
+            today=today, not_after=cert.not_after
+        )
         provider_name = ""
         if cert.provider_id:
             provider_name = cert.provider.trade_name or cert.provider.legal_name
@@ -310,3 +361,9 @@ def issue_timeline(issue: NfIssue) -> list[dict]:
         }
     )
     return out
+
+
+def hub_nbs_catalog() -> list[dict]:
+    from apps.master_data.nbs_import import list_published_nbs_catalog
+
+    return list_published_nbs_catalog()

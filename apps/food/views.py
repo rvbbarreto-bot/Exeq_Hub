@@ -3,13 +3,16 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.accounts.permissions import IsTenantWriter
+from apps.accounts.permissions import IsTenantFoodWriter
 from apps.food.exceptions import (
     FoodError,
     FoodInvalidOrderError,
     FoodInvalidTransitionError,
     FoodOrderNotFoundError,
+    FoodPaymentEmailRequiredError,
+    FoodPaymentCardTokenRequiredError,
     FoodPaymentError,
+    FoodPaymentProviderError,
 )
 from apps.food.models import (
     FoodBom,
@@ -61,7 +64,7 @@ from apps.food.serializers import (
     FoodSupplierSerializer,
     MarketplaceImportSerializer,
 )
-from apps.food.services import create_pix_intent_for_order
+from apps.food.payments.services import create_payment_intent_for_order
 from shared.pagination import HubPageNumberPagination
 
 
@@ -73,7 +76,7 @@ class TenantQuerysetMixin:
 class FoodCustomerViewSet(TenantQuerysetMixin, viewsets.ModelViewSet):
     queryset = FoodCustomer.objects.all().order_by("name")
     serializer_class = FoodCustomerSerializer
-    permission_classes = [IsTenantWriter]
+    permission_classes = [IsTenantFoodWriter]
     http_method_names = ["get", "post", "patch", "head", "options"]
     pagination_class = HubPageNumberPagination
 
@@ -81,14 +84,14 @@ class FoodCustomerViewSet(TenantQuerysetMixin, viewsets.ModelViewSet):
 class FoodProductViewSet(TenantQuerysetMixin, viewsets.ModelViewSet):
     queryset = FoodProduct.objects.all().order_by("sku")
     serializer_class = FoodProductSerializer
-    permission_classes = [IsTenantWriter]
+    permission_classes = [IsTenantFoodWriter]
     http_method_names = ["get", "post", "patch", "head", "options"]
     pagination_class = HubPageNumberPagination
 
 
 class FoodCouponViewSet(TenantQuerysetMixin, viewsets.GenericViewSet):
     queryset = FoodCoupon.objects.all().order_by("-created_at")
-    permission_classes = [IsTenantWriter]
+    permission_classes = [IsTenantFoodWriter]
     pagination_class = HubPageNumberPagination
     http_method_names = ["get", "post", "head", "options"]
 
@@ -105,7 +108,7 @@ class FoodCouponViewSet(TenantQuerysetMixin, viewsets.GenericViewSet):
 
 class FoodRetentionRuleViewSet(TenantQuerysetMixin, viewsets.GenericViewSet):
     queryset = FoodRetentionRule.objects.all().order_by("name")
-    permission_classes = [IsTenantWriter]
+    permission_classes = [IsTenantFoodWriter]
     pagination_class = HubPageNumberPagination
     http_method_names = ["get", "post", "head", "options"]
 
@@ -131,7 +134,7 @@ class FoodRetentionRuleViewSet(TenantQuerysetMixin, viewsets.GenericViewSet):
 
 
 class FoodDashboardView(APIView):
-    permission_classes = [IsTenantWriter]
+    permission_classes = [IsTenantFoodWriter]
 
     def get(self, request):
         return Response(food_dashboard_metrics(tenant=request.tenant))
@@ -140,7 +143,7 @@ class FoodDashboardView(APIView):
 class FoodSupplierViewSet(TenantQuerysetMixin, viewsets.ModelViewSet):
     queryset = FoodSupplier.objects.all().order_by("name")
     serializer_class = FoodSupplierSerializer
-    permission_classes = [IsTenantWriter]
+    permission_classes = [IsTenantFoodWriter]
     http_method_names = ["get", "post", "patch", "head", "options"]
     pagination_class = HubPageNumberPagination
 
@@ -149,7 +152,7 @@ class FoodPurchaseViewSet(TenantQuerysetMixin, viewsets.GenericViewSet):
     queryset = FoodPurchase.objects.all().select_related("supplier").prefetch_related(
         "lines"
     )
-    permission_classes = [IsTenantWriter]
+    permission_classes = [IsTenantFoodWriter]
     pagination_class = HubPageNumberPagination
     http_method_names = ["get", "post", "head", "options"]
 
@@ -204,7 +207,7 @@ class FoodPurchaseViewSet(TenantQuerysetMixin, viewsets.GenericViewSet):
 
 class FoodDeliveryRouteViewSet(TenantQuerysetMixin, viewsets.GenericViewSet):
     queryset = FoodDeliveryRoute.objects.all().order_by("-service_date", "-created_at")
-    permission_classes = [IsTenantWriter]
+    permission_classes = [IsTenantFoodWriter]
     pagination_class = HubPageNumberPagination
     http_method_names = ["get", "post", "head", "options"]
 
@@ -257,7 +260,7 @@ class FoodDeliveryRouteViewSet(TenantQuerysetMixin, viewsets.GenericViewSet):
 
 class FoodDeliveryStopViewSet(TenantQuerysetMixin, viewsets.GenericViewSet):
     queryset = FoodDeliveryStop.objects.all().select_related("order", "route")
-    permission_classes = [IsTenantWriter]
+    permission_classes = [IsTenantFoodWriter]
     http_method_names = ["get", "post", "head", "options"]
 
     def list(self, request, *args, **kwargs):
@@ -289,7 +292,7 @@ class FoodDeliveryStopViewSet(TenantQuerysetMixin, viewsets.GenericViewSet):
 
 class FoodMarketplaceConnectionViewSet(TenantQuerysetMixin, viewsets.GenericViewSet):
     queryset = FoodMarketplaceConnection.objects.all().order_by("provider")
-    permission_classes = [IsTenantWriter]
+    permission_classes = [IsTenantFoodWriter]
     http_method_names = ["get", "post", "head", "options"]
 
     def list(self, request, *args, **kwargs):
@@ -310,7 +313,7 @@ class FoodMarketplaceConnectionViewSet(TenantQuerysetMixin, viewsets.GenericView
 
 
 class FoodMarketplaceImportView(APIView):
-    permission_classes = [IsTenantWriter]
+    permission_classes = [IsTenantFoodWriter]
 
     def post(self, request):
         ser = MarketplaceImportSerializer(
@@ -334,7 +337,7 @@ class FoodMarketplaceSyncView(APIView):
     Sem id: sincroniza todas as conexões ativas do tenant.
     """
 
-    permission_classes = [IsTenantWriter]
+    permission_classes = [IsTenantFoodWriter]
 
     def post(self, request):
         cid = request.data.get("connection_id") if hasattr(request, "data") else None
@@ -360,7 +363,7 @@ class FoodOrderViewSet(TenantQuerysetMixin, viewsets.GenericViewSet):
         .select_related("customer", "charge", "coupon", "marketplace_connection")
         .prefetch_related("lines")
     )
-    permission_classes = [IsTenantWriter]
+    permission_classes = [IsTenantFoodWriter]
     pagination_class = HubPageNumberPagination
     http_method_names = ["get", "post", "head", "options"]
 
@@ -400,7 +403,9 @@ class FoodOrderViewSet(TenantQuerysetMixin, viewsets.GenericViewSet):
     @action(detail=True, methods=["post"], url_path="pix")
     def pix(self, request, pk=None):
         try:
-            order = create_pix_intent_for_order(tenant=request.tenant, order_id=pk)
+            order = create_payment_intent_for_order(
+                tenant=request.tenant, order_id=pk, method="pix"
+            )
         except FoodOrderNotFoundError as exc:
             return Response(
                 {"detail": str(exc), "code": exc.code},
@@ -411,7 +416,13 @@ class FoodOrderViewSet(TenantQuerysetMixin, viewsets.GenericViewSet):
                 {"detail": str(exc), "code": exc.code},
                 status=status.HTTP_409_CONFLICT,
             )
-        except (FoodInvalidOrderError, FoodPaymentError, FoodError) as exc:
+        except (
+            FoodInvalidOrderError,
+            FoodPaymentError,
+            FoodPaymentProviderError,
+            FoodPaymentEmailRequiredError,
+            FoodError,
+        ) as exc:
             return Response(
                 {"detail": str(exc), "code": getattr(exc, "code", "food_error")},
                 status=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -421,6 +432,55 @@ class FoodOrderViewSet(TenantQuerysetMixin, viewsets.GenericViewSet):
                 "customer", "charge", "coupon", "marketplace_connection"
             )
             .prefetch_related("lines")
+            .get(pk=order.pk)
+        )
+        return Response(FoodOrderSerializer(order).data)
+
+    @action(detail=True, methods=["post"], url_path="payment-intent")
+    def payment_intent(self, request, pk=None):
+        method = (request.data.get("method") or "pix").strip().lower()
+        installments_raw = request.data.get("installments", 1)
+        try:
+            installments = max(1, int(installments_raw))
+        except (TypeError, ValueError):
+            installments = 1
+        try:
+            order = create_payment_intent_for_order(
+                tenant=request.tenant,
+                order_id=pk,
+                method=method,
+                card_token=(request.data.get("token") or request.data.get("card_token") or "").strip(),
+                payment_method_id=(request.data.get("payment_method_id") or "").strip(),
+                issuer_id=str(request.data.get("issuer_id") or "").strip(),
+                installments=installments,
+            )
+        except FoodOrderNotFoundError as exc:
+            return Response(
+                {"detail": str(exc), "code": exc.code},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except FoodInvalidTransitionError as exc:
+            return Response(
+                {"detail": str(exc), "code": exc.code},
+                status=status.HTTP_409_CONFLICT,
+            )
+        except (
+            FoodInvalidOrderError,
+            FoodPaymentError,
+            FoodPaymentProviderError,
+            FoodPaymentEmailRequiredError,
+            FoodPaymentCardTokenRequiredError,
+            FoodError,
+        ) as exc:
+            return Response(
+                {"detail": str(exc), "code": getattr(exc, "code", "food_error")},
+                status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+        order = (
+            FoodOrder.objects.select_related(
+                "customer", "charge", "coupon", "marketplace_connection"
+            )
+            .prefetch_related("lines", "payments")
             .get(pk=order.pk)
         )
         return Response(FoodOrderSerializer(order).data)
@@ -447,7 +507,7 @@ class FoodOrderViewSet(TenantQuerysetMixin, viewsets.GenericViewSet):
 
 class FoodBomViewSet(TenantQuerysetMixin, viewsets.GenericViewSet):
     queryset = FoodBom.objects.all().prefetch_related("components").order_by("-created_at")
-    permission_classes = [IsTenantWriter]
+    permission_classes = [IsTenantFoodWriter]
     pagination_class = HubPageNumberPagination
     http_method_names = ["get", "post", "head", "options"]
 
@@ -468,7 +528,7 @@ class FoodBomViewSet(TenantQuerysetMixin, viewsets.GenericViewSet):
 
 class FoodCapacitySlotViewSet(TenantQuerysetMixin, viewsets.GenericViewSet):
     queryset = FoodCapacitySlot.objects.all().order_by("service_date", "starts_at")
-    permission_classes = [IsTenantWriter]
+    permission_classes = [IsTenantFoodWriter]
     pagination_class = HubPageNumberPagination
     http_method_names = ["get", "post", "head", "options"]
 
@@ -493,7 +553,7 @@ class FoodProductionOrderViewSet(TenantQuerysetMixin, viewsets.GenericViewSet):
     queryset = FoodProductionOrder.objects.all().select_related(
         "product", "bom", "capacity_slot"
     )
-    permission_classes = [IsTenantWriter]
+    permission_classes = [IsTenantFoodWriter]
     pagination_class = HubPageNumberPagination
     http_method_names = ["get", "post", "head", "options"]
 
@@ -558,7 +618,7 @@ class FoodProductionOrderViewSet(TenantQuerysetMixin, viewsets.GenericViewSet):
 
 
 class FoodMrpView(APIView):
-    permission_classes = [IsTenantWriter]
+    permission_classes = [IsTenantFoodWriter]
 
     def get(self, request):
         from apps.food.production import mrp_suggestions
@@ -569,7 +629,7 @@ class FoodMrpView(APIView):
 class FoodIntelligenceView(APIView):
     """Fase 4 — relatório consolidado ou seções via ?section=demand|customers|pricing|suggestions."""
 
-    permission_classes = [IsTenantWriter]
+    permission_classes = [IsTenantFoodWriter]
 
     def get(self, request):
         from apps.food.intelligence import (

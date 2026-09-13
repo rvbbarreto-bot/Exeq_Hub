@@ -1,6 +1,14 @@
 {% extends "hub_v4/base.html" %}
 {% load hub_v4_tags %}
 
+{% block page_subtitle %}
+{% if page.object_list %}
+<div class="page-subtitle">{{ page.paginator.count }} guia{{ page.paginator.count|pluralize }} DAS/DARF</div>
+{% else %}
+<div class="page-subtitle">DAS e DARF · competência por prestador</div>
+{% endif %}
+{% endblock %}
+
 {% block page_actions %}
 {% if can_write %}
 <a class="btn btn-primary" href="{% url 'hub-v4-das-emit' %}">Emitir guia</a>
@@ -9,7 +17,7 @@
 
 {% block content %}
 {% if page.object_list %}
-<div class="table-wrap desktop-only">
+<div class="card table-card">
   <table class="data">
     <thead>
       <tr>
@@ -18,35 +26,62 @@
         <th>Tipo</th>
         <th>Status</th>
         <th class="num">Valor</th>
+        <th>Vencimento</th>
+        <th>PDF</th>
         <th></th>
       </tr>
     </thead>
     <tbody>
       {% for g in page %}
       <tr>
-        <td>{{ g.provider.legal_name }}</td>
-        <td>{{ g.competencia }}</td>
+        <td>
+          <strong>{{ g.provider.legal_name }}</strong>
+          <div class="hint-line mono">{{ g.provider.document }}</div>
+        </td>
+        <td class="mono">{{ g.competencia }}</td>
         <td>{{ g.get_tipo_guia_display }}</td>
-        <td><span class="badge badge-neutral">{{ g.get_status_display }}</span></td>
-        <td class="num">R$ {{ g.valor_total }}</td>
-        <td><a class="btn btn-ghost btn-sm" href="{% url 'hub-v4-das-detail' g.id %}">Ver</a></td>
+        <td>{% guia_status_badge g.status %}</td>
+        <td class="num"><strong>R$ {{ g.valor_total }}</strong></td>
+        <td>{{ g.data_vencimento|date:"d/m/Y"|default:"—" }}</td>
+        <td>
+          {% if g.pdf_file_id %}
+          <a class="btn btn-ghost btn-sm" href="{% url 'hub-v4-das-pdf' g.id %}">PDF</a>
+          {% else %}
+          <span class="hint-line">—</span>
+          {% endif %}
+        </td>
+        <td>
+          <a class="btn btn-icon btn-ghost btn-sm" href="{% url 'hub-v4-das-detail' g.id %}" aria-label="Ver guia">👁</a>
+        </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
-</div>
-<div class="mobile-cards">
-  {% for g in page %}
-  <div class="mobile-data-card">
-    <div class="title">{{ g.get_tipo_guia_display }} · {{ g.competencia }}</div>
-    <div class="meta">{{ g.provider.legal_name }}</div>
-    <div class="row">
-      <strong>R$ {{ g.valor_total }}</strong>
-      <span class="badge badge-neutral">{{ g.get_status_display }}</span>
+
+  <div class="rowcards">
+    {% for g in page %}
+    <div class="rowcard">
+      <div class="rowcard-top">
+        <span class="rowcard-title">{{ g.get_tipo_guia_display }} · {{ g.competencia }}</span>
+        {% guia_status_badge g.status %}
+      </div>
+      <div class="rowcard-kv">Prestador<b>{{ g.provider.legal_name }}</b></div>
+      <div class="rowcard-kv">Valor<b class="num">R$ {{ g.valor_total }}</b></div>
+      <div class="rowcard-kv">Vencimento<b>{{ g.data_vencimento|date:"d/m/Y"|default:"—" }}</b></div>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+        {% if g.pdf_file_id %}
+        <a class="btn btn-ghost btn-sm" href="{% url 'hub-v4-das-pdf' g.id %}">Baixar PDF</a>
+        {% endif %}
+        <a class="btn btn-ghost btn-sm" href="{% url 'hub-v4-das-detail' g.id %}">Ver detalhes</a>
+      </div>
     </div>
-    <a class="btn btn-ghost btn-sm" style="margin-top:8px;" href="{% url 'hub-v4-das-detail' g.id %}">Ver</a>
+    {% endfor %}
   </div>
-  {% endfor %}
+
+  <div class="pagination">
+    <span>Página {{ page.number }} de {{ page.paginator.num_pages }}</span>
+    <span>{{ page.paginator.count }} registro{{ page.paginator.count|pluralize }}</span>
+  </div>
 </div>
 {% else %}
 {% url 'hub-v4-das-emit' as emit_url %}

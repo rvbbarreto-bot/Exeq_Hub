@@ -120,6 +120,62 @@ def test_hub_upload_a1_links_provider(client, hub_cert_ctx):
 
 
 @pytest.mark.django_db
+def test_certificates_page_filters_by_active_company(client, hub_cert_ctx):
+    tenant, user, provider_with_cert = hub_cert_ctx
+    provider_empty = Provider.objects.create(
+        tenant=tenant,
+        document="21338544000138",
+        legal_name="Nobreak Brasil",
+        tax_regime=TaxRegime.SIMPLES,
+        is_active=True,
+    )
+    _login(client, tenant, user)
+    pfx = _make_pfx()
+    upload = SimpleUploadedFile(
+        "empresa.pfx", pfx, content_type="application/x-pkcs12"
+    )
+    up = client.post(
+        reverse("hub-v4-certificates"),
+        {
+            "provider_id": str(provider_with_cert.id),
+            "label": "A1 EXEQ",
+            "password": "secret",
+            "make_primary": "1",
+            "file": upload,
+        },
+    )
+    assert up.status_code == 302
+    client.get(reverse("hub-v4-certificates"))
+
+    client.post(
+        reverse("hub-v4-set-active-company"),
+        {
+            "provider_id": str(provider_empty.id),
+            "next": reverse("hub-v4-certificates"),
+        },
+    )
+    r = client.get(reverse("hub-v4-certificates"))
+    assert r.status_code == 200
+    html = r.content.decode()
+    assert 'class="cert-card-title">A1 EXEQ<' not in html
+    assert 'class="cert-card"' not in html
+    assert "Nenhum certificado para esta empresa" in html
+    assert "Nobreak Brasil" in html
+
+    client.post(
+        reverse("hub-v4-set-active-company"),
+        {
+            "provider_id": str(provider_with_cert.id),
+            "next": reverse("hub-v4-certificates"),
+        },
+    )
+    r2 = client.get(reverse("hub-v4-certificates"))
+    html2 = r2.content.decode()
+    assert "A1 EXEQ" in html2
+    assert provider_with_cert.document in html2
+
+
+@pytest.mark.django_db
 def test_hub_upload_a1_bad_password(client, hub_cert_ctx):
     tenant, user, provider = hub_cert_ctx
     _login(client, tenant, user)

@@ -44,6 +44,7 @@ urlpatterns = [
     path("api/v1/", include("apps.fiscal.urls")),
     path("api/v1/", include("apps.issuance.urls")),
     path("api/v1/", include("apps.nfe.urls")),
+    path("api/v1/", include("apps.nfce.urls")),
     path("api/v1/", include("apps.billing.urls")),
     path("api/v1/", include("apps.das.urls")),
     path("api/v1/", include("apps.channel.urls")),

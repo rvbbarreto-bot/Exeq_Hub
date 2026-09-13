@@ -117,6 +117,12 @@ class MunicipalTaxRule(TenantOwnedModel):
     simples_codigo_tributacao = models.SmallIntegerField(
         null=True, blank=True, verbose_name="Código tributação SN"
     )
+    c_trib_mun = models.CharField(
+        max_length=16,
+        blank=True,
+        default="",
+        verbose_name="Código tributação municipal (cTribMun)",
+    )
     valid_from = models.DateField(verbose_name="Válido de")
     valid_to = models.DateField(null=True, blank=True, verbose_name="Válido até")
     priority = models.IntegerField(default=100, verbose_name="Prioridade")
@@ -226,6 +232,74 @@ class RtcClassificationCode(models.Model):
         ]
         indexes = [
             models.Index(fields=["kind", "code"], name="idx_rtc_class_kind_code"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.kind}:{self.code}"
+
+
+class GoodsCatalogVersion(models.Model):
+    """Catálogo global NCM/CFOP/unidade (RF-100) — versionado como NBS."""
+
+    class Status(models.TextChoices):
+        DRAFT = "draft", "Rascunho"
+        PUBLISHED = "published", "Publicada"
+        SUPERSEDED = "superseded", "Substituída"
+
+    version_label = models.CharField(max_length=64, unique=True, verbose_name="Rótulo")
+    status = models.CharField(
+        max_length=16, choices=Status.choices, default=Status.DRAFT, verbose_name="Status"
+    )
+    source_hash = models.CharField(
+        max_length=64, blank=True, default="", verbose_name="Hash origem"
+    )
+    row_count = models.PositiveIntegerField(default=0, verbose_name="Qtd. itens")
+    notes = models.TextField(blank=True, default="", verbose_name="Observações")
+    imported_at = models.DateTimeField(auto_now_add=True, verbose_name="Importado em")
+    published_at = models.DateTimeField(null=True, blank=True, verbose_name="Publicado em")
+
+    class Meta:
+        verbose_name = "Versão catálogo mercadorias"
+        verbose_name_plural = "Versões catálogo mercadorias"
+        ordering = ["-imported_at"]
+
+    def __str__(self) -> str:
+        return f"{self.version_label} ({self.status})"
+
+
+class GoodsCatalogItem(models.Model):
+    """Item de catálogo mercadorias (NCM, CFOP, unidade, CEST)."""
+
+    class Kind(models.TextChoices):
+        NCM = "ncm", "NCM"
+        CFOP = "cfop", "CFOP"
+        UNIT = "unit", "Unidade"
+        CEST = "cest", "CEST"
+
+    version = models.ForeignKey(
+        GoodsCatalogVersion,
+        on_delete=models.CASCADE,
+        related_name="items",
+        verbose_name="Versão",
+    )
+    kind = models.CharField(max_length=8, choices=Kind.choices, verbose_name="Tipo")
+    code = models.CharField(max_length=16, verbose_name="Código")
+    description = models.TextField(blank=True, default="", verbose_name="Descrição")
+    metadata = models.JSONField(default=dict, blank=True, verbose_name="Metadados")
+    is_active = models.BooleanField(default=True, verbose_name="Ativo")
+
+    class Meta:
+        verbose_name = "Item catálogo mercadorias"
+        verbose_name_plural = "Itens catálogo mercadorias"
+        ordering = ["kind", "code"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["version", "kind", "code"],
+                name="uq_goods_catalog_version_kind_code",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["kind", "code"], name="idx_goods_catalog_kind_code"),
         ]
 
     def __str__(self) -> str:

@@ -359,6 +359,8 @@ O EXEQ Hub inicia o **emissor próprio Nacional** com **DANFSe interno**, priori
 
 | Versão | Data | Nota |
 |--------|------|------|
+| 1.18 | 2026-07-31 | Ops convênio HTTP multi-IBGE (`nfse_smoke_convenio_http` + doc) |
+| 1.17 | 2026-07-31 | Onboarding multi-CNPJ/tenant (`nfse_onboard_tenant` + doc) |
 | 1.16 | 2026-07-30 | GL-01 pentest interno + fix Admin IDOR listagem; convênio HTTP ADN com mTLS |
 | 1.15 | 2026-07-30 | **M5 aprovado PO Ricardo** — piloto produção controlada (`agendador-qa`) |
 | 1.14 | 2026-07-30 | §11.2 roteiro PO validar/aprovar M5; evidência com tenant piloto |

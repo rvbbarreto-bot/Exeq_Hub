@@ -165,7 +165,7 @@ class Command(BaseCommand):
 
     def _cancel_issue(self, issue: NfIssue, justificativa: str) -> None:
         try:
-            cancel_nf_issue(issue, justificativa=justificativa)
+            cancel_nf_issue(issue, justificativa=justificativa, codigo_cancelamento=9)
         except Exception as exc:
             raise CommandError(f"Cancelamento Focus falhou: {exc}") from exc
         issue.refresh_from_db()

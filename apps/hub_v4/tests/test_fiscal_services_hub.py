@@ -108,6 +108,12 @@ def test_hub_service_create_and_seed(client, hub_fiscal_ctx):
     assert r.status_code == 200
     assert b"Servi" in r.content
 
+    r = client.get(reverse("hub-v4-service-new"))
+    assert r.status_code == 200
+    html_new = r.content.decode()
+    assert "Código NBS" in html_new
+    assert "data-nbs-dropdown" in html_new
+
     r = client.post(
         reverse("hub-v4-service-new"),
         {

@@ -13,12 +13,25 @@ Código **limpo e enxuto**, com **testes unitários** em toda entrega de regra �
 ## Setup
 
 ```bash
+./bootstrap.sh --bg          # sobe Docker + migrate + app (recomendado)
+# ou
+./bootstrap.sh               # runserver em foreground
+./bootstrap.sh --check       # health
+./bootstrap.sh --down        # para tudo do bootstrap
+```
+
+Windows (PowerShell, sem bash): `.\bootstrap.ps1 -Bg`
+
+Manual (equivalente):
+```bash
 docker compose up -d
 python -m pip install -r requirements.txt
 copy .env.example .env
 python manage.py migrate
 pytest
 ```
+
+**Banco lab:** Postgres (`5433`) é a fonte única para Hub/runserver. `EXEQ_TEST_SQLITE=1` só vale em `pytest` (gate PO — ver `Docs/ADR_LAB_DB_001_Gate_SQLite.md`); não coloque no `.env`.
 
 Opcional (async real):
 ```bash

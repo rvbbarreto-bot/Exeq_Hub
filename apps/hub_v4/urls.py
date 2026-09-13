@@ -1,7 +1,7 @@
 from django.urls import path
 
 from apps.food import hub_views as food_hub
-from apps.hub_v4 import views
+from apps.hub_v4 import nfe_entrada_views, views
 
 urlpatterns = [
     path("login/", views.HubLoginView.as_view(), name="hub-v4-login"),
@@ -14,7 +14,22 @@ urlpatterns = [
         views.nfse_lookup_customer,
         name="hub-v4-nfse-lookup",
     ),
+    path(
+        "nbs/search/",
+        views.hub_nbs_search,
+        name="hub-v4-nbs-search",
+    ),
     path("nfse/<uuid:pk>/", views.NfseDetailView.as_view(), name="hub-v4-nfse-detail"),
+    path(
+        "nfse/<uuid:pk>/cancelar/",
+        views.NfseCancelView.as_view(),
+        name="hub-v4-nfse-cancel",
+    ),
+    path(
+        "nfse/status-bulk/",
+        views.nfse_status_bulk,
+        name="hub-v4-nfse-status-bulk",
+    ),
     path(
         "nfse/<uuid:pk>/documentos/",
         views.NfseDocumentsView.as_view(),
@@ -52,6 +67,36 @@ urlpatterns = [
         name="hub-v4-food-order-detail",
     ),
     path(
+        "food/pedidos/ifood-fiscal/",
+        food_hub.FoodIfoodFiscalHubView.as_view(),
+        name="hub-v4-food-ifood-fiscal",
+    ),
+    path(
+        "food/produtos/",
+        food_hub.FoodProductsListView.as_view(),
+        name="hub-v4-food-products",
+    ),
+    path(
+        "food/produtos/novo/",
+        food_hub.FoodProductCreateView.as_view(),
+        name="hub-v4-food-product-new",
+    ),
+    path(
+        "food/produtos/<uuid:pk>/editar/",
+        food_hub.FoodProductEditView.as_view(),
+        name="hub-v4-food-product-edit",
+    ),
+    path(
+        "food/clientes/",
+        food_hub.FoodCustomersListView.as_view(),
+        name="hub-v4-food-customers",
+    ),
+    path(
+        "food/clientes/novo/",
+        food_hub.FoodCustomerCreateView.as_view(),
+        name="hub-v4-food-customer-new",
+    ),
+    path(
         "food/compras/",
         food_hub.FoodPurchasesListView.as_view(),
         name="hub-v4-food-purchases",
@@ -87,6 +132,11 @@ urlpatterns = [
         "das/<uuid:pk>/",
         views.DasDetailView.as_view(),
         name="hub-v4-das-detail",
+    ),
+    path(
+        "das/<uuid:pk>/pdf/",
+        views.DasPdfDownloadView.as_view(),
+        name="hub-v4-das-pdf",
     ),
     path("clientes/", views.CustomersListView.as_view(), name="hub-v4-customers"),
     path("clientes/novo/", views.CustomerFormView.as_view(), name="hub-v4-customer-new"),
@@ -132,6 +182,21 @@ urlpatterns = [
         "fiscal/regras/nova/",
         views.TaxRuleFormView.as_view(),
         name="hub-v4-tax-rule-new",
+    ),
+    path(
+        "fiscal/pronto/",
+        views.FiscalReadinessView.as_view(),
+        name="hub-v4-fiscal-readiness",
+    ),
+    path(
+        "fiscal/pronto/template/",
+        views.FiscalTemplateApplyView.as_view(),
+        name="hub-v4-fiscal-template-apply",
+    ),
+    path(
+        "fiscal/pronto/csv/",
+        views.FiscalCsvImportView.as_view(),
+        name="hub-v4-fiscal-csv-import",
     ),
     path("servicos/", views.ServicesListView.as_view(), name="hub-v4-services"),
     path(
@@ -181,6 +246,75 @@ urlpatterns = [
         "nfe/produtos/<uuid:pk>/",
         views.NfeProductFormView.as_view(),
         name="hub-v4-nfe-product-edit",
+    ),
+    path(
+        "nfe/produtos/importar/modelo/",
+        views.NfeProductImportTemplateView.as_view(),
+        name="hub-v4-nfe-product-import-template",
+    ),
+    path(
+        "nfe/produtos/importar/",
+        views.NfeProductImportView.as_view(),
+        name="hub-v4-nfe-product-import",
+    ),
+    path(
+        "nfe/produtos/importar/preview/<str:token>/",
+        views.NfeProductImportPreviewView.as_view(),
+        name="hub-v4-nfe-product-import-preview",
+    ),
+    path(
+        "nfe/produtos/importar/confirmar/<str:token>/",
+        views.NfeProductImportConfirmView.as_view(),
+        name="hub-v4-nfe-product-import-confirm",
+    ),
+    path(
+        "nfe/produtos/importar/resultado/<str:token>/",
+        views.NfeProductImportResultView.as_view(),
+        name="hub-v4-nfe-product-import-result",
+    ),
+    path(
+        "nfe/produtos/importar/relatorio/<str:token>/",
+        views.NfeProductImportReportView.as_view(),
+        name="hub-v4-nfe-product-import-report",
+    ),
+    path(
+        "nfe/entrada/",
+        nfe_entrada_views.NfeEntradaListView.as_view(),
+        name="hub-v4-nfe-entrada-list",
+    ),
+    path(
+        "nfe/entrada/config/",
+        nfe_entrada_views.NfeEntradaConfigView.as_view(),
+        name="hub-v4-nfe-entrada-config",
+    ),
+    path(
+        "nfe/entrada/sync/",
+        nfe_entrada_views.nfe_entrada_sync,
+        name="hub-v4-nfe-entrada-sync",
+    ),
+    path(
+        "nfe/entrada/<uuid:pk>/",
+        nfe_entrada_views.NfeEntradaDetailView.as_view(),
+        name="hub-v4-nfe-entrada-detail",
+    ),
+    path(
+        "nfe/entrada/<uuid:pk>/manifestar/",
+        nfe_entrada_views.nfe_entrada_manifest,
+        name="hub-v4-nfe-entrada-manifest",
+    ),
+    path(
+        "nfe/entrada/<uuid:pk>/xml/",
+        nfe_entrada_views.nfe_entrada_xml_download,
+        name="hub-v4-nfe-entrada-xml",
+    ),
+    path("nfce/", views.NfceListView.as_view(), name="hub-v4-nfce-list"),
+    path("nfce/pdv/", views.NfcePdvView.as_view(), name="hub-v4-nfce-pdv"),
+    path("nfce/<uuid:pk>/", views.NfceDetailView.as_view(), name="hub-v4-nfce-detail"),
+    path("nfce/<uuid:pk>/cancelar/", views.NfceCancelView.as_view(), name="hub-v4-nfce-cancel"),
+    path(
+        "nfce/<uuid:pk>/documentos/<str:kind>/download/",
+        views.nfce_document_download,
+        name="hub-v4-nfce-doc-download",
     ),
     path("certificados/", views.CertificatesView.as_view(), name="hub-v4-certificates"),
     path("usuarios/", views.UsersListView.as_view(), name="hub-v4-users"),

@@ -55,8 +55,14 @@
         <td class="num" style="text-align:left;">{{ p.document }}</td>
         <td>{{ p.address.uf|default:"—" }}</td>
         <td>
-          {% if p.is_active %}{% status_badge "active" %}{% else %}<span class="chip">Inativo</span>{% endif %}
-          {% if active_provider and active_provider.id == p.id %}<span class="chip chip-accent">Ativa</span>{% endif %}
+          {% if active_provider and active_provider.id == p.id %}
+          <span class="chip chip-accent" title="Empresa selecionada nesta sessão do Hub">Em uso</span>
+          {% if not p.is_active %}<span class="chip">Inativo no plano</span>{% endif %}
+          {% elif p.is_active %}
+          {% status_badge "active" %}
+          {% else %}
+          <span class="chip">Inativo</span>
+          {% endif %}
         </td>
         <td style="text-align:right;white-space:nowrap;">
           {% if p.is_active and can_write %}

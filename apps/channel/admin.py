@@ -10,4 +10,5 @@ class ChannelSessionAdmin(admin.ModelAdmin):
 
 @admin.register(ChannelNotification)
 class ChannelNotificationAdmin(admin.ModelAdmin):
-    list_display = ("phone_e164", "event_type", "status", "tenant")
+    list_display = ("phone_e164", "event_type", "provider", "status", "tenant")
+    list_filter = ("provider", "status")

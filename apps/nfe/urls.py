@@ -9,6 +9,15 @@ from apps.nfe.views import (
     NfeMetricsView,
     NfeProductViewSet,
 )
+from apps.nfe.entrada.views import (
+    NfeEntradaDetailView,
+    NfeEntradaDistributionConfigView,
+    NfeEntradaDistributionStatusView,
+    NfeEntradaListView,
+    NfeEntradaManifestView,
+    NfeEntradaSyncView,
+    NfeEntradaXmlView,
+)
 
 router = DefaultRouter()
 router.register("nfe/products", NfeProductViewSet, basename="nfe-products")
@@ -59,5 +68,24 @@ urlpatterns = [
     path("nfe/invoices/<uuid:pk>/artifacts/xml", invoice_xml, name="nfe-invoice-xml"),
     path("nfe/invoices/<uuid:pk>/artifacts/pdf", invoice_pdf, name="nfe-invoice-pdf"),
     path("nfe/invoices/<uuid:pk>/artifacts/cce", invoice_cce_xml, name="nfe-invoice-cce-xml"),
+    path("nfe/entrada/", NfeEntradaListView.as_view(), name="nfe-entrada-list"),
+    path("nfe/entrada/sync/", NfeEntradaSyncView.as_view(), name="nfe-entrada-sync"),
+    path(
+        "nfe/entrada/distribution/status/",
+        NfeEntradaDistributionStatusView.as_view(),
+        name="nfe-entrada-distribution-status",
+    ),
+    path(
+        "nfe/entrada/distribution/config/",
+        NfeEntradaDistributionConfigView.as_view(),
+        name="nfe-entrada-distribution-config",
+    ),
+    path("nfe/entrada/<uuid:pk>/", NfeEntradaDetailView.as_view(), name="nfe-entrada-detail"),
+    path(
+        "nfe/entrada/<uuid:pk>/manifest/",
+        NfeEntradaManifestView.as_view(),
+        name="nfe-entrada-manifest",
+    ),
+    path("nfe/entrada/<uuid:pk>/xml/", NfeEntradaXmlView.as_view(), name="nfe-entrada-xml"),
     *router.urls,
 ]

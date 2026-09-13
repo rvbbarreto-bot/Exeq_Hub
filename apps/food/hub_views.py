@@ -7,12 +7,13 @@ from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
 from django.core.paginator import Paginator
+from django.db.models import Q
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
 
-from apps.accounts.permissions import WRITE_ROLES
-from apps.food.exceptions import FoodError
+from apps.accounts.permissions import FOOD_WRITE_ROLES
+from apps.food.exceptions import FoodError, FoodPaymentEmailRequiredError, FoodPaymentCardTokenRequiredError
 from apps.food.intelligence import intelligence_report
 from apps.food.models import (
     FoodCustomer,
@@ -26,6 +27,7 @@ from apps.food.models import (
     FoodRetentionRule,
     FoodSupplier,
 )
+from apps.nfe.models import NfeProduct
 from apps.food.operations import (
     ORDER_TRANSITIONS,
     create_purchase,
@@ -41,29 +43,61 @@ from apps.food.production import (
     start_production,
 )
 from apps.food.retention import create_retention_rule, process_retention_tick
+from apps.food.payments.display import payment_panel_context
+from apps.food.payments.services import create_payment_intent_for_order
 from apps.food.services import (
     create_food_customer,
+    create_food_product,
     create_order,
-    create_pix_intent_for_order,
 )
+from apps.food.hub_forms import parse_order_lines
+from apps.food.hub_pilot import block_if_out_of_pilot
 from apps.hub_v4.auth import require_hub
-from apps.hub_v4.views import _require_writer_hub
+
+
+class FoodPilotSectionMixin:
+    """Responde 404 com página explicativa para telas Hub fora do piloto."""
+
+    pilot_section: str = ""
+
+    def dispatch(self, request, *args, **kwargs):
+        tenant, user, role, redir = _require_food_hub(request)
+        if redir:
+            return redir
+        blocked = block_if_out_of_pilot(request, self.pilot_section, role=role)
+        if blocked:
+            return blocked
+        return super().dispatch(request, *args, **kwargs)
 
 
 def _food_ctx(role, **extra):
     base = {
         "nav": "food",
         "role_code": role,
-        "can_write": role in WRITE_ROLES,
+        "can_write": role in FOOD_WRITE_ROLES,
         "food_section": extra.pop("food_section", "orders"),
     }
     base.update(extra)
     return base
 
 
+def _require_food_hub(request: HttpRequest):
+    return require_hub(request, allow_food_only=True)
+
+
+def _require_food_writer_hub(request: HttpRequest):
+    tenant, user, role, redir = _require_food_hub(request)
+    if redir:
+        return None, None, None, redir
+    if role not in FOOD_WRITE_ROLES:
+        messages.error(request, "Seu papel não permite editar no Food.")
+        return tenant, user, role, redirect("hub-v4-food-orders")
+    return tenant, user, role, None
+
+
 class FoodOrdersListView(View):
     def get(self, request: HttpRequest):
-        tenant, user, role, redir = require_hub(request)
+        tenant, user, role, redir = _require_food_hub(request)
         if redir:
             return redir
         qs = (
@@ -90,21 +124,42 @@ class FoodOrdersListView(View):
 
 
 class FoodOrderDetailView(View):
+    template_name = "food/order_detail.html"
+
+    def _order_qs(self, tenant):
+        return (
+            FoodOrder.objects.filter(tenant=tenant)
+            .select_related("customer", "charge", "coupon", "nfce_invoice")
+            .prefetch_related(
+                "lines__product__nfe_product",
+                "payments__events",
+                "fiscal_events",
+            )
+        )
+
     def get(self, request: HttpRequest, pk):
-        tenant, user, role, redir = require_hub(request)
+        tenant, user, role, redir = _require_food_hub(request)
         if redir:
             return redir
-        order = get_object_or_404(
-            FoodOrder.objects.select_related("customer", "charge", "coupon")
-            .prefetch_related("lines"),
-            pk=pk,
-            tenant=tenant,
-        )
+        order = get_object_or_404(self._order_qs(tenant), pk=pk)
         next_statuses = sorted(ORDER_TRANSITIONS.get(order.status, set()))
         status_labels = dict(FoodOrder.Status.choices)
+        panel = payment_panel_context(tenant=tenant, order=order)
+        from apps.food.fiscal.hub_context import food_order_fiscal_panel_context
+        from apps.food.fiscal.observability import serialize_fiscal_event
+
+        fiscal_ctx = food_order_fiscal_panel_context(order)
+        fiscal_events = [
+            serialize_fiscal_event(ev)
+            for ev in sorted(
+                order.fiscal_events.all(),
+                key=lambda e: e.occurred_at,
+                reverse=True,
+            )[:15]
+        ]
         return render(
             request,
-            "hub_v4/food/order_detail.html",
+            self.template_name,
             _food_ctx(
                 role,
                 food_section="orders",
@@ -113,25 +168,121 @@ class FoodOrderDetailView(View):
                 next_status_choices=[
                     (s, status_labels.get(s, s)) for s in next_statuses
                 ],
+                fiscal_events=fiscal_events,
+                **panel,
+                **fiscal_ctx,
             ),
         )
 
     def post(self, request: HttpRequest, pk):
-        tenant, user, role, redir = _require_writer_hub(request)
+        tenant, user, role, redir = _require_food_writer_hub(request)
         if redir:
             return redir
         order = get_object_or_404(FoodOrder, pk=pk, tenant=tenant)
         action = (request.POST.get("action") or "").strip()
         try:
             if action == "pix":
-                create_pix_intent_for_order(tenant=tenant, order_id=order.id)
-                messages.success(request, "Cobrança Pix gerada no gateway.")
+                create_payment_intent_for_order(
+                    tenant=tenant, order_id=order.id, method="pix"
+                )
+                messages.success(request, "Pagamento Pix gerado no gateway.")
+            elif action == "card":
+                installments_raw = (request.POST.get("installments") or "1").strip()
+                try:
+                    installments = max(1, int(installments_raw))
+                except ValueError:
+                    installments = 1
+                updated = create_payment_intent_for_order(
+                    tenant=tenant,
+                    order_id=order.id,
+                    method="card",
+                    card_token=(request.POST.get("card_token") or "").strip(),
+                    payment_method_id=(request.POST.get("payment_method_id") or "").strip(),
+                    issuer_id=(request.POST.get("issuer_id") or "").strip(),
+                    installments=installments,
+                )
+                if updated.payment_status == FoodOrder.PaymentStatus.PAID:
+                    messages.success(request, "Pagamento com cartão aprovado.")
+                elif updated.payment_status == FoodOrder.PaymentStatus.FAILED:
+                    messages.error(request, "Pagamento com cartão recusado.")
+                else:
+                    messages.info(request, "Pagamento com cartão em processamento.")
             elif action == "transition":
                 to_status = (request.POST.get("status") or "").strip()
                 transition_order_status(
                     tenant=tenant, order_id=order.id, to_status=to_status
                 )
                 messages.success(request, f"Status atualizado para {to_status}.")
+            elif action == "customer_email":
+                email = (request.POST.get("customer_email") or "").strip()
+                customer = order.customer
+                customer.email = email
+                customer.save(update_fields=["email", "updated_at"])
+                messages.success(request, "E-mail do cliente atualizado.")
+            elif action == "fiscal_emit":
+                from apps.food.fiscal.emit import emit_food_orders_batch
+
+                result = emit_food_orders_batch(
+                    tenant=tenant,
+                    order_ids=[str(order.id)],
+                    actor=f"hub:{user.email}",
+                )
+                if result["authorized"]:
+                    messages.success(request, "NFC-e autorizada para o pedido.")
+                elif result["failed"]:
+                    failed = result["results"][0] if result["results"] else {}
+                    messages.error(
+                        request,
+                        failed.get("message")
+                        or failed.get("reason")
+                        or failed.get("code")
+                        or "Falha na emissão NFC-e.",
+                    )
+                else:
+                    messages.info(request, "Emissão não realizada (pedido ignorado ou pulado).")
+            elif action == "fiscal_ignore":
+                from apps.food.fiscal.ignore import ignore_food_order_fiscal
+
+                reason = (request.POST.get("ignore_reason") or "").strip()
+                ignore_food_order_fiscal(
+                    tenant=tenant,
+                    order_id=order.id,
+                    reason=reason,
+                    actor=f"hub:{user.email}",
+                )
+                messages.success(request, "Pedido marcado como ignorado para emissão.")
+            elif action == "fiscal_cancel_nfce":
+                from apps.food.fiscal.nfce_sync import cancel_nfce_for_food_order
+                from apps.nfce.exceptions import (
+                    NfceDisabledError,
+                    NfceInvalidTransitionError,
+                    NfceValidationError,
+                )
+
+                just = (request.POST.get("justificativa") or "").strip()
+                try:
+                    cancel_nfce_for_food_order(
+                        tenant=tenant,
+                        order=order,
+                        justificativa=just,
+                        actor=f"hub:{user.email}",
+                    )
+                    messages.success(request, "NFC-e cancelada; status fiscal atualizado.")
+                except (
+                    FoodError,
+                    NfceDisabledError,
+                    NfceInvalidTransitionError,
+                    NfceValidationError,
+                    ValueError,
+                ) as exc:
+                    messages.error(request, str(exc) or "Falha ao cancelar NFC-e.")
+        except FoodPaymentEmailRequiredError as exc:
+            messages.error(
+                request,
+                f"{exc} Cadastre o e-mail do cliente e tente novamente.",
+            )
+        except FoodPaymentCardTokenRequiredError as exc:
+            messages.error(request, str(exc))
         except FoodError as exc:
             messages.error(request, str(exc))
         return redirect("hub-v4-food-order-detail", pk=order.id)
@@ -141,13 +292,13 @@ class FoodOrderCreateView(View):
     template_name = "hub_v4/food/order_form.html"
 
     def get(self, request: HttpRequest):
-        tenant, user, role, redir = _require_writer_hub(request)
+        tenant, user, role, redir = _require_food_writer_hub(request)
         if redir:
             return redir
         return render(request, self.template_name, self._ctx(tenant, role))
 
     def post(self, request: HttpRequest):
-        tenant, user, role, redir = _require_writer_hub(request)
+        tenant, user, role, redir = _require_food_writer_hub(request)
         if redir:
             return redir
         try:
@@ -179,24 +330,21 @@ class FoodOrderCreateView(View):
 
     def _create(self, request, tenant):
         customer_id = request.POST.get("customer_id")
-        product_id = request.POST.get("product_id")
-        if not customer_id or not product_id:
-            raise ValueError("Cliente e produto são obrigatórios.")
-        raw_qty = (request.POST.get("quantity") or "1").strip().replace(",", ".")
-        try:
-            qty = Decimal(raw_qty)
-        except InvalidOperation as exc:
-            raise ValueError("Quantidade inválida.") from exc
+        if not customer_id:
+            raise ValueError("Cliente é obrigatório.")
+        lines = parse_order_lines(request.POST)
 
         new_name = (request.POST.get("new_customer_name") or "").strip()
         if customer_id == "__new__" and new_name:
             phone = (request.POST.get("new_customer_phone") or "").strip()
             doc = (request.POST.get("new_customer_document") or "").strip()
+            email = (request.POST.get("new_customer_email") or "").strip()
             customer = create_food_customer(
                 tenant=tenant,
                 name=new_name,
                 phone_e164=phone,
                 document=doc,
+                email=email,
             )
             customer_id = customer.id
 
@@ -206,7 +354,7 @@ class FoodOrderCreateView(View):
             tenant=tenant,
             customer_id=customer_id,
             channel=request.POST.get("channel") or FoodOrder.Channel.COUNTER,
-            lines=[{"product_id": product_id, "quantity": qty}],
+            lines=lines,
             idempotency_key=request.POST.get("idempotency_key")
             or f"hub-food-{uuid.uuid4()}",
             notes=request.POST.get("notes") or "",
@@ -214,8 +362,215 @@ class FoodOrderCreateView(View):
             deduct_stock=not await_pix,
         )
         if request_pix and order.payment_status != FoodOrder.PaymentStatus.PAID:
-            order = create_pix_intent_for_order(tenant=tenant, order_id=order.id)
+            order = create_payment_intent_for_order(
+                tenant=tenant, order_id=order.id, method="pix"
+            )
         return order
+
+
+def _nfe_product_choices(tenant):
+    return NfeProduct.objects.filter(tenant=tenant, is_active=True).order_by("code")
+
+
+class FoodProductsListView(View):
+    def get(self, request: HttpRequest):
+        tenant, user, role, redir = _require_food_hub(request)
+        if redir:
+            return redir
+        qs = FoodProduct.objects.filter(tenant=tenant).select_related("nfe_product").order_by("sku")
+        q = (request.GET.get("q") or "").strip()
+        if q:
+            qs = qs.filter(Q(name__icontains=q) | Q(sku__icontains=q))
+        page = Paginator(qs, 30).get_page(request.GET.get("page") or 1)
+        return render(
+            request,
+            "hub_v4/food/products_list.html",
+            _food_ctx(
+                role,
+                food_section="products",
+                page_title="Produtos Food",
+                page=page,
+                search_q=q,
+            ),
+        )
+
+
+class FoodProductCreateView(View):
+    template_name = "hub_v4/food/product_form.html"
+
+    def get(self, request: HttpRequest):
+        tenant, user, role, redir = _require_food_writer_hub(request)
+        if redir:
+            return redir
+        return render(request, self.template_name, self._ctx(tenant, role))
+
+    def post(self, request: HttpRequest):
+        tenant, user, role, redir = _require_food_writer_hub(request)
+        if redir:
+            return redir
+        try:
+            price_cents = _parse_money_to_cents(request.POST.get("price") or "0")
+            cost_cents = _parse_money_to_cents(request.POST.get("cost") or "0")
+            product = create_food_product(
+                tenant=tenant,
+                sku=(request.POST.get("sku") or "").strip(),
+                name=(request.POST.get("name") or "").strip(),
+                price_cents=price_cents,
+                cost_cents=cost_cents,
+                category=(request.POST.get("category") or "").strip(),
+                unit=(request.POST.get("unit") or "un").strip() or "un",
+                initial_stock=(request.POST.get("initial_stock") or "0").replace(",", "."),
+            )
+            nfe_id = (request.POST.get("nfe_product_id") or "").strip()
+            if nfe_id:
+                from apps.food.fiscal.mapping import set_food_product_nfe_mapping
+
+                set_food_product_nfe_mapping(
+                    tenant=tenant, product=product, nfe_product_id=nfe_id
+                )
+        except (FoodError, ValueError) as exc:
+            messages.error(request, str(exc) or "Falha ao cadastrar produto.")
+            return render(
+                request,
+                self.template_name,
+                {**self._ctx(tenant, role), "form": request.POST},
+            )
+        messages.success(request, "Produto cadastrado.")
+        return redirect("hub-v4-food-products")
+
+    def _ctx(self, tenant, role, *, product=None):
+        form = {}
+        if product is not None:
+            form = {
+                "sku": product.sku,
+                "name": product.name,
+                "price": f"{product.price_cents / 100:.2f}".replace(".", ","),
+                "cost": f"{product.cost_cents / 100:.2f}".replace(".", ","),
+                "unit": product.unit,
+                "category": product.category,
+                "nfe_product_id": str(product.nfe_product_id) if product.nfe_product_id else "",
+            }
+        return _food_ctx(
+            role,
+            food_section="products",
+            page_title="Novo produto Food" if product is None else f"Editar {product.sku}",
+            nfe_products=_nfe_product_choices(tenant),
+            product=product,
+            form=form,
+        )
+
+
+class FoodProductEditView(View):
+    template_name = "hub_v4/food/product_form.html"
+
+    def get(self, request: HttpRequest, pk):
+        tenant, user, role, redir = _require_food_writer_hub(request)
+        if redir:
+            return redir
+        product = get_object_or_404(FoodProduct, tenant=tenant, pk=pk)
+        return render(
+            request,
+            self.template_name,
+            FoodProductCreateView()._ctx(tenant, role, product=product),
+        )
+
+    def post(self, request: HttpRequest, pk):
+        tenant, user, role, redir = _require_food_writer_hub(request)
+        if redir:
+            return redir
+        product = get_object_or_404(FoodProduct, tenant=tenant, pk=pk)
+        try:
+            product.name = (request.POST.get("name") or product.name).strip()
+            product.category = (request.POST.get("category") or "").strip()
+            product.unit = (request.POST.get("unit") or product.unit).strip() or "un"
+            product.price_cents = _parse_money_to_cents(request.POST.get("price") or "0")
+            product.cost_cents = _parse_money_to_cents(request.POST.get("cost") or "0")
+            product.save(
+                update_fields=[
+                    "name",
+                    "category",
+                    "unit",
+                    "price_cents",
+                    "cost_cents",
+                    "updated_at",
+                ]
+            )
+            from apps.food.fiscal.mapping import set_food_product_nfe_mapping
+
+            nfe_id = (request.POST.get("nfe_product_id") or "").strip() or None
+            set_food_product_nfe_mapping(
+                tenant=tenant, product=product, nfe_product_id=nfe_id
+            )
+        except (FoodError, ValueError) as exc:
+            messages.error(request, str(exc) or "Falha ao salvar produto.")
+            return render(
+                request,
+                self.template_name,
+                {
+                    **FoodProductCreateView()._ctx(tenant, role, product=product),
+                    "form": request.POST,
+                },
+            )
+        messages.success(request, "Produto atualizado.")
+        return redirect("hub-v4-food-products")
+
+
+class FoodCustomersListView(View):
+    def get(self, request: HttpRequest):
+        tenant, user, role, redir = _require_food_hub(request)
+        if redir:
+            return redir
+        qs = FoodCustomer.objects.filter(tenant=tenant, is_active=True).order_by("name")
+        q = (request.GET.get("q") or "").strip()
+        if q:
+            qs = qs.filter(name__icontains=q)
+        page = Paginator(qs, 30).get_page(request.GET.get("page") or 1)
+        return render(
+            request,
+            "hub_v4/food/customers_list.html",
+            _food_ctx(
+                role,
+                food_section="customers",
+                page_title="Clientes Food",
+                page=page,
+                search_q=q,
+            ),
+        )
+
+
+class FoodCustomerCreateView(View):
+    template_name = "hub_v4/food/customer_form.html"
+
+    def get(self, request: HttpRequest):
+        tenant, user, role, redir = _require_food_writer_hub(request)
+        if redir:
+            return redir
+        return render(request, self.template_name, self._ctx(role))
+
+    def post(self, request: HttpRequest):
+        tenant, user, role, redir = _require_food_writer_hub(request)
+        if redir:
+            return redir
+        try:
+            create_food_customer(
+                tenant=tenant,
+                name=(request.POST.get("name") or "").strip(),
+                phone_e164=(request.POST.get("phone_e164") or "").strip(),
+                email=(request.POST.get("email") or "").strip(),
+                document=(request.POST.get("document") or "").strip(),
+            )
+        except (FoodError, ValueError) as exc:
+            messages.error(request, str(exc) or "Falha ao cadastrar cliente.")
+            return render(
+                request,
+                self.template_name,
+                {**self._ctx(role), "form": request.POST},
+            )
+        messages.success(request, "Cliente cadastrado.")
+        return redirect("hub-v4-food-customers")
+
+    def _ctx(self, role):
+        return _food_ctx(role, food_section="customers", page_title="Novo cliente Food")
 
 
 def _parse_money_to_cents(raw: str) -> int:
@@ -260,9 +615,11 @@ def _create_purchase_from_post(*, tenant, post) -> None:
     )
 
 
-class FoodPurchasesListView(View):
+class FoodPurchasesListView(FoodPilotSectionMixin, View):
+    pilot_section = "purchases"
+
     def get(self, request: HttpRequest):
-        tenant, user, role, redir = require_hub(request)
+        tenant, user, role, redir = _require_food_hub(request)
         if redir:
             return redir
         qs = (
@@ -283,7 +640,7 @@ class FoodPurchasesListView(View):
         )
 
     def post(self, request: HttpRequest):
-        tenant, user, role, redir = _require_writer_hub(request)
+        tenant, user, role, redir = _require_food_writer_hub(request)
         if redir:
             return redir
         action = (request.POST.get("action") or "").strip()
@@ -301,9 +658,11 @@ class FoodPurchasesListView(View):
         return redirect("hub-v4-food-purchases")
 
 
-class FoodPurchasesNewView(View):
+class FoodPurchasesNewView(FoodPilotSectionMixin, View):
+    pilot_section = "purchases"
+
     def get(self, request: HttpRequest):
-        tenant, user, role, redir = _require_writer_hub(request)
+        tenant, user, role, redir = _require_food_writer_hub(request)
         if redir:
             return redir
         return render(
@@ -324,7 +683,7 @@ class FoodPurchasesNewView(View):
         )
 
     def post(self, request: HttpRequest):
-        tenant, user, role, redir = _require_writer_hub(request)
+        tenant, user, role, redir = _require_food_writer_hub(request)
         if redir:
             return redir
         try:
@@ -357,7 +716,7 @@ class FoodPurchasesNewView(View):
 
 class FoodProductionListView(View):
     def get(self, request: HttpRequest):
-        tenant, user, role, redir = require_hub(request)
+        tenant, user, role, redir = _require_food_hub(request)
         if redir:
             return redir
         qs = (
@@ -381,7 +740,7 @@ class FoodProductionListView(View):
         )
 
     def post(self, request: HttpRequest):
-        tenant, user, role, redir = _require_writer_hub(request)
+        tenant, user, role, redir = _require_food_writer_hub(request)
         if redir:
             return redir
         action = (request.POST.get("action") or "").strip()
@@ -414,9 +773,11 @@ class FoodProductionListView(View):
         return redirect("hub-v4-food-production")
 
 
-class FoodIntelligenceView(View):
+class FoodIntelligenceView(FoodPilotSectionMixin, View):
+    pilot_section = "intelligence"
+
     def get(self, request: HttpRequest):
-        tenant, user, role, redir = require_hub(request)
+        tenant, user, role, redir = _require_food_hub(request)
         if redir:
             return redir
         lookback = int(request.GET.get("lookback_days") or 28)
@@ -438,9 +799,11 @@ class FoodIntelligenceView(View):
         )
 
 
-class FoodRetentionHubView(View):
+class FoodRetentionHubView(FoodPilotSectionMixin, View):
+    pilot_section = "retention"
+
     def get(self, request: HttpRequest):
-        tenant, user, role, redir = require_hub(request)
+        tenant, user, role, redir = _require_food_hub(request)
         if redir:
             return redir
         rules = (
@@ -473,7 +836,7 @@ class FoodRetentionHubView(View):
         )
 
     def post(self, request: HttpRequest):
-        tenant, user, role, redir = _require_writer_hub(request)
+        tenant, user, role, redir = _require_food_writer_hub(request)
         if redir:
             return redir
         action = (request.POST.get("action") or "").strip()
@@ -546,9 +909,11 @@ class FoodRetentionHubView(View):
         return redirect("hub-v4-food-retention")
 
 
-class FoodMarketplaceHubView(View):
+class FoodMarketplaceHubView(FoodPilotSectionMixin, View):
+    pilot_section = "marketplace"
+
     def get(self, request: HttpRequest):
-        tenant, user, role, redir = require_hub(request)
+        tenant, user, role, redir = _require_food_hub(request)
         if redir:
             return redir
         conns = FoodMarketplaceConnection.objects.filter(tenant=tenant).order_by(
@@ -576,7 +941,7 @@ class FoodMarketplaceHubView(View):
         )
 
     def post(self, request: HttpRequest):
-        tenant, user, role, redir = _require_writer_hub(request)
+        tenant, user, role, redir = _require_food_writer_hub(request)
         if redir:
             return redir
         action = (request.POST.get("action") or "").strip()
@@ -633,3 +998,143 @@ class FoodMarketplaceHubView(View):
         except FoodError as exc:
             messages.error(request, str(exc))
         return redirect("hub-v4-food-marketplace")
+
+
+class FoodIfoodFiscalHubView(FoodPilotSectionMixin, View):
+    """Fila fiscal iFood — emissão supervisionada NFC-e (PO-1/PO-2)."""
+
+    pilot_section = "orders"
+
+    def get(self, request: HttpRequest):
+        tenant, user, role, redir = _require_food_hub(request)
+        if redir:
+            return redir
+        qs = (
+            FoodOrder.objects.filter(tenant=tenant, channel=FoodOrder.Channel.IFOOD)
+            .select_related("customer", "nfce_invoice")
+            .prefetch_related("lines__product__nfe_product")
+            .order_by("-created_at")
+        )
+        fiscal_filter = (request.GET.get("fiscal") or "").strip()
+        mapping_filter = (request.GET.get("mapping") or "").strip()
+        q = (request.GET.get("q") or "").strip()
+        from apps.food.fiscal.hub_filters import filter_ifood_fiscal_orders
+        from apps.food.fiscal.mapping import order_lines_mapping_summary
+
+        qs = filter_ifood_fiscal_orders(
+            qs,
+            fiscal_filter=fiscal_filter,
+            mapping_filter=mapping_filter,
+            q=q,
+        )
+
+        paginator = Paginator(qs, 30)
+        page = paginator.get_page(request.GET.get("page"))
+        order_rows = [
+            (order, order_lines_mapping_summary(order)) for order in page.object_list
+        ]
+        return render(
+            request,
+            "hub_v4/food/ifood_fiscal.html",
+            _food_ctx(
+                role,
+                food_section="orders",
+                page_title="Fiscal iFood",
+                orders=page,
+                order_rows=order_rows,
+                fiscal_filter=fiscal_filter,
+                mapping_filter=mapping_filter,
+                q=q,
+            ),
+        )
+
+    def post(self, request: HttpRequest):
+        tenant, user, role, redir = _require_food_writer_hub(request)
+        if redir:
+            return redir
+        action = (request.POST.get("action") or "emit").strip()
+
+        if action == "ignore":
+            order_id = (request.POST.get("ignore_order_id") or "").strip()
+            reason = (request.POST.get("ignore_reason") or "").strip()
+            if not order_id or not reason:
+                messages.warning(request, "Informe pedido e motivo para ignorar.")
+                return redirect("hub-v4-food-ifood-fiscal")
+            from apps.food.fiscal.ignore import ignore_food_order_fiscal
+
+            try:
+                ignore_food_order_fiscal(
+                    tenant=tenant,
+                    order_id=order_id,
+                    reason=reason,
+                    actor=f"hub:{user.email}",
+                )
+                messages.success(request, "Pedido marcado como ignorado para emissão.")
+            except FoodError as exc:
+                messages.error(request, str(exc))
+            return redirect("hub-v4-food-ifood-fiscal")
+
+        if action == "cancel_nfce":
+            order_id = (request.POST.get("cancel_order_id") or "").strip()
+            just = (request.POST.get("justificativa") or "").strip()
+            if not order_id:
+                messages.warning(request, "Pedido não informado para cancelamento.")
+                return redirect("hub-v4-food-ifood-fiscal")
+            order = get_object_or_404(
+                FoodOrder.objects.select_related("nfce_invoice"),
+                pk=order_id,
+                tenant=tenant,
+                channel=FoodOrder.Channel.IFOOD,
+            )
+            from apps.food.fiscal.nfce_sync import cancel_nfce_for_food_order
+            from apps.nfce.exceptions import (
+                NfceDisabledError,
+                NfceInvalidTransitionError,
+                NfceValidationError,
+            )
+
+            try:
+                cancel_nfce_for_food_order(
+                    tenant=tenant,
+                    order=order,
+                    justificativa=just,
+                    actor=f"hub:{user.email}",
+                )
+                messages.success(request, "NFC-e cancelada; status fiscal atualizado.")
+            except (
+                FoodError,
+                NfceDisabledError,
+                NfceInvalidTransitionError,
+                NfceValidationError,
+                ValueError,
+            ) as exc:
+                messages.error(request, str(exc) or "Falha ao cancelar NFC-e.")
+            return redirect("hub-v4-food-ifood-fiscal")
+
+        order_ids = request.POST.getlist("order_ids")
+        if not order_ids:
+            messages.warning(request, "Selecione ao menos um pedido.")
+            return redirect("hub-v4-food-ifood-fiscal")
+
+        from apps.food.fiscal.emit import emit_food_orders_batch
+
+        result = emit_food_orders_batch(
+            tenant=tenant,
+            order_ids=order_ids,
+            actor=f"hub:{user.email}",
+        )
+        messages.success(
+            request,
+            f"Lote {result['batch_id'][:8]}… — "
+            f"autorizados={result['authorized']} "
+            f"falhas={result['failed']} ignorados={result['skipped']}",
+        )
+        if result["failed"]:
+            failed = [r for r in result["results"] if r.get("status") not in {"authorized", "skipped"}]
+            if failed:
+                messages.warning(
+                    request,
+                    f"Ex.: pedido {failed[0].get('order_id', '')[:8]}… — "
+                    f"{failed[0].get('message') or failed[0].get('reason') or failed[0].get('code')}",
+                )
+        return redirect("hub-v4-food-ifood-fiscal")

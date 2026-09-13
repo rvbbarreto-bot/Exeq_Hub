@@ -161,6 +161,10 @@ def test_documents_page_and_wizard_structure(client, hub_ctx, settings, tmp_path
     assert "3 · Tributação" in wh
     assert "4 · Revisão" in wh
     assert "Emitir NFS-e?" in wh
+    assert 'data-review="nbs"' in wh
+    assert "Código NBS" in wh
+    assert "data-sum-nbs" in wh
+    assert "modal--nfse-confirm" in wh
     assert "CPF/CNPJ" in wh
     assert "data-lookup-url" in wh
     assert "hub-customers-data" in wh

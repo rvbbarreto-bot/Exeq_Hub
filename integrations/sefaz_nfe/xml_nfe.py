@@ -9,7 +9,10 @@ from xml.etree import ElementTree as ET
 from lxml import etree
 
 from integrations.nfse.xml_safe import UnsafeXmlError, safe_fromstring
-from integrations.sefaz_nfe.access_key import UF_IBGE_CODE, build_access_key
+from apps.nfe.csosn import map_csosn_to_xml_group
+from apps.nfe.ie_validation import normalize_emitter_ie_for_xml
+from integrations.sefaz_nfe.prod_fields import prod_c_ean
+from integrations.sefaz_nfe.access_key import UF_IBGE_CODE, build_access_key, check_digit_mod11
 
 NFE_NS = "http://www.portalfiscal.inf.br/nfe"
 ET.register_namespace("", NFE_NS)
@@ -49,6 +52,46 @@ def _crt(tax_regime: str) -> str:
     if tax_regime == "simples_nacional":
         return "1"
     return "3"
+
+
+def append_pis_cofins(imposto: ET.Element, taxes: dict, *, is_sn: bool) -> None:
+    """PIS/COFINS por item — PISOutr exige vBC+pPIS+vPIS (ou qBCProd) + vPIS no XSD."""
+    default_pc_cst = "49" if is_sn else "07"
+    for kind, tag in (("pis", "PIS"), ("cofins", "COFINS")):
+        blk = taxes.get(kind) or {}
+        parent = _el(imposto, tag)
+        cst = str(blk.get("cst") or default_pc_cst)[:2]
+        if is_sn and cst in ("01", "02", "03"):
+            cst = "49"
+        if cst in ("04", "05", "06", "07", "08", "09"):
+            g = _el(parent, f"{tag}NT")
+            _el(g, "CST", cst)
+        elif cst in ("49", "99"):
+            g = _el(parent, f"{tag}Outr")
+            _el(g, "CST", cst)
+            base = int(blk.get("base_cents") or 0)
+            rate = int(blk.get("rate_bp") or 0)
+            value = int(blk.get("value_cents") or 0)
+            _el(g, "vBC", _money_cents(base))
+            _el(g, "p" + tag, f"{Decimal(rate) / Decimal(100):.4f}")
+            _el(g, "v" + tag, _money_cents(value))
+        else:
+            g = _el(parent, f"{tag}Aliq")
+            _el(g, "CST", cst)
+            _el(g, "vBC", _money_cents(int(blk.get("base_cents") or 0)))
+            _el(g, "p" + tag, f"{Decimal(int(blk.get("rate_bp") or 0)) / Decimal(100):.4f}")
+            _el(g, "v" + tag, _money_cents(int(blk.get("value_cents") or 0)))
+
+
+def append_det_pag(pag: ET.Element, payment: dict, pay_cents: int) -> None:
+    """detPag — xPag obrigatório antes de vPag quando tPag=99 (NT 2020.006)."""
+    detpag = _el(pag, "detPag")
+    tpag = str(payment.get("method") or "99")[:2]
+    _el(detpag, "tPag", tpag)
+    if tpag == "99":
+        xpag = str(payment.get("description") or payment.get("x_pag") or "Outros").strip()
+        _el(detpag, "xPag", (xpag or "Outros")[:60])
+    _el(detpag, "vPag", _money_cents(int(payment.get("amount_cents") or pay_cents)))
 
 
 def _cmun(addr: dict) -> str:
@@ -97,7 +140,17 @@ def build_nfe_xml(*, snapshot: dict[str, Any], access_key: str | None = None) ->
     ind_ie_dest = str(header.get("ind_ie_dest") or dest.get("ind_ie_dest") or "9")[:1]
     id_dest = _id_dest(emit_uf=uf, dest_uf=duf)
 
-    if not access_key or len(str(access_key)) != 44 or not str(access_key).isdigit():
+    key_s = str(access_key or "")
+    if len(key_s) == 44 and key_s.isdigit():
+        if check_digit_mod11(key_s[:43]) != key_s[-1]:
+            access_key = build_access_key(
+                uf=uf,
+                issue_date_iso=issue_date,
+                cnpj=cnpj,
+                series=series,
+                number=number,
+            )
+    else:
         access_key = build_access_key(
             uf=uf,
             issue_date_iso=issue_date,
@@ -118,10 +171,23 @@ def build_nfe_xml(*, snapshot: dict[str, Any], access_key: str | None = None) ->
     _el(ide, "mod", "55")
     _el(ide, "serie", str(series))
     _el(ide, "nNF", str(number))
-    _el(ide, "dhEmi", f"{issue_date}T12:00:00-03:00")
+    dh_emi = (header.get("dh_emi") or "").strip()
+    if not dh_emi:
+        dh_emi = f"{issue_date}T12:00:00-03:00"
+    _el(ide, "dhEmi", dh_emi)
+    exit_raw = (header.get("dh_sai_ent") or header.get("exit_date") or "").strip()
+    if exit_raw:
+        dh_sai = exit_raw if "T" in exit_raw else f"{exit_raw}T12:00:00-03:00"
+        _el(ide, "dhSaiEnt", dh_sai)
     _el(ide, "tpNF", "1")
     _el(ide, "idDest", id_dest)
     _el(ide, "cMunFG", _cmun(emit.get("address") or {}))
+    from apps.fiscal.rtc_goods import goods_rtc_mode, rtc_emit_xml_active
+
+    if rtc_emit_xml_active(totals=totals, mode=goods_rtc_mode(document_model="55")):
+        from integrations.sefaz_nfe.xml_rtc_ub import append_cmun_fg_ibs
+
+        append_cmun_fg_ibs(ide, snapshot)
     _el(ide, "tpImp", "1")
     _el(ide, "tpEmis", "1")
     _el(ide, "cDV", access_key[-1])
@@ -147,8 +213,9 @@ def build_nfe_xml(*, snapshot: dict[str, Any], access_key: str | None = None) ->
     _el(ender, "CEP", cep if cep != "00000000" else "01001000")
     _el(ender, "cPais", "1058")
     _el(ender, "xPais", "BRASIL")
-    ie = "".join(ch for ch in str(emit.get("ie") or "") if ch.isalnum())
-    _el(emit_el, "IE", ie if ie else "ISENTO")
+    if emit.get("phone"):
+        _el(ender, "fone", str(emit["phone"])[:14])
+    _el(emit_el, "IE", normalize_emitter_ie_for_xml(str(emit.get("ie") or ""), tp_amb=tp_amb))
     _el(emit_el, "CRT", _crt(str(emit.get("crt") or "")))
 
     dest_el = _el(inf, "dest")
@@ -186,6 +253,30 @@ def build_nfe_xml(*, snapshot: dict[str, Any], access_key: str | None = None) ->
         if dest_ie:
             _el(dest_el, "IE", dest_ie)
 
+    entrega_snap = snapshot.get("entrega")
+    if entrega_snap:
+        ent_el = _el(inf, "entrega")
+        eaddr = entrega_snap.get("address") or entrega_snap
+        doc = entrega_snap.get("document") or entrega_snap.get("cnpj") or entrega_snap.get("cpf")
+        if doc:
+            digs = "".join(ch for ch in str(doc) if ch.isdigit())
+            if len(digs) == 14:
+                _el(ent_el, "CNPJ", digs.zfill(14)[:14])
+            elif len(digs) == 11:
+                _el(ent_el, "CPF", digs.zfill(11)[:11])
+        _el(ent_el, "xLgr", _addr_part(eaddr, "logradouro", "street", default="RUA")[:60])
+        _el(ent_el, "nro", _addr_part(eaddr, "numero", "number", default="S/N")[:60])
+        cpl = _addr_part(eaddr, "complemento", "xCpl", default="")
+        if cpl:
+            _el(ent_el, "xCpl", cpl[:60])
+        _el(ent_el, "xBairro", _addr_part(eaddr, "bairro", "district", default="CENTRO")[:60])
+        _el(ent_el, "cMun", _cmun(eaddr))
+        _el(ent_el, "xMun", _addr_part(eaddr, "municipio", "city", default="MUNICIPIO")[:60])
+        euf = _addr_part(eaddr, "uf", "UF", default=uf).upper()[:2]
+        _el(ent_el, "UF", euf)
+        ecep = "".join(ch for ch in _addr_part(eaddr, "cep", "CEP") if ch.isdigit()).zfill(8)[:8]
+        _el(ent_el, "CEP", ecep if ecep != "00000000" else "01001000")
+
     products_cents = 0
     for it in items:
         det = _el(inf, "det")
@@ -201,8 +292,9 @@ def build_nfe_xml(*, snapshot: dict[str, Any], access_key: str | None = None) ->
         v_un = (v_prod / qty) if qty > 0 else Decimal(unit_cents) / Decimal(100)
         v_un = v_un.quantize(Decimal("0.0000000001"), rounding=ROUND_HALF_UP)
 
+        ean = prod_c_ean(it)
         _el(prod, "cProd", str(it.get("code") or "PROD")[:60])
-        _el(prod, "cEAN", "SEM GTIN")
+        _el(prod, "cEAN", ean)
         _el(prod, "xProd", str(it.get("description") or "PRODUTO")[:120])
         _el(prod, "NCM", str(it.get("ncm") or "00000000")[:8])
         _el(prod, "CFOP", str(it.get("cfop") or "5102")[:4])
@@ -210,7 +302,7 @@ def build_nfe_xml(*, snapshot: dict[str, Any], access_key: str | None = None) ->
         _el(prod, "qCom", _qty_str(qty))
         _el(prod, "vUnCom", f"{v_un:.10f}")
         _el(prod, "vProd", f"{v_prod:.2f}")
-        _el(prod, "cEANTrib", "SEM GTIN")
+        _el(prod, "cEANTrib", ean)
         _el(prod, "uTrib", str(it.get("unit") or "UN")[:6])
         _el(prod, "qTrib", _qty_str(qty))
         _el(prod, "vUnTrib", f"{v_un:.10f}")
@@ -226,9 +318,11 @@ def build_nfe_xml(*, snapshot: dict[str, Any], access_key: str | None = None) ->
             or bool(str(icms_block.get("csosn") or it.get("csosn") or "").strip())
         )
         if is_sn:
-            grp = _el(icms, "ICMSSN102")
+            csosn = str(icms_block.get("csosn") or it.get("csosn") or "102").zfill(3)
+            grp_name = icms_block.get("xml_group") or map_csosn_to_xml_group(csosn)
+            grp = _el(icms, grp_name)
             _el(grp, "orig", origin)
-            _el(grp, "CSOSN", str(icms_block.get("csosn") or it.get("csosn") or "102").zfill(3))
+            _el(grp, "CSOSN", csosn)
         else:
             grp = _el(icms, "ICMS00")
             _el(grp, "orig", origin)
@@ -239,19 +333,17 @@ def build_nfe_xml(*, snapshot: dict[str, Any], access_key: str | None = None) ->
             _el(grp, "pICMS", f"{Decimal(rate_bp) / Decimal(100):.4f}")
             _el(grp, "vICMS", _money_cents(int(icms_block.get("value_cents") or 0)))
 
-        for kind, tag in (("pis", "PIS"), ("cofins", "COFINS")):
-            blk = taxes.get(kind) or {}
-            parent = _el(imposto, tag)
-            cst = str(blk.get("cst") or "07")[:2]
-            if cst in ("04", "05", "06", "07", "08", "09"):
-                g = _el(parent, f"{tag}NT")
-                _el(g, "CST", cst)
-            else:
-                g = _el(parent, f"{tag}Aliq")
-                _el(g, "CST", cst)
-                _el(g, "vBC", _money_cents(int(blk.get("base_cents") or 0)))
-                _el(g, "p" + tag, f"{Decimal(int(blk.get('rate_bp') or 0)) / Decimal(100):.4f}")
-                _el(g, "v" + tag, _money_cents(int(blk.get("value_cents") or 0)))
+        append_pis_cofins(imposto, taxes, is_sn=is_sn)
+
+        item_trib = taxes.get("v_tot_trib_cents")
+        if item_trib:
+            _el(imposto, "vTotTrib", _money_cents(int(item_trib)))
+
+        rtc = taxes.get("rtc") or {}
+        if rtc.get("xml_ub"):
+            from integrations.sefaz_nfe.xml_nfe_rtc import append_item_ibscbs
+
+            append_item_ibscbs(imposto, rtc)
 
     if int(totals.get("products_cents") or 0) > 0:
         products_cents = int(totals["products_cents"])
@@ -278,18 +370,89 @@ def build_nfe_xml(*, snapshot: dict[str, Any], access_key: str | None = None) ->
     _el(icmstot, "vOutro", "0.00")
     tot = int(totals.get("total_cents") or products_cents)
     _el(icmstot, "vNF", _money_cents(tot))
-    _el(icmstot, "vTotTrib", "0.00")
+    _el(icmstot, "vTotTrib", _money_cents(int(totals.get("v_tot_trib_cents") or 0)))
+
+    rtc_totals = totals.get("rtc") if isinstance(totals.get("rtc"), dict) else None
+    pay_cents = tot
+    if rtc_totals:
+        from integrations.sefaz_nfe.xml_nfe_rtc import append_total_ibscbs
+
+        pay_cents = append_total_ibscbs(total_el, rtc_totals, v_nf_cents=tot)
+
+    billing = snapshot.get("billing") or {}
+    if billing:
+        fat = _el(inf, "fat")
+        if billing.get("nFat"):
+            _el(fat, "nFat", str(billing["nFat"])[:60])
+        if billing.get("vOrig"):
+            _el(fat, "vOrig", str(billing["vOrig"]))
+        if billing.get("vLiq"):
+            _el(fat, "vLiq", str(billing["vLiq"]))
+        for dup in billing.get("duplicates") or []:
+            if not isinstance(dup, dict):
+                continue
+            dup_el = _el(fat, "dup")
+            if dup.get("nDup"):
+                _el(dup_el, "nDup", str(dup["nDup"])[:60])
+            if dup.get("dVenc"):
+                _el(dup_el, "dVenc", str(dup["dVenc"])[:10])
+            if dup.get("vDup"):
+                _el(dup_el, "vDup", str(dup["vDup"]))
 
     transp = _el(inf, "transp")
-    _el(transp, "modFrete", str(header.get("freight_mod") or "9")[:1])
+    freight_mod = str(
+        (snapshot.get("transport") or {}).get("modFrete")
+        or header.get("freight_mod")
+        or "9"
+    )[:1]
+    _el(transp, "modFrete", freight_mod)
+    transport = snapshot.get("transport") or {}
+    carrier = transport.get("carrier") or {}
+    if carrier:
+        t = _el(transp, "transporta")
+        doc = "".join(ch for ch in str(carrier.get("document") or "") if ch.isdigit())
+        if len(doc) == 14:
+            _el(t, "CNPJ", _digits(doc, 14))
+        elif len(doc) == 11:
+            _el(t, "CPF", _digits(doc, 11))
+        if carrier.get("name"):
+            _el(t, "xNome", str(carrier["name"])[:60])
+        if carrier.get("ie"):
+            _el(t, "IE", "".join(ch for ch in str(carrier["ie"]) if ch.isalnum()))
+        if carrier.get("city"):
+            _el(t, "xMun", str(carrier["city"])[:60])
+        if carrier.get("uf"):
+            _el(t, "UF", str(carrier["uf"])[:2])
+    vol = transport.get("volume") or {}
+    if vol:
+        v = _el(transp, "vol")
+        if vol.get("qVol"):
+            _el(v, "qVol", str(vol["qVol"])[:15])
+        if vol.get("esp"):
+            _el(v, "esp", str(vol["esp"])[:60])
+        if vol.get("marca"):
+            _el(v, "marca", str(vol["marca"])[:60])
+        if vol.get("pesoB"):
+            _el(v, "pesoB", str(vol["pesoB"]))
+        if vol.get("pesoL"):
+            _el(v, "pesoL", str(vol["pesoL"]))
+    veic = transport.get("vehicle") or {}
+    if veic:
+        ve = _el(transp, "veicTransp")
+        if veic.get("placa"):
+            _el(ve, "placa", str(veic["placa"])[:8])
+        if veic.get("uf"):
+            _el(ve, "UF", str(veic["uf"])[:2])
 
     pag = _el(inf, "pag")
-    detpag = _el(pag, "detPag")
-    _el(detpag, "tPag", str(payment.get("method") or "99")[:2])
-    _el(detpag, "vPag", _money_cents(int(payment.get("amount_cents") or tot)))
+    append_det_pag(pag, payment, pay_cents)
 
     inf_adic = _el(inf, "infAdic")
-    _el(inf_adic, "infCpl", "NF-e gerada pelo EXEQ Hub (emissor proprio).")
+    inf_cpl = (snapshot.get("inf_adic") or {}).get("infCpl") or "NF-e gerada pelo EXEQ Hub (emissor proprio)."
+    _el(inf_adic, "infCpl", str(inf_cpl)[:5000])
+    inf_fisco = (snapshot.get("inf_adic") or {}).get("infAdFisco")
+    if inf_fisco:
+        _el(inf_adic, "infAdFisco", str(inf_fisco)[:2000])
 
     return ET.tostring(nfe, encoding="utf-8", xml_declaration=True)
 

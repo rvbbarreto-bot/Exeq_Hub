@@ -1,14 +1,21 @@
 {% extends "hub_v4/base.html" %}
 
+{% block page_subtitle %}
+<div class="page-subtitle">{% if obj %}Editar serviço{% else %}Item do catálogo NFS-e{% endif %}</div>
+{% endblock %}
+
 {% block page_actions %}
 <a class="btn btn-ghost" href="{% url 'hub-v4-services' %}">Voltar</a>
 {% endblock %}
 
 {% block content %}
-<div class="card">
-  <form method="post">
-    {% csrf_token %}
-    <div class="form-grid">
+{{ nbs_catalog|json_script:"hub-nbs-catalog" }}
+<form method="post" id="service-form" class="form-page" data-nbs-form>
+  {% csrf_token %}
+
+  <div class="card section">
+    <h3>Identificação</h3>
+    <div class="formgrid formgrid--3">
       <div class="field">
         <label for="id_service_code">Código *</label>
         <input class="mono" id="id_service_code" name="service_code" required maxlength="32"
@@ -21,7 +28,7 @@
                value="{% if form %}{{ form.lc116_item }}{% elif obj %}{{ obj.lc116_item }}{% endif %}"
                placeholder="17.19">
       </div>
-      <div class="field full">
+      <div class="field fullrow">
         <label for="id_description">Descrição *</label>
         <textarea id="id_description" name="description" rows="4" required>{% if form %}{{ form.description }}{% elif obj %}{{ obj.description }}{% endif %}</textarea>
       </div>
@@ -39,10 +46,31 @@
         </select>
       </div>
     </div>
-    <div class="wizard-nav" style="margin-top:20px;">
-      <a class="btn btn-ghost" href="{% url 'hub-v4-services' %}">Cancelar</a>
-      <button type="submit" class="btn btn-primary">Salvar serviço</button>
+  </div>
+
+  <div class="card section">
+    <h3>Código NBS</h3>
+    <div class="formgrid">
+      {% if form %}
+      {% with nbs_code=form.codigo_nbs|default:"" nbs_desc="" %}
+      {% include "hub_v4/partials/nbs_dropdown_select.html" with show_tip=False initial_code=nbs_code initial_desc=nbs_desc nbs_catalog_count=nbs_catalog|length %}
+      {% endwith %}
+      {% elif obj %}
+      {% with nbs_code=obj.codigo_nbs|default:"" %}
+      {% if obj.nbs_item %}
+      {% include "hub_v4/partials/nbs_dropdown_select.html" with show_tip=False initial_code=nbs_code initial_desc=obj.nbs_item.description|default:"" nbs_catalog_count=nbs_catalog|length %}
+      {% else %}
+      {% include "hub_v4/partials/nbs_dropdown_select.html" with show_tip=False initial_code=nbs_code initial_desc="" nbs_catalog_count=nbs_catalog|length %}
+      {% endif %}
+      {% endwith %}
+      {% else %}
+      {% include "hub_v4/partials/nbs_dropdown_select.html" with show_tip=False initial_code="" initial_desc="" nbs_catalog_count=nbs_catalog|length %}
+      {% endif %}
+      <p class="hint-line fullrow">Selecione na lista (Anexo B). Formato exibido: n.nnnn.nn.nn</p>
     </div>
-  </form>
-</div>
+  </div>
+
+  {% url 'hub-v4-services' as services_url %}
+  {% include "hub_v4/partials/form_sticky_footer.html" with back_url=services_url cancel_url=services_url submit_label="Salvar serviço" %}
+</form>
 {% endblock %}

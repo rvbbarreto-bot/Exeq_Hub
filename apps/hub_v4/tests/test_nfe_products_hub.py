@@ -62,6 +62,19 @@ def test_domain_create_update_product(hub_prod, settings):
 
 
 @pytest.mark.django_db
+def test_nfe_products_nav_inside_cadastro_empresa(client, hub_prod, settings):
+    settings.NFE_ENABLED = True
+    tenant, user = hub_prod
+    _login(client, tenant, user)
+    body = client.get(reverse("hub-v4-nfe-products")).content.decode()
+    exeq_slice = body.split("Exeq Fiscal", 1)[1].split("Cadastro Empresa", 1)[0]
+    cadastro_slice = body.split("Cadastro Empresa", 1)[1].split("Financeiro", 1)[0]
+    assert "Produtos NF-e" not in exeq_slice
+    assert "Produtos NF-e" in cadastro_slice
+    assert reverse("hub-v4-nfe-products") in cadastro_slice
+
+
+@pytest.mark.django_db
 def test_hub_product_crud(client, hub_prod, settings):
     settings.NFE_ENABLED = True
     tenant, user = hub_prod
@@ -69,8 +82,11 @@ def test_hub_product_crud(client, hub_prod, settings):
 
     r = client.get(reverse("hub-v4-nfe-products"))
     assert r.status_code == 200
-    assert reverse("hub-v4-nfe-product-new") in r.content.decode()
-    assert "Produtos NF-e" in client.get(reverse("hub-v4-nfe-list")).content.decode() or True
+    body = r.content.decode()
+    assert reverse("hub-v4-nfe-product-new") in body
+    cadastro_slice = body.split("Cadastro Empresa", 1)[1].split("Financeiro", 1)[0]
+    assert "Produtos NF-e" in cadastro_slice
+    assert reverse("hub-v4-nfe-products") in cadastro_slice
 
     r = client.post(
         reverse("hub-v4-nfe-product-new"),
@@ -88,9 +104,20 @@ def test_hub_product_crud(client, hub_prod, settings):
         },
     )
     assert r.status_code == 302
+    assert r.url == reverse("hub-v4-nfe-products")
     prod = NfeProduct.objects.get(tenant=tenant, code="SKU-HUB")
     assert prod.ncm == "21069090"
     assert prod.unit_price_cents == 2550
+
+    r = client.get(reverse("hub-v4-nfe-products"))
+    assert r.status_code == 200
+    assert "Produto SKU-HUB salvo" in r.content.decode()
+
+    r = client.get(reverse("hub-v4-nfe-product-new"))
+    body = r.content.decode()
+    assert "data-brl-currency" in body
+    assert "helpicon" in body
+    assert "card section" in body
 
     r = client.post(
         reverse("hub-v4-nfe-product-edit", args=[prod.id]),
@@ -108,6 +135,7 @@ def test_hub_product_crud(client, hub_prod, settings):
         },
     )
     assert r.status_code == 302
+    assert r.url == reverse("hub-v4-nfe-products")
     prod.refresh_from_db()
     assert prod.unit_price_cents == 3000
     assert prod.is_active is False

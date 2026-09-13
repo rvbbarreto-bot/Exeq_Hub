@@ -91,6 +91,20 @@ def _login(client, ctx):
 
 
 @pytest.mark.django_db
+def test_hub_emit_nfe_form_catalog_prefill_data(client, hub_nfe_emit):
+    """Select produto deve expor dados do catálogo para prefill JS (preço, NCM, etc.)."""
+    _login(client, hub_nfe_emit)
+    product = hub_nfe_emit["product"]
+    r = client.get(reverse("hub-v4-nfe-emit"))
+    assert r.status_code == 200
+    body = r.content.decode()
+    assert f'data-price-cents="{product.unit_price_cents}"' in body
+    assert f'data-ncm="{product.ncm}"' in body
+    assert f'data-code="{product.code}"' in body
+    assert 'fillFromCatalog' in body
+
+
+@pytest.mark.django_db
 def test_hub_emit_nfe_with_product(client, hub_nfe_emit):
     _login(client, hub_nfe_emit)
     r = client.get(reverse("hub-v4-nfe-emit"))
@@ -152,6 +166,42 @@ def test_hub_emit_nfe_manual_item(client, hub_nfe_emit):
     )
     assert inv.status == NfeInvoice.Status.AUTHORIZED
     assert inv.total_cents == 5000
+
+
+@pytest.mark.django_db
+def test_hub_emit_nfe_incomplete_customer_friendly_error(client, hub_nfe_emit):
+    bad = Customer.objects.create(
+        tenant=hub_nfe_emit["tenant"],
+        document="32800160888",
+        document_type=Customer.DocumentType.CPF,
+        name="Ricardo Vitoriano Barreto",
+        is_active=True,
+        address={"logradouro": "Rua Sem UF"},
+    )
+    _login(client, hub_nfe_emit)
+    r = client.post(
+        reverse("hub-v4-nfe-emit"),
+        {
+            "idempotency_key": "hub-nfe-bad-customer",
+            "provider_id": str(hub_nfe_emit["provider"].id),
+            "customer_id": str(bad.id),
+            "nature_operation": "VENDA",
+            "series": "1",
+            "tp_amb": "2",
+            "ind_ie_dest": "9",
+            "issue_date": "2026-08-01",
+            "product_id": str(hub_nfe_emit["product"].id),
+            "quantity": "1",
+        },
+    )
+    assert r.status_code == 200
+    body = r.content.decode()
+    assert "contador" in body.lower()
+    assert "destinatário" in body.lower()
+    assert '[{"field"' not in body
+    assert "Editar destinatário" in body
+    inv = NfeInvoice.objects.filter(idempotency_key="hub-nfe-bad-customer").first()
+    assert inv is None or inv.status == NfeInvoice.Status.DRAFT
 
 
 @pytest.mark.django_db

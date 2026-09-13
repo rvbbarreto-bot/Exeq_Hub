@@ -1,0 +1,66 @@
+{% extends "hub_v4/base.html" %}
+
+{% block page_actions %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-food-products' %}">Lista</a>
+{% endblock %}
+
+{% block content %}
+{% include "hub_v4/food/_subnav.html" %}
+<form method="post" class="card">
+  {% csrf_token %}
+  <div class="form-grid">
+    <label>
+      <span>SKU</span>
+      {% if product %}
+      <input name="sku" value="{{ form.sku|default:product.sku }}" readonly />
+      {% else %}
+      <input name="sku" value="{{ form.sku }}" required placeholder="PATE-01" />
+      {% endif %}
+    </label>
+    <label class="full">
+      <span>Nome</span>
+      <input name="name" value="{{ form.name|default:product.name }}" required />
+    </label>
+    <label>
+      <span>Preço (R$)</span>
+      <input name="price" value="{{ form.price|default:'0,00' }}" required placeholder="12,50" />
+    </label>
+    <label>
+      <span>Custo (R$)</span>
+      <input name="cost" value="{{ form.cost|default:'0,00' }}" placeholder="5,00" />
+    </label>
+    <label>
+      <span>Unidade</span>
+      <input name="unit" value="{{ form.unit|default:product.unit|default:'un' }}" />
+    </label>
+    <label>
+      <span>Categoria</span>
+      <input name="category" value="{{ form.category|default:product.category }}" />
+    </label>
+    {% if not product %}
+    <label>
+      <span>Estoque inicial</span>
+      <input name="initial_stock" value="{{ form.initial_stock|default:'0' }}" />
+    </label>
+    {% endif %}
+    <label class="full">
+      <span>Produto fiscal NFC-e (de-para iFood)</span>
+      <select name="nfe_product_id">
+        <option value="">— Sem mapeamento —</option>
+        {% for np in nfe_products %}
+        <option value="{{ np.id }}"
+          {% if form.nfe_product_id == np.id|stringformat:"s" %}selected{% elif product.nfe_product_id == np.id %}selected{% endif %}>
+          {{ np.code }} — {{ np.description }}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+  <p style="color:var(--text-muted);font-size:.85rem;margin:12px 0 0;">
+    Mapeie cada SKU Food ao produto fiscal usado na NFC-e. Pedidos iFood pendentes são recalculados ao salvar.
+  </p>
+  <div style="margin-top:16px;">
+    <button class="btn btn-primary" type="submit">Salvar produto</button>
+  </div>
+</form>
+{% endblock %}

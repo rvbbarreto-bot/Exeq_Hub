@@ -20,6 +20,11 @@ from shared.validators import validate_cnpj, validate_cpf
 
 
 def create_provider(*, tenant, document: str, legal_name: str, tax_regime: str, **extra) -> Provider:
+    from apps.accounts.plan_limits import assert_can_add_active_provider
+
+    is_active = extra.get("is_active", True)
+    if is_active:
+        assert_can_add_active_provider(tenant)
     return Provider.objects.create(
         tenant=tenant,
         document=validate_cnpj(document),
@@ -52,6 +57,31 @@ def create_customer(
 
 def create_service(*, tenant, service_code: str, description: str, **extra):
     from apps.master_data.models import ServiceCatalogItem
+    from apps.master_data.service_validation import normalize_ctn_iss
+
+    ctn_raw = extra.get("codigo_tributacao_nacional_iss")
+    if ctn_raw is not None and str(ctn_raw).strip():
+        extra["codigo_tributacao_nacional_iss"] = normalize_ctn_iss(str(ctn_raw))
+    operation_kind = extra.get(
+        "operation_kind", ServiceCatalogItem.OperationKind.SERVICO_ISS
+    )
+    if operation_kind == ServiceCatalogItem.OperationKind.LOCACAO_BEM:
+        extra["codigo_tributacao_nacional_iss"] = ""
+        extra["lc116_item"] = ""
+        extra["codigo_nbs"] = ""
+        extra.pop("nbs_item", None)
+
+    nbs_raw = extra.get("codigo_nbs")
+    if nbs_raw is not None and str(nbs_raw).strip():
+        from apps.master_data.nbs_import import normalize_nbs_code, resolve_nbs_item
+
+        code = normalize_nbs_code(str(nbs_raw))
+        extra["codigo_nbs"] = code
+        item = resolve_nbs_item(codigo=code) if len(code) == 9 else None
+        extra["nbs_item"] = item
+    elif "codigo_nbs" in extra and not str(extra.get("codigo_nbs") or "").strip():
+        extra["codigo_nbs"] = ""
+        extra["nbs_item"] = None
 
     return ServiceCatalogItem.objects.create(
         tenant=tenant,
@@ -59,6 +89,83 @@ def create_service(*, tenant, service_code: str, description: str, **extra):
         description=description,
         **extra,
     )
+
+
+# Catálogo mínimo quando o tenant ainda não tem serviços (lab / onboarding).
+# Após import+materialize da Lista Nacional, estes não são recriados.
+_SEED_SERVICES: tuple[tuple[str, str, str], ...] = (
+    (
+        "01.07",
+        "01.07",
+        "Suporte técnico em informática, inclusive instalação, configuração e "
+        "manutenção de programas de computação e bancos de dados.",
+    ),
+    (
+        "17.01",
+        "17.01",
+        "Assessoria ou consultoria de qualquer natureza; análise, pesquisa e "
+        "fornecimento de dados e informações de qualquer natureza.",
+    ),
+    (
+        "17.19",
+        "17.19",
+        "Contabilidade, inclusive serviços técnicos e auxiliares.",
+    ),
+    (
+        "14.01",
+        "14.01",
+        "Lubrificação, limpeza, lustração, revisão, carga e recarga, conserto, "
+        "restauração, blindagem, manutenção e conservação de máquinas, veículos, "
+        "aparelhos, equipamentos, motores, elevadores ou de qualquer objeto.",
+    ),
+)
+
+
+def ensure_services_for_wizard(*, tenant, limit: int = 500) -> list:
+    """
+    Garante opções no select Serviço do wizard NFS-e.
+    1) Catálogo do tenant (ativos)
+    2) Materializa Lista Nacional publicada, se existir
+    3) Semeia itens mínimos de LC 116 para operação inicial
+    """
+    from apps.master_data.models import ServiceCatalogItem
+
+    def active():
+        return ServiceCatalogItem.objects.filter(
+            tenant=tenant,
+            is_active=True,
+            operation_kind=ServiceCatalogItem.OperationKind.SERVICO_ISS,
+        ).select_related("nbs_item").order_by("service_code")
+
+    qs = active()
+    if qs.exists():
+        return list(qs[:limit])
+
+    try:
+        from apps.master_data.national_service_import import (
+            NationalServiceImportError,
+            materialize_national_services_for_tenant,
+        )
+
+        materialize_national_services_for_tenant(tenant=tenant, only_missing=True)
+    except NationalServiceImportError:
+        pass
+
+    qs = active()
+    if qs.exists():
+        return list(qs[:limit])
+
+    for code, lc116, description in _SEED_SERVICES:
+        ServiceCatalogItem.objects.get_or_create(
+            tenant=tenant,
+            service_code=code,
+            defaults={
+                "description": description,
+                "lc116_item": lc116,
+                "is_active": True,
+            },
+        )
+    return list(active()[:limit])
 
 
 def _cache_ttl() -> timedelta:
@@ -181,6 +288,7 @@ def apply_lookup_to_entity(
     entity.situacao_cadastral = result.situacao_cadastral
     entity.data_abertura = result.data_abertura
     entity.cnae_principal = result.cnae_principal
+    entity.cnaes_secundarios = list(result.cnaes_secundarios or [])
     entity.natureza_juridica = result.natureza_juridica
     entity.porte = result.porte
     entity.address = address
@@ -275,6 +383,7 @@ def cadastral_fields_from_result(result: CadastralLookupResult) -> dict[str, Any
         "situacao_cadastral": result.situacao_cadastral,
         "data_abertura": result.data_abertura,
         "cnae_principal": result.cnae_principal,
+        "cnaes_secundarios": list(result.cnaes_secundarios or []),
         "natureza_juridica": result.natureza_juridica,
         "porte": result.porte,
         "address": address,

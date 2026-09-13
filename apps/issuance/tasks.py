@@ -139,3 +139,18 @@ def poll_nf_issue_task(self, tenant_id: str, nf_issue_id: str) -> str:
         )
         _mark_failed_on_soft_limit(tenant_id, nf_issue_id)
         raise
+
+
+@shared_task(
+    name="issuance.refresh_nfse_portal_status_batch",
+    soft_time_limit=_POLL_SOFT,
+    time_limit=_POLL_HARD,
+)
+def refresh_nfse_portal_status_batch_task(tenant_id: str, issue_ids: list[str]) -> dict:
+    from apps.issuance.portal_sync import refresh_nfse_portal_status_batch
+
+    with tenant_rls(tenant_id):
+        return refresh_nfse_portal_status_batch(
+            tenant_id=tenant_id,
+            issue_ids=issue_ids,
+        )

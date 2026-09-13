@@ -137,6 +137,17 @@ class SefinHttpClient:
     def consultar_dps(self, *, id_dps: str) -> SefinHttpResponse:
         return self._request_json("GET", f"/dps/{id_dps}")
 
+    def consultar_evento_nfse(
+        self,
+        *,
+        chave_acesso: str,
+        tipo_evento: str,
+        num_seq: int = 1,
+    ) -> SefinHttpResponse:
+        chave = "".join(ch for ch in chave_acesso if ch.isalnum())
+        tipo = "".join(ch for ch in (tipo_evento or "") if ch.isalnum())
+        return self._request_json("GET", f"/nfse/{chave}/eventos/{tipo}/{int(num_seq)}")
+
     def registrar_evento(self, *, chave_acesso: str, evento_xml: bytes) -> SefinHttpResponse:
         chave = "".join(ch for ch in chave_acesso if ch.isalnum())
         body = {"pedidoRegistroEventoXmlGZipB64": xml_to_gzip_b64(evento_xml)}

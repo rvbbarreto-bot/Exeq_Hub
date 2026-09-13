@@ -8,6 +8,8 @@ from zoneinfo import ZoneInfo
 import pytest
 from lxml import etree
 
+from django.test import override_settings
+
 from integrations.nfse.dps import (
     DpsBuildError,
     build_dps_id,
@@ -105,8 +107,126 @@ def test_build_xml_contains_namespace_and_blocks():
     text = xml.decode("utf-8")
     assert "infDPS" in text
     assert "pTotTribSN" in text
+    assert "pAliq" not in text
     assert "Signature" not in text
     assert 'Id="DPS' in text
+
+
+def test_dps_paliq_when_iss_retained_sn():
+    issue = _issue(
+        resolved_params={
+            "iss_retained": True,
+            "iss_rate": "0.0500",
+            "simples_codigo_tributacao": 3,
+            "tributacao_iss": 1,
+            "percentual_total_tributos_simples_nacional": 6.0,
+        }
+    )
+    payload = to_sefin_dps_dict(issue, tp_amb=2, serie=1, n_dps=11)
+    trib_mun = payload["infDPS"]["valores"]["trib"]["tribMun"]
+    assert trib_mun["tpRetISSQN"] == 2
+    assert trib_mun["pAliq"] == "5.00"
+    xml = to_sefin_dps_xml(issue, tp_amb=2, serie=1, n_dps=11)
+    assert b"pAliq" in xml
+
+
+def test_dps_paliq_non_simples_always():
+    issue = _issue()
+    issue.provider.tax_regime = TaxRegime.PRESUMIDO
+    issue.resolved_params = {
+        "iss_retained": False,
+        "iss_rate": "0.0500",
+        "simples_codigo_tributacao": 1,
+        "tributacao_iss": 1,
+        "c_trib_mun": "107",
+        "codigo_tributacao_nacional_iss": "010701",
+    }
+    payload = to_sefin_dps_dict(issue, tp_amb=2, serie=1, n_dps=12)
+    assert payload["infDPS"]["prest"]["regTrib"]["opSimpNac"] == 1
+    assert payload["infDPS"]["valores"]["trib"]["tribMun"]["pAliq"] == "5.00"
+    assert payload["infDPS"]["serv"]["cServ"]["cTribMun"] == "107"
+
+
+def test_dps_cnbs_from_service_and_override():
+    issue = _issue()
+    issue.service.codigo_nbs = "115013000"
+    with override_settings(NFSE_DPS_CNBS_MODE="on"):
+        payload = to_sefin_dps_dict(issue, tp_amb=2, serie=1, n_dps=15)
+    assert payload["infDPS"]["serv"]["cServ"]["cNBS"] == "115013000"
+    with override_settings(NFSE_DPS_CNBS_MODE="on"):
+        xml = to_sefin_dps_xml(issue, tp_amb=2, serie=1, n_dps=15)
+    assert b"cNBS" in xml
+    assert b"115013000" in xml
+
+
+def test_dps_cnbs_override_in_draft_beats_service():
+    issue = _issue()
+    issue.service.codigo_nbs = "111111111"
+    issue.internal_payload = {"emission": {"codigo_nbs": "115022000"}}
+    with override_settings(NFSE_DPS_CNBS_MODE="on"):
+        payload = to_sefin_dps_dict(issue, tp_amb=2, serie=1, n_dps=16)
+    assert payload["infDPS"]["serv"]["cServ"]["cNBS"] == "115022000"
+
+
+def test_dps_cnbs_deferred_when_gate_off_even_with_code():
+    issue = _issue()
+    issue.service.codigo_nbs = "115013000"
+    with override_settings(NFSE_DPS_CNBS_MODE="off"):
+        payload = to_sefin_dps_dict(issue, tp_amb=1, serie=1, n_dps=18)
+    assert "cNBS" not in payload["infDPS"]["serv"]["cServ"]
+    with override_settings(NFSE_DPS_CNBS_MODE="off"):
+        xml = to_sefin_dps_xml(issue, tp_amb=1, serie=1, n_dps=18)
+    assert b"cNBS" not in xml
+
+
+def test_dps_cnbs_homolog_gate_only_tp_amb_2():
+    issue = _issue()
+    issue.service.codigo_nbs = "115013000"
+    with override_settings(NFSE_DPS_CNBS_MODE="homolog"):
+        prod = to_sefin_dps_dict(issue, tp_amb=1, serie=1, n_dps=19)
+        hom = to_sefin_dps_dict(issue, tp_amb=2, serie=1, n_dps=20)
+    assert "cNBS" not in prod["infDPS"]["serv"]["cServ"]
+    assert hom["infDPS"]["serv"]["cServ"]["cNBS"] == "115013000"
+
+
+def test_dps_omits_cnbs_when_absent():
+    issue = _issue()
+    issue.service.codigo_nbs = ""
+    issue.service.nbs_item = None
+    issue.internal_payload = None
+    payload = to_sefin_dps_dict(issue, tp_amb=2, serie=1, n_dps=17)
+    assert "cNBS" not in payload["infDPS"]["serv"]["cServ"]
+    xml = to_sefin_dps_xml(issue, tp_amb=2, serie=1, n_dps=17)
+    assert b"cNBS" not in xml
+
+
+def test_dps_c_trib_mun_from_params():
+    issue = _issue(
+        resolved_params={
+            "iss_retained": False,
+            "tributacao_iss": 1,
+            "percentual_total_tributos_simples_nacional": 6.0,
+            "c_trib_mun": "101",
+            "codigo_tributacao_nacional_iss": "010101",
+        }
+    )
+    payload = to_sefin_dps_dict(issue, tp_amb=2, serie=1, n_dps=14)
+    assert payload["infDPS"]["serv"]["cServ"]["cTribMun"] == "101"
+    xml = to_sefin_dps_xml(issue, tp_amb=2, serie=1, n_dps=14)
+    assert b"cTribMun" in xml
+
+
+def test_dps_op_simp_from_resolved_params():
+    issue = _issue(
+        resolved_params={
+            "iss_retained": False,
+            "simples_codigo_tributacao": 2,
+            "tributacao_iss": 1,
+            "percentual_total_tributos_simples_nacional": 6.0,
+        }
+    )
+    payload = to_sefin_dps_dict(issue, tp_amb=2, serie=1, n_dps=13)
+    assert payload["infDPS"]["prest"]["regTrib"]["opSimpNac"] == 2
 
 
 def test_rejects_short_ctribnac():

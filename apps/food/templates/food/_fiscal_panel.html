@@ -1,0 +1,138 @@
+{% if fiscal_is_ifood %}
+<div class="card" style="margin-bottom:12px;">
+  <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center;">
+    <div class="section-label" style="margin-top:0;">Fiscal iFood</div>
+    <a class="btn btn-ghost btn-sm" href="{% url 'hub-v4-food-ifood-fiscal' %}">Fila fiscal</a>
+  </div>
+
+  {% if fiscal_logistic_cancelled %}
+  <p style="color:var(--warning,#b80);font-size:.9rem;margin:0 0 12px;">
+    Pedido cancelado no iFood; NFC-e permanece autorizada — cancele manualmente se necessário (PO-3).
+  </p>
+  {% endif %}
+
+  <div class="form-grid" style="margin-bottom:12px;">
+    <div>
+      <span style="color:var(--text-muted);font-size:.8rem;">Status fiscal</span>
+      <div>
+        {% if order.fiscal_status %}
+        {{ order.get_fiscal_status_display|default:order.fiscal_status }}
+        {% else %}Pendente{% endif %}
+      </div>
+    </div>
+    <div>
+      <span style="color:var(--text-muted);font-size:.8rem;">De-para</span>
+      <div>
+        {% if fiscal_mapping.all_mapped %}
+        <span style="color:var(--success,#0a0);">OK</span>
+        {% else %}
+        <span style="color:var(--danger,#c00);">
+          {{ fiscal_mapping.unmapped_skus|length }} SKU(s) sem vínculo
+        </span>
+        {% endif %}
+      </div>
+    </div>
+    <div>
+      <span style="color:var(--text-muted);font-size:.8rem;">Pronto para emitir</span>
+      <div>{% if fiscal_ready %}Sim{% else %}Não{% endif %}</div>
+    </div>
+    <div>
+      <span style="color:var(--text-muted);font-size:.8rem;">Ref. iFood</span>
+      <div class="mono">{{ order.channel_ref|default:"—" }}</div>
+    </div>
+  </div>
+
+  {% if order.fiscal_rejection_message %}
+  <p style="color:var(--danger,#c00);font-size:.85rem;margin:0 0 8px;">
+    Rejeição: {{ order.fiscal_rejection_code }} — {{ order.fiscal_rejection_message }}
+  </p>
+  {% endif %}
+
+  {% if order.fiscal_status == "ignored" and order.fiscal_ignored_reason %}
+  <p style="color:var(--text-muted);font-size:.85rem;margin:0 0 8px;">
+    Ignorado: {{ order.fiscal_ignored_reason }}
+  </p>
+  {% endif %}
+
+  {% if order.fiscal_warnings %}
+  <ul style="margin:0 0 12px;padding-left:1.2rem;font-size:.85rem;color:var(--text-muted);">
+    {% for w in order.fiscal_warnings %}
+    <li{% if w.level == "error" %} style="color:var(--danger,#c00);"{% elif w.level == "warn" %} style="color:var(--warning,#b80);"{% endif %}>
+      {{ w.message }}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+    {% if order.nfce_invoice_id %}
+    <a class="btn btn-ghost btn-sm" href="{% url 'hub-v4-nfce-detail' order.nfce_invoice_id %}">Ver NFC-e</a>
+    {% endif %}
+    {% if can_write and fiscal_can_emit %}
+    <form method="post" style="display:inline;">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="fiscal_emit" />
+      <button class="btn btn-primary btn-sm" type="submit">Emitir NFC-e</button>
+    </form>
+    {% endif %}
+    {% if can_write and fiscal_can_ignore %}
+    <button class="btn btn-ghost btn-sm" type="button"
+      onclick="document.getElementById('fiscal-ignore-panel').style.display='block'">Ignorar</button>
+    {% endif %}
+  </div>
+
+  {% if can_write and fiscal_can_ignore %}
+  <div id="fiscal-ignore-panel" style="display:none;margin-bottom:12px;">
+    <form method="post" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="fiscal_ignore" />
+      <label style="flex:1;min-width:200px;">
+        <span style="color:var(--text-muted);font-size:.8rem;">Motivo ignore (obrigatório)</span>
+        <input name="ignore_reason" required placeholder="Ex.: duplicidade no balcão" />
+      </label>
+      <button class="btn btn-ghost btn-sm" type="submit">Confirmar ignore</button>
+    </form>
+  </div>
+  {% endif %}
+
+  {% if can_write and fiscal_can_cancel_nfce %}
+  <section style="border-top:1px solid var(--border,#ddd);padding-top:12px;">
+    <div class="section-label">Cancelar NFC-e</div>
+    <form method="post"
+          onsubmit="return confirm('Confirma o cancelamento da NFC-e deste pedido?');">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="fiscal_cancel_nfce" />
+      <label for="id_fiscal_justificativa">
+        <span style="color:var(--text-muted);font-size:.8rem;">Justificativa (15–255 caracteres)</span>
+      </label>
+      <textarea id="id_fiscal_justificativa" name="justificativa" rows="2" required minlength="15"
+                style="width:100%;margin:8px 0;"
+                placeholder="Motivo do cancelamento fiscal…"></textarea>
+      <button class="btn btn-danger btn-sm" type="submit">Cancelar NFC-e</button>
+    </form>
+  </section>
+  {% endif %}
+
+  {% if fiscal_events %}
+  <section style="border-top:1px solid var(--border,#ddd);padding-top:12px;margin-top:12px;">
+    <div class="section-label">Auditoria fiscal</div>
+    <table class="data" style="font-size:.85rem;">
+      <thead>
+        <tr><th>Quando</th><th>Ação</th><th>De → Para</th><th>Ator</th><th>Tent.</th></tr>
+      </thead>
+      <tbody>
+        {% for ev in fiscal_events %}
+        <tr>
+          <td>{{ ev.occurred_at|date:"d/m H:i:s" }}</td>
+          <td class="mono">{{ ev.action }}</td>
+          <td>{{ ev.from_status|default:"—" }} → {{ ev.to_status|default:"—" }}</td>
+          <td>{{ ev.actor }}</td>
+          <td>{{ ev.attempt }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+</div>
+{% endif %}

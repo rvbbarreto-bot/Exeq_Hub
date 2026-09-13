@@ -1,0 +1,166 @@
+{% extends "hub_v4/base.html" %}
+
+{% load hub_v4_tags %}
+
+
+
+{% block page_subtitle %}
+
+<div class="page-subtitle">{{ preview.filename }} · modelo v{{ preview.model_version }}</div>
+
+{% endblock %}
+
+
+
+{% block page_actions %}
+
+<a class="btn btn-ghost" href="{% url 'hub-v4-nfe-product-import' %}">Nova importação</a>
+
+{% endblock %}
+
+
+
+{% block content %}
+
+{% if preview.summary.erros %}
+
+<div class="banner banner-warning">
+
+  <span>⚠</span>
+
+  <span>Revise <strong>{{ preview.summary.erros }}</strong> linha(s) com erro antes de confirmar.</span>
+
+</div>
+
+{% else %}
+
+<div class="banner banner-success">
+
+  <span>✓</span>
+
+  <span>Planilha validada — pronta para importação.</span>
+
+</div>
+
+{% endif %}
+
+
+
+<div class="metricgrid">
+
+  {% kpi_card "Total" preview.summary.total tone="total" %}
+
+  {% kpi_card "Novos" preview.summary.novos tone="ok" %}
+
+  {% kpi_card "Atualizações" preview.summary.atualizacoes tone="ok" %}
+
+  {% kpi_card "Erros" preview.summary.erros tone="err" %}
+
+</div>
+
+
+
+<div class="card table-card">
+
+  <table class="data">
+
+    <thead>
+
+      <tr>
+
+        <th>Linha</th>
+
+        <th>Produto</th>
+
+        <th>Operação</th>
+
+        <th>Status</th>
+
+        <th>Detalhes</th>
+
+      </tr>
+
+    </thead>
+
+    <tbody>
+
+      {% for row in page %}
+
+      <tr class="{% if row.status == 'ERRO' or row.status == 'NÃO PROCESSADO' %}row-attention{% endif %}">
+
+        <td class="num">{{ row.line_number }}</td>
+
+        <td class="mono">{{ row.code }}</td>
+
+        <td>{{ row.operation }}</td>
+
+        <td>{% import_status_badge row.status %}</td>
+
+        <td class="page-subtitle">
+
+          {% for msg in row.messages %}{{ msg }}{% if not forloop.last %}; {% endif %}{% endfor %}
+
+          {% for ch in row.changes %}<div>{{ ch.label }}: {{ ch.old }} → {{ ch.new }}</div>{% endfor %}
+
+        </td>
+
+      </tr>
+
+      {% endfor %}
+
+    </tbody>
+
+  </table>
+
+  <div class="rowcards">
+
+    {% for row in page %}
+
+    <div class="rowcard">
+
+      <div class="rowcard-top">
+
+        <span class="rowcard-title">Linha {{ row.line_number }} · {{ row.code }}</span>
+
+        {% import_status_badge row.status %}
+
+      </div>
+
+      <div class="rowcard-kv">Operação<b>{{ row.operation }}</b></div>
+
+    </div>
+
+    {% endfor %}
+
+  </div>
+
+  {% if page.paginator.num_pages > 1 %}
+
+  <div class="pagination">
+
+    <span>Página {{ page.number }} de {{ page.paginator.num_pages }}</span>
+
+  </div>
+
+  {% endif %}
+
+</div>
+
+
+
+<form method="post" action="{% url 'hub-v4-nfe-product-import-confirm' token=token %}">
+
+  {% csrf_token %}
+
+  <div class="card stickyfoot">
+    <div class="stickyfoot-left">
+      <a class="btn btn-ghost" href="{% url 'hub-v4-nfe-product-import' %}">Voltar</a>
+      <a class="btn btn-ghost" href="{% url 'hub-v4-nfe-product-import' %}">Nova importação</a>
+    </div>
+    <button type="submit" class="btn btn-primary">Confirmar importação</button>
+  </div>
+
+</form>
+
+{% endblock %}
+

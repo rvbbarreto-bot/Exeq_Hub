@@ -1,0 +1,118 @@
+{% extends "hub_v4/base.html" %}
+
+{% load hub_v4_tags %}
+
+
+
+{% block page_subtitle %}
+
+<div class="page-subtitle">Modelo 65 · cupom fiscal</div>
+
+{% endblock %}
+
+
+
+{% block page_actions %}
+
+<a class="btn btn-primary" href="{% url 'hub-v4-nfce-pdv' %}">Nova emissão</a>
+
+{% endblock %}
+
+
+
+{% block content %}
+
+{% if page.object_list %}
+
+<div class="card table-card">
+
+  <table class="data">
+
+    <thead>
+
+      <tr>
+
+        <th>Série/Nº</th>
+
+        <th>Status</th>
+
+        <th class="num">Total</th>
+
+        <th>Data</th>
+
+        <th></th>
+
+      </tr>
+
+    </thead>
+
+    <tbody>
+
+      {% for inv in page %}
+
+      <tr>
+
+        <td class="num">{{ inv.series }}/{{ inv.number|default:"—" }}</td>
+
+        <td>{% status_badge inv.status %}</td>
+
+        <td class="num">{{ inv.total_cents|default:0|cents_brl }}</td>
+
+        <td>{{ inv.created_at|date:"d/m/Y H:i" }}</td>
+
+        <td><a class="btn btn-icon btn-ghost btn-sm" href="{% url 'hub-v4-nfce-detail' inv.id %}" aria-label="Ver">👁</a></td>
+
+      </tr>
+
+      {% endfor %}
+
+    </tbody>
+
+  </table>
+
+  <div class="rowcards">
+
+    {% for inv in page %}
+
+    <div class="rowcard">
+
+      <div class="rowcard-top">
+
+        <span class="rowcard-title num">{{ inv.series }}/{{ inv.number|default:"—" }}</span>
+
+        {% status_badge inv.status %}
+
+      </div>
+
+      <div class="rowcard-kv">Total<b class="num">{{ inv.total_cents|default:0|cents_brl }}</b></div>
+
+      <div class="rowcard-kv">Data<b>{{ inv.created_at|date:"d/m/Y H:i" }}</b></div>
+
+      <a class="btn btn-ghost btn-sm" style="margin-top:8px;" href="{% url 'hub-v4-nfce-detail' inv.id %}">Ver</a>
+
+    </div>
+
+    {% endfor %}
+
+  </div>
+
+  <div class="pagination">
+
+    <span>Página {{ page.number }} de {{ page.paginator.num_pages }}</span>
+
+    <span>{{ page.paginator.count }} registro{{ page.paginator.count|pluralize }}</span>
+
+  </div>
+
+</div>
+
+{% else %}
+
+{% url 'hub-v4-nfce-pdv' as pdv_url %}
+
+{% empty_state "Nenhum cupom emitido ainda" "Emita a primeira NFC-e avulsa pelo PDV." "Nova emissão →" pdv_url %}
+
+{% endif %}
+
+{% endblock %}
+

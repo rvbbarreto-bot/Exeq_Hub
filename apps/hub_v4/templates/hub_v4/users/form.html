@@ -1,5 +1,9 @@
 {% extends "hub_v4/base.html" %}
 
+{% block page_subtitle %}
+<div class="page-subtitle">{% if obj %}Editar usuário{% else %}Convite com papel e acesso ao tenant{% endif %}</div>
+{% endblock %}
+
 {% block page_actions %}
 <a class="btn btn-ghost" href="{% url 'hub-v4-users' %}">Voltar</a>
 {% endblock %}
@@ -12,11 +16,13 @@
 </div>
 {% endif %}
 
-<div class="card">
-  <form method="post">
-    {% csrf_token %}
-    <div class="form-grid">
-      <div class="field full">
+<form method="post" id="user-invite-form" class="form-page">
+  {% csrf_token %}
+
+  <div class="card section">
+    <h3>Identificação</h3>
+    <div class="formgrid">
+      <div class="field fullrow">
         <label for="id_email">E-mail *</label>
         <input id="id_email" name="email" type="email" required
                {% if obj %}readonly class="is-readonly"{% endif %}
@@ -44,6 +50,12 @@
           {% endfor %}
         </select>
       </div>
+    </div>
+  </div>
+
+  <div class="card section">
+    <h3>Acesso</h3>
+    <div class="formgrid">
       <div class="field">
         <label for="id_password">{% if obj %}Nova senha (opcional){% else %}Senha inicial{% endif %}</label>
         <input id="id_password" name="password" type="password" autocomplete="new-password"
@@ -61,7 +73,7 @@
         </select>
       </div>
       {% if not obj %}
-      <div class="field full">
+      <div class="field fullrow">
         <label for="id_send_invite_email">E-mail de convite</label>
         <select id="id_send_invite_email" name="send_invite_email">
           <option value="1" selected>Enviar com link do Hub + senha (se gerada)</option>
@@ -71,10 +83,9 @@
       </div>
       {% endif %}
     </div>
-    <div class="wizard-nav" style="margin-top:20px;">
-      <a class="btn btn-ghost" href="{% url 'hub-v4-users' %}">Cancelar</a>
-      <button type="submit" class="btn btn-primary">{% if obj %}Salvar{% else %}Convidar{% endif %}</button>
-    </div>
-  </form>
-</div>
+  </div>
+
+  {% url 'hub-v4-users' as users_url %}
+  {% include "hub_v4/partials/form_sticky_footer.html" with back_url=users_url cancel_url=users_url submit_label=obj|yesno:"Salvar,Convidar" %}
+</form>
 {% endblock %}

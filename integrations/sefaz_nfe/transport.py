@@ -16,6 +16,7 @@ from cryptography.hazmat.primitives.serialization import (
 )
 
 from integrations.sefaz_nfe.parse import parse_autorizacao_response, parse_evento_response
+from integrations.sefaz_nfe.ssl import sefaz_requests_verify
 
 SOAP_ENV = "http://www.w3.org/2003/05/soap-envelope"
 NFE_WS_NS = "http://www.portalfiscal.inf.br/nfe/wsdl/NFeAutorizacao4"
@@ -33,6 +34,7 @@ class SefazHttpResponse:
     x_motivo: str = ""
     protocol: str = ""
     access_key: str = ""
+    dh_recbto: str = ""
     lote_c_stat: str = ""
     n_rec: str = ""
 
@@ -83,6 +85,7 @@ def _post_soap(
             headers={"Content-Type": "application/soap+xml; charset=utf-8"},
             cert=(str(cert_path), str(key_path)),
             timeout=timeout,
+            verify=sefaz_requests_verify(),
         )
         text = resp.text or ""
         parsed = parse_autorizacao_response(text)
@@ -93,6 +96,7 @@ def _post_soap(
             x_motivo=parsed.x_motivo,
             protocol=parsed.protocol,
             access_key=parsed.access_key,
+            dh_recbto=parsed.dh_recbto,
             lote_c_stat=parsed.lote_c_stat,
             n_rec=parsed.n_rec,
         )
@@ -212,6 +216,7 @@ def post_nfe_evento(
             headers={"Content-Type": "application/soap+xml; charset=utf-8"},
             cert=(str(cert_path), str(key_path)),
             timeout=timeout,
+            verify=sefaz_requests_verify(),
         )
         text = resp.text or ""
         parsed = parse_evento_response(text)
@@ -222,6 +227,7 @@ def post_nfe_evento(
             x_motivo=parsed.x_motivo,
             protocol=parsed.protocol,
             access_key=parsed.access_key,
+            dh_recbto=parsed.dh_recbto,
             lote_c_stat=parsed.lote_c_stat,
             n_rec=parsed.n_rec,
         )
@@ -254,6 +260,7 @@ def post_nfe_inutilizacao(
             headers={"Content-Type": "application/soap+xml; charset=utf-8"},
             cert=(str(cert_path), str(key_path)),
             timeout=timeout,
+            verify=sefaz_requests_verify(),
         )
         text = resp.text or ""
         parsed = parse_autorizacao_response(text)
@@ -264,6 +271,7 @@ def post_nfe_inutilizacao(
             x_motivo=parsed.x_motivo,
             protocol=parsed.protocol,
             access_key=parsed.access_key,
+            dh_recbto=parsed.dh_recbto,
             lote_c_stat=parsed.lote_c_stat,
             n_rec=parsed.n_rec,
         )

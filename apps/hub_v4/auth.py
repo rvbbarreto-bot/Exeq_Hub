@@ -6,11 +6,13 @@ from django.http import HttpRequest
 from django.shortcuts import redirect
 
 from apps.accounts.models import Tenant, TenantMembership, User
+from apps.accounts.permissions import FOOD_ONLY_ROLES
 
 SESSION_TENANT = "hub_v4_tenant_id"
 SESSION_USER = "hub_v4_user_id"
 SESSION_ROLE = "hub_v4_role_code"
 SESSION_TENANT_NAME = "hub_v4_tenant_name"
+SESSION_TENANT_SLUG = "hub_v4_tenant_slug"
 SESSION_USER_NAME = "hub_v4_user_name"
 # Compat: reutiliza sessão de /cadastros/ se já autenticada
 CADASTRO_TENANT = "cadastro_tenant_id"
@@ -32,6 +34,9 @@ def adopt_cadastro_session(request: HttpRequest) -> bool:
     request.session[SESSION_TENANT_NAME] = request.session.get(
         CADASTRO_TENANT_NAME, ""
     )
+    request.session[SESSION_TENANT_SLUG] = request.session.get(
+        "cadastro_tenant_slug", ""
+    )
     request.session[SESSION_USER_NAME] = request.session.get(CADASTRO_USER_NAME, "")
     return True
 
@@ -42,7 +47,11 @@ def session_ok(request: HttpRequest) -> bool:
     return adopt_cadastro_session(request)
 
 
-def require_hub(request: HttpRequest):
+def _food_only_home():
+    return redirect("hub-v4-food-orders")
+
+
+def require_hub(request: HttpRequest, *, allow_food_only: bool = False):
     if not session_ok(request):
         return None, None, None, redirect("hub-v4-login")
     tenant = Tenant.objects.filter(pk=request.session[SESSION_TENANT]).first()
@@ -63,6 +72,8 @@ def require_hub(request: HttpRequest):
     if not role:
         role = mem.role.code
         request.session[SESSION_ROLE] = role
+    if role in FOOD_ONLY_ROLES and not allow_food_only:
+        return tenant, user, role, _food_only_home()
     return tenant, user, role, None
 
 
@@ -77,12 +88,14 @@ def set_hub_session(
     request.session[SESSION_USER] = str(user.id)
     request.session[SESSION_ROLE] = role_code
     request.session[SESSION_TENANT_NAME] = tenant.legal_name or tenant.slug
+    request.session[SESSION_TENANT_SLUG] = tenant.slug
     request.session[SESSION_USER_NAME] = user.name or user.email
     # Espelha cadastros para SSO
     request.session[CADASTRO_TENANT] = str(tenant.id)
     request.session[CADASTRO_USER] = str(user.id)
     request.session[CADASTRO_ROLE] = role_code
     request.session[CADASTRO_TENANT_NAME] = tenant.legal_name or tenant.slug
+    request.session["cadastro_tenant_slug"] = tenant.slug
     request.session[CADASTRO_USER_NAME] = user.name or user.email
 
 
@@ -94,7 +107,9 @@ def clear_hub_session(request: HttpRequest) -> None:
         SESSION_USER,
         SESSION_ROLE,
         SESSION_TENANT_NAME,
+        SESSION_TENANT_SLUG,
         SESSION_USER_NAME,
+        "cadastro_tenant_slug",
         SESSION_ACTIVE_PROVIDER,
         CADASTRO_TENANT,
         CADASTRO_USER,

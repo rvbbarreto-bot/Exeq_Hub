@@ -1,0 +1,48 @@
+<nav class="hub-sidebar-nav" aria-label="Menu principal">
+  {% for group in sidebar_navigation %}
+    {% if group.separator and not forloop.first %}
+    <div class="nav-separator" role="presentation"></div>
+    {% endif %}
+
+    {% if group.collapsible %}
+    <div class="nav-accordion{% if group.expanded %} is-open{% endif %}" data-nav-accordion>
+      <button
+        type="button"
+        class="nav-accordion-trigger"
+        aria-expanded="{% if group.expanded %}true{% else %}false{% endif %}"
+        aria-controls="nav-panel-{{ forloop.counter }}"
+        id="nav-trigger-{{ forloop.counter }}"
+      >
+        <span class="nav-accordion-title">{{ group.title }}</span>
+        <svg class="nav-accordion-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div
+        class="nav-accordion-panel"
+        id="nav-panel-{{ forloop.counter }}"
+        role="region"
+        aria-labelledby="nav-trigger-{{ forloop.counter }}"
+        {% if not group.expanded %}hidden{% endif %}
+      >
+        {% for item in group.items %}
+        <a class="nav-item{% if item.active %} is-active{% endif %}" href="{{ item.href }}">
+          {% include "hub_v4/partials/nav_icon.html" with icon=item.icon %}
+          <span class="label">{{ item.title }}</span>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+    {% else %}
+    <div class="nav-group-static">
+      {% if group.title %}
+      <div class="nav-group-label">{{ group.title }}</div>
+      {% endif %}
+      {% for item in group.items %}
+      <a class="nav-item{% if item.active %} is-active{% endif %}" href="{{ item.href }}">
+        {% include "hub_v4/partials/nav_icon.html" with icon=item.icon %}
+        <span class="label">{{ item.title }}</span>
+      </a>
+      {% endfor %}
+    </div>
+    {% endif %}
+  {% endfor %}
+</nav>

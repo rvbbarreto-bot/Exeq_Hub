@@ -9,7 +9,7 @@ from django.conf import settings
 from apps.master_data.models import Provider
 from apps.nfe.gate import build_gate_payload, http_mode
 from apps.nfe.services import nfe_feature_enabled
-from apps.nfe.catalog import CATALOG_VERSION
+from apps.nfe.catalog import catalog_version_label
 
 
 def build_g_emit_checklist(
@@ -80,6 +80,10 @@ def build_g_emit_checklist(
             f"--out .storage/nfe_g_emit_sp_evidence.json",
         ]
 
+    from apps.fiscal.rtc_emit_readiness import assess_rtc_emit_readiness
+
+    rtc_emit = assess_rtc_emit_readiness(document_model="55")
+
     return {
         "schema_version": "1.0",
         "purpose": "g_emit_checklist",
@@ -90,10 +94,12 @@ def build_g_emit_checklist(
         "env": {
             "NFE_ENABLED": enabled,
             "NFE_HTTP_MODE": mode,
+            "NFE_RTC_MODE": getattr(settings, "NFE_RTC_MODE", "shadow"),
+            "NFE_CATALOG_STRICT": getattr(settings, "NFE_CATALOG_STRICT", False),
             "NFE_HTTP_DRY_RUN": dry_run,
             "NFE_PIVOT_UF": getattr(settings, "NFE_PIVOT_UF", "SP"),
             "NFE_DEFAULT_TP_AMB": str(getattr(settings, "NFE_DEFAULT_TP_AMB", "2")),
-            "catalog_version": CATALOG_VERSION,
+            "catalog_version": catalog_version_label(),
         },
         "gate": {
             "can_create": gate.get("can_create"),
@@ -106,6 +112,7 @@ def build_g_emit_checklist(
         },
         "runbook": "Docs/Exeq_Hub_NFe_U5_Interestadual_CCe_G_EMIT.md",
         "runbook_commands": runbook_cmds,
+        "rtc_emit": rtc_emit,
         "note": (
             "ready_for_http_emit=true NÃO autoriza G-EMIT — só pré-req local. "
             "G-EMIT exige authorized + XML + DANFE + chave 35… e g_emit_candidate no spike."

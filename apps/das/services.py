@@ -46,6 +46,7 @@ def emitir_guia(
     tipo_guia: str,
     competencia: str,
     versao_atual: int = 1,
+    delivery_payload: dict | None = None,
 ) -> GuiaFiscal:
     existing = GuiaFiscal.objects.filter(
         tenant=tenant,
@@ -114,11 +115,17 @@ def emitir_guia(
             "Já existe guia para prestador/tipo/competência/versão"
         ) from exc
 
+    outbox_payload = {
+        "guia_id": str(guia.id),
+        "tipo_guia": tipo_guia,
+    }
+    if delivery_payload:
+        outbox_payload.update(delivery_payload)
     enqueue_outbox(
         tenant=tenant,
         event_type="guia_fiscal.available",
         aggregate_type="guia_fiscal",
         aggregate_id=guia.id,
-        payload={"guia_id": str(guia.id), "tipo_guia": tipo_guia},
+        payload=outbox_payload,
     )
     return guia

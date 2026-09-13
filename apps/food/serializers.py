@@ -7,7 +7,9 @@ from apps.food.exceptions import (
     FoodInvalidOrderError,
     FoodInvalidTransitionError,
     FoodOrderNotFoundError,
+    FoodPaymentEmailRequiredError,
     FoodPaymentError,
+    FoodPaymentProviderError,
     FoodProductNotFoundError,
 )
 from apps.food.models import FoodCustomer, FoodOrder, FoodOrderLine, FoodProduct
@@ -15,8 +17,12 @@ from apps.food.services import (
     create_food_customer,
     create_food_product,
     create_order,
-    create_pix_intent_for_order,
 )
+from apps.food.payments.services import (
+    create_payment_intent_for_order,
+    get_active_food_payment,
+)
+from apps.food.payments.whatsapp import whatsapp_payment_payload
 from decimal import Decimal
 
 
@@ -74,6 +80,10 @@ class FoodProductSerializer(serializers.ModelSerializer):
     min_quantity = serializers.DecimalField(
         max_digits=14, decimal_places=3, required=False, write_only=True, default=0
     )
+    nfe_product_id = serializers.UUIDField(required=False, allow_null=True)
+    nfe_product_code = serializers.CharField(
+        source="nfe_product.code", read_only=True, default=""
+    )
 
     class Meta:
         model = FoodProduct
@@ -86,19 +96,22 @@ class FoodProductSerializer(serializers.ModelSerializer):
             "price_cents",
             "cost_cents",
             "is_active",
+            "nfe_product_id",
+            "nfe_product_code",
             "initial_stock",
             "min_quantity",
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "created_at", "updated_at")
+        read_only_fields = ("id", "created_at", "updated_at", "nfe_product_code")
 
     def create(self, validated_data):
         request = self.context["request"]
         initial = validated_data.pop("initial_stock", None)
         min_qty = validated_data.pop("min_quantity", 0)
+        nfe_product_id = validated_data.pop("nfe_product_id", None)
         try:
-            return create_food_product(
+            product = create_food_product(
                 tenant=request.tenant,
                 sku=validated_data["sku"],
                 name=validated_data["name"],
@@ -109,8 +122,38 @@ class FoodProductSerializer(serializers.ModelSerializer):
                 initial_stock=initial,
                 min_quantity=min_qty or 0,
             )
+            if nfe_product_id is not None:
+                from apps.food.fiscal.mapping import set_food_product_nfe_mapping
+
+                set_food_product_nfe_mapping(
+                    tenant=request.tenant,
+                    product=product,
+                    nfe_product_id=nfe_product_id,
+                )
+                product.refresh_from_db()
+            return product
         except FoodError as exc:
             raise _domain_validation(exc) from exc
+
+    def update(self, instance, validated_data):
+        request = self.context["request"]
+        nfe_product_id = validated_data.pop("nfe_product_id", serializers.empty)
+        for key, value in validated_data.items():
+            setattr(instance, key, value)
+        instance.save()
+        if nfe_product_id is not serializers.empty:
+            from apps.food.fiscal.mapping import set_food_product_nfe_mapping
+
+            try:
+                set_food_product_nfe_mapping(
+                    tenant=request.tenant,
+                    product=instance,
+                    nfe_product_id=nfe_product_id,
+                )
+            except FoodError as exc:
+                raise _domain_validation(exc) from exc
+            instance.refresh_from_db()
+        return instance
 
 
 class FoodOrderLineSerializer(serializers.ModelSerializer):
@@ -134,6 +177,8 @@ class FoodOrderSerializer(serializers.ModelSerializer):
     pix_copy_paste = serializers.SerializerMethodField()
     charge_id = serializers.UUIDField(read_only=True, allow_null=True)
     charge_status = serializers.SerializerMethodField()
+    payment = serializers.SerializerMethodField()
+    whatsapp_payment = serializers.SerializerMethodField()
 
     class Meta:
         model = FoodOrder
@@ -152,6 +197,8 @@ class FoodOrderSerializer(serializers.ModelSerializer):
             "pix_copy_paste",
             "charge_id",
             "charge_status",
+            "payment",
+            "whatsapp_payment",
             "coupon",
             "fulfillment_mode",
             "delivery_address",
@@ -165,6 +212,9 @@ class FoodOrderSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_pix_copy_paste(self, obj) -> str:
+        payment = get_active_food_payment(obj)
+        if payment is not None and payment.pix_copy_paste:
+            return payment.pix_copy_paste
         charge = getattr(obj, "charge", None)
         if charge is None:
             return ""
@@ -175,6 +225,24 @@ class FoodOrderSerializer(serializers.ModelSerializer):
         if charge is None:
             return ""
         return charge.status or ""
+
+    def get_payment(self, obj) -> dict | None:
+        payment = get_active_food_payment(obj)
+        if payment is None:
+            return None
+        return {
+            "id": str(payment.id),
+            "provider": payment.provider,
+            "method": payment.method,
+            "status": payment.status,
+            "provider_payment_id": payment.provider_payment_id,
+            "pix_copy_paste": payment.pix_copy_paste or "",
+        }
+
+    def get_whatsapp_payment(self, obj) -> dict | None:
+        if obj.channel != FoodOrder.Channel.WHATSAPP:
+            return None
+        return whatsapp_payment_payload(obj)
 
 
 class FoodOrderLineInputSerializer(serializers.Serializer):
@@ -208,9 +276,44 @@ class FoodOrderCreateSerializer(serializers.Serializer):
         default=False,
         help_text="Se true, emite cobrança Pix no gateway na criação do pedido.",
     )
+    request_payment = serializers.BooleanField(
+        default=False,
+        help_text="Se true, emite pagamento no gateway Food na criação do pedido.",
+    )
+    payment_method = serializers.ChoiceField(
+        choices=["pix", "card"],
+        default="pix",
+        required=False,
+        help_text="Meio de pagamento quando request_payment=true (WhatsApp: use pix).",
+    )
+    channel_ref = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+        max_length=128,
+        help_text="Ref. externa do canal (ex. message id WhatsApp).",
+    )
 
     def create(self, validated_data):
         request = self.context["request"]
+        request_payment = validated_data.pop("request_payment", False)
+        request_pix = validated_data.pop("request_pix", False) or request_payment
+        payment_method = validated_data.pop("payment_method", "pix")
+        channel_ref = (validated_data.pop("channel_ref", "") or "").strip()
+        channel = validated_data["channel"]
+        if (
+            channel == FoodOrder.Channel.WHATSAPP
+            and request_pix
+            and payment_method != "pix"
+        ):
+            raise serializers.ValidationError(
+                {
+                    "payment_method": (
+                        "Canal WhatsApp suporta auto-emissão apenas com Pix na v1."
+                    ),
+                    "code": "food_payment_method_not_allowed",
+                }
+            )
         try:
             order = create_order(
                 tenant=request.tenant,
@@ -232,14 +335,19 @@ class FoodOrderCreateSerializer(serializers.Serializer):
             if addr and order.delivery_address != addr:
                 order.delivery_address = addr
                 updates.append("delivery_address")
+            if channel_ref and order.channel_ref != channel_ref:
+                order.channel_ref = channel_ref
+                updates.append("channel_ref")
             if updates:
                 updates.append("updated_at")
                 order.save(update_fields=updates)
-            if validated_data.get("request_pix") and order.payment_status != (
+            if request_pix and order.payment_status != (
                 FoodOrder.PaymentStatus.PAID
             ):
-                order = create_pix_intent_for_order(
-                    tenant=request.tenant, order_id=order.id
+                order = create_payment_intent_for_order(
+                    tenant=request.tenant,
+                    order_id=order.id,
+                    method=payment_method,
                 )
             return order
         except (
@@ -249,6 +357,8 @@ class FoodOrderCreateSerializer(serializers.Serializer):
             FoodInvalidOrderError,
             FoodInvalidTransitionError,
             FoodPaymentError,
+            FoodPaymentProviderError,
+            FoodPaymentEmailRequiredError,
             FoodOrderNotFoundError,
             FoodError,
         ) as exc:

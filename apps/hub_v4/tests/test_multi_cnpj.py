@@ -74,6 +74,7 @@ def test_hub_providers_list_and_create(client, hub_ctx):
             "trade_name": "Alpha",
             "tax_regime": TaxRegime.SIMPLES,
             "municipal_registration": "123",
+            "ie_isento": "on",
             "is_active": "1",
             "data_source": "manual",
             "uf": "SP",
@@ -90,6 +91,7 @@ def test_hub_providers_list_and_create(client, hub_ctx):
             "document": "00000000000191",
             "legal_name": "Cliente Beta Ltda",
             "tax_regime": TaxRegime.SIMPLES,
+            "state_registration": "123456789112",
             "is_active": "1",
             "data_source": "manual",
         },
@@ -104,6 +106,7 @@ def test_hub_providers_list_and_create(client, hub_ctx):
             "document": "11444777000161",
             "legal_name": "Cliente Gama",
             "tax_regime": TaxRegime.SIMPLES,
+            "ie_isento": "on",
             "is_active": "1",
             "data_source": "manual",
         },
@@ -115,6 +118,43 @@ def test_hub_providers_list_and_create(client, hub_ctx):
     r = client.get(reverse("hub-v4-provider-new"))
     assert r.status_code == 302
     assert reverse("hub-v4-providers") in r.url
+
+
+@pytest.mark.django_db
+def test_provider_ie_isento_checkbox(client, hub_ctx):
+    tenant, user = hub_ctx
+    _login(client, tenant, user)
+    r = client.post(
+        reverse("hub-v4-provider-new"),
+        {
+            "document": "37229907000137",
+            "legal_name": "Emitente Isento Ltda",
+            "tax_regime": TaxRegime.SIMPLES,
+            "ie_isento": "on",
+            "is_active": "1",
+            "data_source": "manual",
+            "uf": "SP",
+            "municipio": "Atibaia",
+            "codigo_municipio_ibge": "3504107",
+            "logradouro": "Rua A",
+        },
+    )
+    assert r.status_code == 302
+    p = Provider.objects.get(tenant=tenant, document="37229907000137")
+    assert p.state_registration == "ISENTO"
+
+    r2 = client.post(
+        reverse("hub-v4-provider-new"),
+        {
+            "document": "11222333000181",
+            "legal_name": "Sem IE Ltda",
+            "tax_regime": TaxRegime.SIMPLES,
+            "is_active": "1",
+            "data_source": "manual",
+        },
+    )
+    assert r2.status_code == 200
+    assert b"Inscri" in r2.content or b"IE" in r2.content
 
 
 @pytest.mark.django_db
@@ -142,6 +182,10 @@ def test_active_company_header_and_wizard(client, hub_ctx):
     assert "Emitir como" in wh
     assert str(p.id) in wh
 
+    providers_html = client.get(reverse("hub-v4-providers")).content.decode()
+    assert "Em uso" in providers_html
+    assert ">Ativa</span>" not in providers_html
+
 
 @pytest.mark.django_db
 def test_hub_customer_create(client, hub_ctx):
@@ -156,10 +200,36 @@ def test_hub_customer_create(client, hub_ctx):
             "email": "tomador@example.com",
             "is_active": "1",
             "data_source": "manual",
+            "logradouro": "Rua Teste",
+            "municipio": "Atibaia",
             "uf": "SP",
+            "codigo_municipio_ibge": "3504107",
         },
     )
     assert r.status_code == 302
     from apps.master_data.models import Customer
 
     assert Customer.objects.filter(tenant=tenant, name="Tomador QA").exists()
+
+
+@pytest.mark.django_db
+def test_hub_customer_requires_fiscal_address(client, hub_ctx):
+    tenant, user = hub_ctx
+    _login(client, tenant, user)
+    r = client.post(
+        reverse("hub-v4-customer-new"),
+        {
+            "document_type": "cpf",
+            "document": "52998224725",
+            "name": "Sem Endereco",
+            "is_active": "1",
+            "data_source": "manual",
+            "logradouro": "Rua A",
+            "uf": "SP",
+        },
+    )
+    assert r.status_code == 200
+    assert "IBGE" in r.content.decode()
+    from apps.master_data.models import Customer
+
+    assert not Customer.objects.filter(tenant=tenant, name="Sem Endereco").exists()

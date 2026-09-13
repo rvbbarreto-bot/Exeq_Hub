@@ -17,10 +17,12 @@ from apps.nfe.services import (
 
 
 @pytest.fixture
-def nfe_settings(settings):
+def nfe_settings(settings, tenant_a):
     settings.NFE_ENABLED = True
     settings.NFE_HTTP_MODE = "stub"
     settings.NFE_DEFAULT_TP_AMB = "2"
+    tenant_a.settings = {**(tenant_a.settings or {}), "nfe_enabled": True}
+    tenant_a.save(update_fields=["settings"])
     return settings
 
 

@@ -3,6 +3,7 @@ from integrations.sefaz_nfe.port import (
     NfeEmitResult,
     NfeProvider,
     StubNfeProvider,
+    get_nfce_provider,
     get_nfe_provider,
 )
 
@@ -11,5 +12,6 @@ __all__ = [
     "NfeEmitResult",
     "NfeProvider",
     "StubNfeProvider",
+    "get_nfce_provider",
     "get_nfe_provider",
 ]

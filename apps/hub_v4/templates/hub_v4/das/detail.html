@@ -1,8 +1,18 @@
 {% extends "hub_v4/base.html" %}
+{% load hub_v4_tags %}
+
+{% block page_subtitle %}
+<div class="page-subtitle">{{ guia.provider.legal_name }} · {{ guia.provider.document }}</div>
+{% endblock %}
 
 {% block page_actions %}
 <a class="btn btn-ghost" href="{% url 'hub-v4-das' %}">Lista</a>
-<a class="btn btn-primary" href="{% url 'hub-v4-das-emit' %}">Emitir outra</a>
+{% if has_pdf %}
+<a class="btn btn-primary" href="{% url 'hub-v4-das-pdf' guia.id %}">Baixar PDF</a>
+{% endif %}
+{% if can_write %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-das-emit' %}">Emitir outra</a>
+{% endif %}
 {% endblock %}
 
 {% block content %}
@@ -16,27 +26,85 @@
         {{ guia.provider.legal_name }} · {{ guia.provider.document }}
       </div>
     </div>
-    <span class="badge badge-neutral">{{ guia.get_status_display }}</span>
+    {% guia_status_badge guia.status %}
   </div>
 </div>
 
-<div class="card">
-  <div class="section-label" style="margin-top:0;">Valores</div>
+<div class="card" style="margin-bottom:12px;">
+  <div class="section-label" style="margin-top:0;">Resumo</div>
   <div class="form-grid">
-    <div><span style="color:var(--text-muted);font-size:.8rem;">Principal</span><div><strong>R$ {{ guia.valor_principal }}</strong></div></div>
-    <div><span style="color:var(--text-muted);font-size:.8rem;">Multa</span><div>R$ {{ guia.valor_multa }}</div></div>
-    <div><span style="color:var(--text-muted);font-size:.8rem;">Juros</span><div>R$ {{ guia.valor_juros }}</div></div>
-    <div><span style="color:var(--text-muted);font-size:.8rem;">Total</span><div><strong>R$ {{ guia.valor_total }}</strong></div></div>
-    <div><span style="color:var(--text-muted);font-size:.8rem;">Vencimento</span><div>{{ guia.data_vencimento|date:"d/m/Y"|default:"—" }}</div></div>
-    <div><span style="color:var(--text-muted);font-size:.8rem;">Compliance</span><div>{{ guia.compliance_status }}</div></div>
+    <div>
+      <span style="color:var(--text-muted);font-size:.8rem;">Valor total</span>
+      <div><strong>R$ {{ guia.valor_total }}</strong></div>
+    </div>
+    <div>
+      <span style="color:var(--text-muted);font-size:.8rem;">Principal</span>
+      <div>R$ {{ guia.valor_principal }}</div>
+    </div>
+    <div>
+      <span style="color:var(--text-muted);font-size:.8rem;">Vencimento</span>
+      <div>{{ guia.data_vencimento|date:"d/m/Y"|default:"—" }}</div>
+    </div>
+    <div>
+      <span style="color:var(--text-muted);font-size:.8rem;">Multa</span>
+      <div>R$ {{ guia.valor_multa }}</div>
+    </div>
+    <div>
+      <span style="color:var(--text-muted);font-size:.8rem;">Juros</span>
+      <div>R$ {{ guia.valor_juros }}</div>
+    </div>
+    <div>
+      <span style="color:var(--text-muted);font-size:.8rem;">Compliance</span>
+      <div>{% guia_compliance_badge guia.compliance_status %}</div>
+    </div>
     <div class="full">
       <span style="color:var(--text-muted);font-size:.8rem;">Linha digitável</span>
       <div class="mono" style="word-break:break-all;">{{ guia.linha_digitavel|default:"—" }}</div>
     </div>
     <div class="full">
-      <span style="color:var(--text-muted);font-size:.8rem;">PIX</span>
+      <span style="color:var(--text-muted);font-size:.8rem;">PIX copia e cola</span>
       <div class="mono" style="word-break:break-all;font-size:.85rem;">{{ guia.pix_copia_cola|default:"—" }}</div>
     </div>
   </div>
+</div>
+
+<div class="card" style="margin-bottom:12px;">
+  <div class="section-label" style="margin-top:0;">Documento</div>
+  <div class="doc-quick-actions">
+    {% if has_pdf %}
+    <a class="btn btn-primary btn-sm" href="{% url 'hub-v4-das-pdf' guia.id %}">Baixar PDF da guia</a>
+    {% else %}
+    <span class="chip">PDF indisponível</span>
+    <span class="hint-line">Reemitir ou aguardar captura SERPRO.</span>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:12px;">
+  <div class="section-label" style="margin-top:0;">Entrega ao contador</div>
+  <div class="form-grid">
+    <div>
+      <span style="color:var(--text-muted);font-size:.8rem;">E-mail</span>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        {% delivery_channel_badge delivery.email_sent %}
+        {% if delivery.email_to %}<span class="hint-line">{{ delivery.email_to }}</span>{% endif %}
+      </div>
+    </div>
+    <div>
+      <span style="color:var(--text-muted);font-size:.8rem;">WhatsApp</span>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        {% delivery_channel_badge delivery.whatsapp_sent %}
+        {% if delivery.whatsapp_to %}<span class="hint-line">{{ delivery.whatsapp_to }}</span>{% endif %}
+      </div>
+    </div>
+  </div>
+  {% if can_write %}
+  <form method="post" style="margin-top:14px;">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="resend_delivery">
+    <button type="submit" class="btn btn-ghost">Reenviar ao contador</button>
+  </form>
+  <p class="hint-line" style="margin-bottom:0;">Reenvio é enfileirado; atualize a página para ver o status.</p>
+  {% endif %}
 </div>
 {% endblock %}

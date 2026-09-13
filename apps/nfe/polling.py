@@ -157,12 +157,15 @@ def poll_nfe_invoice(invoice: NfeInvoice, *, actor: str = "worker") -> NfeInvoic
 
     prev = inv.status
     if result.status == "authorized":
+        from apps.fiscal.sefaz_timestamps import persist_authorization_meta
+
         inv.status = NfeInvoice.Status.AUTHORIZED
         inv.access_key = result.access_key or inv.access_key
         inv.protocol = result.protocol or inv.protocol
         inv.number_consumed = True
         inv.rejection_code = ""
         inv.rejection_message = ""
+        persist_authorization_meta(inv, result)
     elif result.status in ("rejected", "denegada"):
         inv.status = NfeInvoice.Status.REJECTED
         inv.access_key = result.access_key or inv.access_key

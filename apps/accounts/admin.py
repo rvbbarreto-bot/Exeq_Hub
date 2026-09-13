@@ -3,10 +3,14 @@ from django.http import HttpResponseRedirect
 from django.template.response import TemplateResponse
 from django.urls import path, reverse
 
+from apps.accounts.admin_user_forms import UserAddForm, UserChangeForm, UserResetPasswordForm
+from apps.accounts.admin_tenant_forms import TenantAdminForm
 from apps.accounts.models import (
     CertificateAudit,
     DigitalCertificate,
     ElectronicProxy,
+    Plan,
+    Subscription,
     Tenant,
     TenantMembership,
     TenantRole,
@@ -33,18 +37,93 @@ from integrations.payments.router import (
 )
 
 
+@admin.register(Plan)
+class PlanAdmin(admin.ModelAdmin):
+    list_display = ("code", "name", "is_active", "sort_order", "limits")
+    list_filter = ("is_active",)
+    search_fields = ("code", "name")
+    ordering = ("sort_order", "code")
+
+
+@admin.register(Subscription)
+class SubscriptionAdmin(admin.ModelAdmin):
+    list_display = ("tenant", "plan", "status", "current_period_start", "updated_at")
+    list_filter = ("status", "plan")
+    search_fields = ("tenant__slug", "tenant__legal_name", "plan__code")
+    autocomplete_fields = ("tenant", "plan")
+
+
 @admin.register(Tenant)
 class TenantAdmin(admin.ModelAdmin):
+    form = TenantAdminForm
     list_display = (
         "slug",
         "legal_name",
         "document",
         "status",
+        "emission_types_display",
         "focus_layout",
+        "subscription_plan",
         "billing_provider_link",
     )
     search_fields = ("slug", "legal_name", "document")
     list_filter = ("status", "focus_layout")
+    fieldsets = (
+        (
+            None,
+            {
+                "fields": (
+                    "slug",
+                    "legal_name",
+                    "document",
+                    "status",
+                ),
+            },
+        ),
+        (
+            "Tipos de emissão",
+            {
+                "fields": ("emit_nfse", "emit_nfe", "emit_nfce"),
+                "description": (
+                    "Selecione pelo menos um tipo. É possível marcar NFS-e e NF-e "
+                    "simultaneamente."
+                ),
+            },
+        ),
+        (
+            "NFS-e",
+            {"fields": ("focus_layout",)},
+        ),
+        (
+            "Avançado",
+            {
+                "classes": ("collapse",),
+                "fields": ("settings",),
+            },
+        ),
+    )
+
+    @admin.display(description="Emissão")
+    def emission_types_display(self, obj: Tenant) -> str:
+        from apps.accounts.tenant_emission import emission_flags_from_settings
+
+        nfse, nfe, nfce = emission_flags_from_settings(obj.settings)
+        parts = []
+        if nfse:
+            parts.append("NFS-e")
+        if nfe:
+            parts.append("NF-e")
+        if nfce:
+            parts.append("NFC-e")
+        return " + ".join(parts) if parts else "—"
+
+    @admin.display(description="Plano")
+    def subscription_plan(self, obj: Tenant) -> str:
+        try:
+            sub = obj.subscription
+        except Subscription.DoesNotExist:
+            return "—"
+        return f"{sub.plan.code} ({sub.get_status_display()})"
 
     def get_urls(self):
         urls = super().get_urls()
@@ -155,6 +234,74 @@ class UserAdmin(admin.ModelAdmin):
     search_fields = ("email", "name")
     exclude = ("password",)
 
+    def get_form(self, request, obj=None, **kwargs):
+        if obj is None:
+            kwargs.setdefault("form", UserAddForm)
+        else:
+            kwargs.setdefault("form", UserChangeForm)
+        return super().get_form(request, obj, **kwargs)
+
+    def get_readonly_fields(self, request, obj=None):
+        if obj is not None:
+            return ("reset_password_link",)
+        return ()
+
+    @admin.display(description="Senha")
+    def reset_password_link(self, obj: User) -> str:
+        from django.utils.html import format_html
+
+        url = reverse("admin:accounts_user_reset_password", args=[obj.pk])
+        return format_html(
+            '<a class="button" href="{}">Redefinir senha</a>',
+            url,
+        )
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom = [
+            path(
+                "<path:object_id>/reset-password/",
+                self.admin_site.admin_view(self.reset_password_view),
+                name="accounts_user_reset_password",
+            ),
+        ]
+        return custom + urls
+
+    def reset_password_view(self, request, object_id):
+        user = self.get_object(request, object_id)
+        if user is None:
+            return self._get_obj_not_found_redirect(
+                request, self.model._meta, object_id
+            )
+
+        form = UserResetPasswordForm(request.POST or None)
+        if request.method == "POST" and form.is_valid():
+            user.set_password(form.cleaned_data["password1"])
+            user.save(update_fields=["password"])
+            messages.success(request, f"Senha de {user.email} atualizada.")
+            return HttpResponseRedirect(
+                reverse("admin:accounts_user_change", args=[user.pk])
+            )
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": f"Redefinir senha — {user.email}",
+            "user": user,
+            "form": form,
+            "opts": self.model._meta,
+        }
+        return TemplateResponse(
+            request,
+            "admin/accounts/user/reset_password.html",
+            context,
+        )
+
+    def save_model(self, request, obj, form, change):
+        if not change and isinstance(form, UserAddForm):
+            form.save()
+            return
+        super().save_model(request, obj, form, change)
+
 
 @admin.register(TenantRole)
 class TenantRoleAdmin(admin.ModelAdmin):
@@ -168,6 +315,24 @@ class TenantMembershipAdmin(admin.ModelAdmin):
     list_filter = ("is_active", "role")
     autocomplete_fields = ("tenant", "user", "role")
 
+    def save_model(self, request, obj, form, change):
+        from django.core.exceptions import ValidationError
+
+        from apps.accounts.plan_limits import PlanLimitError, assert_can_add_active_user
+
+        if obj.is_active:
+            was_active = False
+            if change and obj.pk:
+                was_active = (
+                    TenantMembership.objects.filter(pk=obj.pk, is_active=True).exists()
+                )
+            if not was_active:
+                try:
+                    assert_can_add_active_user(obj.tenant)
+                except PlanLimitError as exc:
+                    raise ValidationError(str(exc)) from exc
+        super().save_model(request, obj, form, change)
+
 
 @admin.register(TenantSecret)
 class TenantSecretAdmin(admin.ModelAdmin):
@@ -180,6 +345,8 @@ class TenantSecretAdmin(admin.ModelAdmin):
 
 @admin.register(DigitalCertificate)
 class DigitalCertificateAdmin(admin.ModelAdmin):
+    change_list_template = "admin/accounts/digitalcertificate/change_list.html"
+
     list_display = (
         "label",
         "cnpj",
@@ -202,6 +369,31 @@ class DigitalCertificateAdmin(admin.ModelAdmin):
         "updated_at",
     )
     autocomplete_fields = ("tenant", "provider")
+
+    @staticmethod
+    def hub_upload_hint() -> str:
+        return (
+            "Certificado A1 deve ser enviado pelo Hub (upload do arquivo PFX/P12 + senha). "
+            "O Admin não cadastra certificado manualmente — evita erro de validade (not_before)."
+        )
+
+    def has_add_permission(self, request):
+        return False
+
+    def add_view(self, request, form_url="", extra_context=None):
+        messages.info(
+            request,
+            f"{self.hub_upload_hint()} Acesse Hub → Certificados.",
+        )
+        return HttpResponseRedirect(
+            reverse("admin:accounts_digitalcertificate_changelist")
+        )
+
+    def changelist_view(self, request, extra_context=None):
+        extra = dict(extra_context or {})
+        extra["hub_certificate_upload_url"] = reverse("hub-v4-certificates")
+        extra["hub_certificate_upload_hint"] = self.hub_upload_hint()
+        return super().changelist_view(request, extra_context=extra)
 
 
 @admin.register(CertificateAudit)

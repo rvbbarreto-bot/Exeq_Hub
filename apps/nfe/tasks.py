@@ -70,3 +70,6 @@ def reconcile_stale_nfe_task(limit: int = 50) -> dict:
     result = reconcile_stale_nfe_batch(limit=limit)
     logger.info("nfe.reconcile_stale %s", result)
     return result
+
+
+from apps.nfe.entrada.tasks import distribuicao_sync_task, distribuicao_tick_task  # noqa: E402,F401

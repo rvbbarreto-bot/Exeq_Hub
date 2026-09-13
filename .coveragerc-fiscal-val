@@ -1,0 +1,10 @@
+[run]
+source = apps/fiscal/cross_validate_rules.py,apps/nfe/cross_validate.py,apps/nfe/homolog_spike.py
+omit =
+    */tests/*
+    */migrations/*
+
+[report]
+fail_under = 85
+show_missing = True
+precision = 1

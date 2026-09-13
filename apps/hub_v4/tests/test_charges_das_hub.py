@@ -146,3 +146,12 @@ def test_hub_emit_das_stub(client, hub_bill, settings):
     detail = client.get(reverse("hub-v4-das-detail", args=[guia.id]))
     assert detail.status_code == 200
     assert b"2026-06" in detail.content
+    assert b"st-success" in detail.content
+    assert b"Dispon\xc3\xadvel" in detail.content
+
+    listing = client.get(reverse("hub-v4-das"))
+    assert listing.status_code == 200
+    body = listing.content.decode()
+    assert "table-card" in body
+    assert "st-success" in body
+    assert "Disponível" in body

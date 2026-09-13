@@ -6,6 +6,9 @@ from decimal import Decimal
 from typing import Any
 
 from apps.master_data.models import TaxRegime
+from apps.nfe.csosn import map_csosn_to_xml_group
+from apps.nfe.ibpt import compute_v_tot_trib_cents
+from apps.nfe.ie_validation import emitter_ie_error
 from apps.nfe.models import NfeInvoice
 
 # U5: bump semântico — RTC hooks nulos + interestadual
@@ -19,6 +22,20 @@ def _uf(addr: dict | None) -> str:
     if not isinstance(addr, dict):
         return ""
     return str(addr.get("uf") or addr.get("UF") or "").upper().strip()
+
+
+def _ibge_digits(addr: dict | None) -> str:
+    """7 dígitos IBGE — alinhado ao cadastro Hub (codigo_municipio_ibge) e xml_nfe."""
+    if not isinstance(addr, dict):
+        return ""
+    raw = (
+        addr.get("codigo_ibge")
+        or addr.get("cMun")
+        or addr.get("codigo_municipio_ibge")
+        or addr.get("ibge")
+        or ""
+    )
+    return "".join(ch for ch in str(raw) if ch.isdigit())[:7]
 
 
 def is_interstate(*, emit_uf: str, dest_uf: str) -> bool:
@@ -74,15 +91,15 @@ def validate_cfop_against_ufs(*, cfop: str, emit_uf: str, dest_uf: str) -> str |
 
 
 def rtc_hooks_placeholder() -> dict[str, Any]:
-    """U5: chaves futuras IBS/CBS (RF-25) — sem cálculo até norma/RTC."""
-    from apps.nfe.catalog import CATALOG_VERSION
+    """Reservado — RTC calculado em build_validation via rtc_goods."""
+    from apps.fiscal.rtc_goods import nfe_rtc_mode
 
     return {
         "ibs": None,
         "cbs": None,
         "is": None,
-        "catalog_version": CATALOG_VERSION,
-        "note": "RTC hooks reservados; sem cálculo em goods-0.2.0-u5",
+        "mode": nfe_rtc_mode(),
+        "note": "RTC goods — ver taxes.rtc e totals.rtc",
     }
 
 
@@ -90,6 +107,17 @@ def _money_cents(qty: Decimal, unit_cents: int, discount: int = 0) -> int:
     raw = (qty * Decimal(unit_cents)).quantize(Decimal("1"))
     total = int(raw) - int(discount)
     return max(total, 0)
+
+
+_REGIME_NORMAL_PC_CST = frozenset({"01", "02", "03"})
+_SN_DEFAULT_PC_CST = "49"
+
+
+def _normalize_sn_pc_cst(cst: str | None) -> str:
+    code = (cst or _SN_DEFAULT_PC_CST)[:2]
+    if code in _REGIME_NORMAL_PC_CST:
+        return _SN_DEFAULT_PC_CST
+    return code
 
 
 def calculate_item_taxes(
@@ -124,6 +152,7 @@ def calculate_item_taxes(
         taxes["icms"] = {
             "regime": "sn",
             "csosn": code,
+            "xml_group": map_csosn_to_xml_group(code),
             "base_cents": 0,
             "rate_bp": 0,
             "value_cents": 0,
@@ -155,8 +184,15 @@ def calculate_item_taxes(
             "value_cents": base * r // 10000,
         }
 
-    taxes["pis"] = _pc(pis_cst, pis_rate_bp)
-    taxes["cofins"] = _pc(cofins_cst, cofins_rate_bp)
+    if tax_regime == TaxRegime.SIMPLES:
+        pis_code = _normalize_sn_pc_cst(pis_cst)
+        cofins_code = _normalize_sn_pc_cst(cofins_cst)
+    else:
+        pis_code = (pis_cst or "07")[:2]
+        cofins_code = (cofins_cst or "07")[:2]
+
+    taxes["pis"] = _pc(pis_code, pis_rate_bp if tax_regime != TaxRegime.SIMPLES else 0)
+    taxes["cofins"] = _pc(cofins_code, cofins_rate_bp if tax_regime != TaxRegime.SIMPLES else 0)
     return taxes
 
 
@@ -172,20 +208,16 @@ def build_validation(
 
     if not provider.document:
         errors.append({"field": "provider", "message": "emitente sem CNPJ"})
-    if require_ie and not (getattr(provider, "state_registration", None) or "").strip():
-        errors.append(
-            {
-                "field": "provider.state_registration",
-                "message": "IE do emitente obrigatória para HTTP SEFAZ",
-            }
-        )
+    if require_ie:
+        ie_err = emitter_ie_error(getattr(provider, "state_registration", None), http_mode=True)
+        if ie_err:
+            errors.append({"field": "provider.state_registration", "message": ie_err})
     addr = provider.address or {}
     emit_uf = _uf(addr)
     if not emit_uf:
         errors.append({"field": "provider.address.uf", "message": "UF do emitente obrigatória"})
     # G-EMIT prep: IBGE emit/dest (rejeições SEFAZ evitáveis)
-    ibge_emit = str(addr.get("codigo_ibge") or addr.get("cMun") or "").strip()
-    if len("".join(ch for ch in ibge_emit if ch.isdigit())) != 7:
+    if len(_ibge_digits(addr)) != 7:
         errors.append(
             {
                 "field": "provider.address.codigo_ibge",
@@ -210,8 +242,7 @@ def build_validation(
         errors.append({"field": "customer.address", "message": "endereço do destinatário incompleto"})
     if not _uf(c_addr):
         errors.append({"field": "customer.address.uf", "message": "UF do destinatário obrigatória"})
-    ibge_dest = str(c_addr.get("codigo_ibge") or c_addr.get("cMun") or "").strip()
-    if len("".join(ch for ch in ibge_dest if ch.isdigit())) != 7:
+    if len(_ibge_digits(c_addr)) != 7:
         errors.append(
             {
                 "field": "customer.address.codigo_ibge",
@@ -267,6 +298,14 @@ def build_validation(
                     errors.append(
                         {"field": f"items[{it.line_number}].cfop", "message": cat_err}
                     )
+        if require_ie and it.unit:
+            from apps.nfe.catalog import validate_unit
+
+            unit_err = validate_unit(it.unit)
+            if unit_err:
+                errors.append(
+                    {"field": f"items[{it.line_number}].unit", "message": unit_err}
+                )
         if it.quantity <= 0:
             errors.append(
                 {
@@ -300,6 +339,28 @@ def build_validation(
             cofins_cst = p.cofins_cst
             cofins_bp = p.cofins_rate_bp
 
+        from apps.nfe.cross_validate import cross_validate_invoice_item
+
+        item_cross = cross_validate_invoice_item(
+            line_number=it.line_number,
+            ncm=it.ncm,
+            cfop=it.cfop,
+            pis_cst=pis_cst,
+            cofins_cst=cofins_cst,
+            cest=getattr(it.product, "cest", "") if it.product_id else "",
+            csosn=csosn or "",
+            ipi_cst=getattr(it.product, "ipi_cst", "") if it.product_id else "",
+            ip_enq=getattr(it.product, "ip_enq", "") if it.product_id else "",
+            ipi_rate_bp=int(getattr(it.product, "ipi_rate_bp", 0) or 0) if it.product_id else 0,
+            issue_date=invoice.issue_date,
+            crt=str(getattr(provider, "tax_regime", "") or ""),
+            tenant=invoice.tenant,
+            context="emit",
+            http_emit=require_ie,
+        )
+        for err in item_cross["errors"]:
+            errors.append({"field": err["field"], "message": err["message"]})
+
         tax = calculate_item_taxes(
             tax_regime=regime,
             item_total_cents=line_total,
@@ -314,6 +375,20 @@ def build_validation(
             emit_uf=emit_uf,
             dest_uf=dest_uf,
         )
+        from apps.fiscal.rtc_goods import build_item_rtc, nfe_rtc_mode
+
+        tax["rtc"] = build_item_rtc(
+            line_total_cents=line_total,
+            issue_date=invoice.issue_date,
+            document_model="55",
+        )
+        if tax["rtc"].get("status") == "blocked":
+            errors.append(
+                {
+                    "field": f"items[{it.line_number}].rtc",
+                    "message": tax["rtc"].get("reason") or "RTC bloqueado (classificação)",
+                }
+            )
         products_cents += line_total
         icms_total += int(tax["icms"].get("value_cents") or 0)
         icms_base_total += int(tax["icms"].get("base_cents") or 0)
@@ -322,6 +397,7 @@ def build_validation(
         items_taxes.append(
             {
                 "line_number": it.line_number,
+                "ncm": it.ncm,
                 "total_cents": line_total,
                 "taxes": tax,
             }
@@ -332,16 +408,42 @@ def build_validation(
     total = max(products_cents + freight - discount, 0)
 
     pay = invoice.payment_amount_cents
-    if pay is not None and abs(int(pay) - total) > 1:
+    from apps.fiscal.rtc_emit_readiness import assess_rtc_emit_readiness
+    from apps.fiscal.rtc_goods import aggregate_rtc_totals, effective_payable_cents, nfe_rtc_mode
+
+    rtc_mode = nfe_rtc_mode()
+    rtc_ready = assess_rtc_emit_readiness(
+        document_model="55", issue_date=invoice.issue_date
+    )
+    if rtc_mode == "emit" and not rtc_ready["ok"]:
+        for code in rtc_ready["blockers"]:
+            errors.append({"field": "rtc", "message": f"RTC emit bloqueado: {code}"})
+
+    rtc_totals_preview = aggregate_rtc_totals(items_taxes)
+    payable = effective_payable_cents(
+        {"total_cents": total, "rtc": rtc_totals_preview},
+        mode=rtc_mode,
+    )
+    if pay is not None and abs(int(pay) - payable) > 1:
         errors.append(
             {
                 "field": "payment_amount_cents",
-                "message": f"pagamento {pay} difere do total {total}",
+                "message": f"pagamento {pay} difere do total exigido {payable}",
             }
         )
 
-    from apps.nfe.catalog import CATALOG_VERSION
+    from apps.nfe.catalog import catalog_meta, catalog_version_label
 
+    v_tot_trib_cents = compute_v_tot_trib_cents(
+        [
+            {
+                "ncm": it.get("ncm"),
+                "total_cents": it.get("total_cents"),
+            }
+            for it in items_taxes
+        ],
+        emit_uf=emit_uf,
+    )
     totals = {
         "products_cents": products_cents,
         "freight_cents": freight,
@@ -351,8 +453,11 @@ def build_validation(
         "icms_base_cents": icms_base_total,
         "pis_cents": pis_total,
         "cofins_cents": cofins_total,
+        "v_tot_trib_cents": v_tot_trib_cents,
         "tax_engine_version": TAX_ENGINE_VERSION,
-        "catalog_version": CATALOG_VERSION,
+        "catalog_version": catalog_version_label(),
+        "catalog_versions": catalog_meta(),
+        "rtc_mode": nfe_rtc_mode(),
         "operation": {
             "emit_uf": emit_uf,
             "dest_uf": dest_uf,
@@ -364,6 +469,9 @@ def build_validation(
             ),
         },
     }
+    rtc_totals = aggregate_rtc_totals(items_taxes)
+    if rtc_totals.get("v_ibs_cents") or rtc_totals.get("v_cbs_cents"):
+        totals["rtc"] = rtc_totals
     return {
         "ok": len(errors) == 0,
         "field_errors": errors,

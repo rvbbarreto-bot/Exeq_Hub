@@ -108,8 +108,87 @@ def _refresh_forensic_after_emit(issue: NfIssue, *, layout: str) -> None:
     issue.save(update_fields=["resolved_params", "updated_at"])
 
 
+def _persist_emission_text(
+    issue: NfIssue,
+    *,
+    descricao_servico: str = "",
+    informacoes_complementares: str = "",
+    codigo_nbs: str = "",
+) -> None:
+    from integrations.nfse.emission_text import normalize_emission_fields
+
+    payload = dict(issue.internal_payload or {})
+    emission = normalize_emission_fields(
+        descricao_servico=descricao_servico,
+        informacoes_complementares=informacoes_complementares,
+        codigo_nbs=codigo_nbs,
+    )
+    if emission:
+        payload["emission"] = emission
+    else:
+        payload.pop("emission", None)
+    issue.internal_payload = payload or None
+    issue.save(update_fields=["internal_payload", "updated_at"])
+
+
+def _merge_emission_into_params(issue: NfIssue, payload: dict) -> dict:
+    from integrations.nfse.emission_text import normalize_emission_fields
+
+    draft = (issue.internal_payload or {}).get("emission") or {}
+    merged = dict(payload)
+    for key, value in normalize_emission_fields(
+        descricao_servico=draft.get("descricao_servico") or "",
+        informacoes_complementares=draft.get("informacoes_complementares") or "",
+        codigo_nbs=draft.get("codigo_nbs") or "",
+    ).items():
+        merged[key] = value
+    return merged
+
+
+def _apply_nf_issue_fields(
+    issue: NfIssue,
+    *,
+    provider,
+    customer,
+    service,
+    fiscal_profile: FiscalProfile,
+    ibge_code: str,
+    competence_date,
+    amount_cents: int,
+    descricao_servico: str = "",
+    informacoes_complementares: str = "",
+    codigo_nbs: str = "",
+) -> NfIssue:
+    issue.provider = provider
+    issue.customer = customer
+    issue.service = service
+    issue.fiscal_profile = fiscal_profile
+    issue.ibge_code = str(ibge_code)[:7]
+    issue.competence_date = competence_date
+    issue.amount_cents = amount_cents
+    issue.save(
+        update_fields=[
+            "provider",
+            "customer",
+            "service",
+            "fiscal_profile",
+            "ibge_code",
+            "competence_date",
+            "amount_cents",
+            "updated_at",
+        ]
+    )
+    _persist_emission_text(
+        issue,
+        descricao_servico=descricao_servico,
+        informacoes_complementares=informacoes_complementares,
+        codigo_nbs=codigo_nbs,
+    )
+    return issue
+
+
 @transaction.atomic
-def create_nf_issue(
+def save_nf_draft(
     *,
     tenant,
     idempotency_key: str,
@@ -120,18 +199,67 @@ def create_nf_issue(
     ibge_code: str,
     competence_date,
     amount_cents: int,
+    draft: NfIssue | None = None,
+    descricao_servico: str = "",
+    informacoes_complementares: str = "",
+    codigo_nbs: str = "",
 ) -> NfIssue:
-    existing = NfIssue.objects.filter(
-        tenant=tenant,
-        idempotency_key=idempotency_key,
-    ).first()
-    if existing:
-        return existing
-
+    """
+    Persiste NFS-e em status rascunho (sem tributação, fila ou envio).
+    Atualiza somente se status=DRAFT; chave de idempotência reutilizada no Hub.
+    """
     if fiscal_profile is None:
         raise FiscalProfileRequiredError(
-            "Perfil fiscal é obrigatório para emitir a NFS-e."
+            "Perfil fiscal é obrigatório para salvar a NFS-e."
         )
+    if amount_cents < 1:
+        raise ValueError("Valor deve ser positivo")
+
+    if draft is not None:
+        issue = NfIssue.objects.select_for_update().get(pk=draft.pk, tenant=tenant)
+        if issue.status != NfIssue.Status.DRAFT:
+            raise InvalidTransitionError(
+                "Somente rascunhos podem ser editados no wizard."
+            )
+        return _apply_nf_issue_fields(
+            issue,
+            provider=provider,
+            customer=customer,
+            service=service,
+            fiscal_profile=fiscal_profile,
+            ibge_code=ibge_code,
+            competence_date=competence_date,
+            amount_cents=amount_cents,
+            descricao_servico=descricao_servico,
+            informacoes_complementares=informacoes_complementares,
+            codigo_nbs=codigo_nbs,
+        )
+
+    existing = (
+        NfIssue.objects.select_for_update()
+        .filter(tenant=tenant, idempotency_key=idempotency_key)
+        .first()
+    )
+    if existing is not None:
+        if existing.status != NfIssue.Status.DRAFT:
+            return existing
+        return _apply_nf_issue_fields(
+            existing,
+            provider=provider,
+            customer=customer,
+            service=service,
+            fiscal_profile=fiscal_profile,
+            ibge_code=ibge_code,
+            competence_date=competence_date,
+            amount_cents=amount_cents,
+            descricao_servico=descricao_servico,
+            informacoes_complementares=informacoes_complementares,
+            codigo_nbs=codigo_nbs,
+        )
+
+    from apps.accounts.plan_limits import assert_can_create_nf_this_month
+
+    assert_can_create_nf_this_month(tenant)
 
     issue = NfIssue.objects.create(
         tenant=tenant,
@@ -141,11 +269,58 @@ def create_nf_issue(
         customer=customer,
         service=service,
         fiscal_profile=fiscal_profile,
-        ibge_code=ibge_code,
+        ibge_code=str(ibge_code)[:7],
         competence_date=competence_date,
         amount_cents=amount_cents,
     )
-    transition(issue, to_status=NfIssue.Status.PENDING_TAX, actor="api")
+    _persist_emission_text(
+        issue,
+        descricao_servico=descricao_servico,
+        informacoes_complementares=informacoes_complementares,
+        codigo_nbs=codigo_nbs,
+    )
+    return issue
+
+
+@transaction.atomic
+def submit_nf_draft(issue: NfIssue, *, actor: str = "api") -> NfIssue:
+    """Avança rascunho: tributação → fila → processamento (caminho de create_nf_issue)."""
+    # Lock só na NfIssue: select_related em FKs null=True (ex. fiscal_profile)
+    # gera OUTER JOIN e o Postgres recusa FOR UPDATE nesse lado.
+    NfIssue.objects.select_for_update().get(pk=issue.pk)
+    issue = NfIssue.objects.select_related(
+        "provider", "customer", "service", "fiscal_profile"
+    ).get(pk=issue.pk)
+
+    if issue.status != NfIssue.Status.DRAFT:
+        return issue
+
+    if issue.fiscal_profile_id is None:
+        raise FiscalProfileRequiredError(
+            "Perfil fiscal é obrigatório para emitir a NFS-e."
+        )
+
+    fiscal_profile = issue.fiscal_profile
+    service = issue.service
+    amount_cents = issue.amount_cents
+    competence_date = issue.competence_date
+    ibge_code = issue.ibge_code
+    tenant = issue.tenant
+
+    transition(issue, to_status=NfIssue.Status.PENDING_TAX, actor=actor)
+
+    from apps.master_data.models import ServiceCatalogItem
+
+    if service.operation_kind == ServiceCatalogItem.OperationKind.LOCACAO_BEM:
+        issue.rejection_code = "OPERATION_KIND_BLOCKED"
+        issue.save(update_fields=["rejection_code", "updated_at"])
+        transition(
+            issue,
+            to_status=NfIssue.Status.REJECTED,
+            actor=actor,
+            metadata={"code": "OPERATION_KIND_BLOCKED"},
+        )
+        return issue
 
     try:
         rule, resolve_meta = resolve_tax_rule_detailed(
@@ -163,7 +338,7 @@ def create_nf_issue(
         transition(
             issue,
             to_status=NfIssue.Status.REJECTED,
-            actor="api",
+            actor=actor,
             metadata={"code": "TAX_RULE_NOT_FOUND"},
         )
         return issue
@@ -174,6 +349,11 @@ def create_nf_issue(
         iss_payload["codigo_tributacao_nacional_iss"] = (
             service.codigo_tributacao_nacional_iss
         )
+    from apps.fiscal.compliance_hints import service_cnae_compliance_warnings
+
+    compliance = service_cnae_compliance_warnings(provider=issue.provider, service=service)
+    if compliance:
+        iss_payload["compliance_hints"] = compliance
 
     route = resolve_nfse_route(
         ibge_code=ibge_code,
@@ -198,7 +378,7 @@ def create_nf_issue(
         transition(
             issue,
             to_status=NfIssue.Status.REJECTED,
-            actor="api",
+            actor=actor,
             metadata={"code": issue.rejection_code, "detail": str(exc)},
         )
         return issue
@@ -211,12 +391,12 @@ def create_nf_issue(
             transition(
                 issue,
                 to_status=NfIssue.Status.REJECTED,
-                actor="api",
+                actor=actor,
                 metadata={"code": issue.rejection_code},
             )
             return issue
 
-    payload = rtc_ctx["params"]
+    payload = _merge_emission_into_params(issue, rtc_ctx["params"])
     FiscalRuleSnapshot.objects.create(
         tenant=tenant,
         nf_issue=issue,
@@ -227,7 +407,7 @@ def create_nf_issue(
     issue.resolved_rule = rule
     issue.resolved_params = payload
     issue.save(update_fields=["resolved_rule", "resolved_params", "updated_at"])
-    transition(issue, to_status=NfIssue.Status.QUEUED, actor="api")
+    transition(issue, to_status=NfIssue.Status.QUEUED, actor=actor)
 
     enqueue_outbox(
         tenant=tenant,
@@ -240,6 +420,57 @@ def create_nf_issue(
     _enqueue_process(issue)
     issue.refresh_from_db()
     return issue
+
+
+@transaction.atomic
+def create_nf_issue(
+    *,
+    tenant,
+    idempotency_key: str,
+    provider,
+    customer,
+    service,
+    fiscal_profile: FiscalProfile,
+    ibge_code: str,
+    competence_date,
+    amount_cents: int,
+    descricao_servico: str = "",
+    informacoes_complementares: str = "",
+    codigo_nbs: str = "",
+) -> NfIssue:
+    existing = NfIssue.objects.filter(
+        tenant=tenant,
+        idempotency_key=idempotency_key,
+    ).first()
+    if existing and existing.status != NfIssue.Status.DRAFT:
+        return existing
+
+    from apps.accounts.tenant_emission import nfse_enabled_for_tenant
+    from apps.issuance.exceptions import NfseDisabledError
+
+    if not nfse_enabled_for_tenant(tenant):
+        raise NfseDisabledError("NFS-e não habilitada para este tenant (nfse_enabled)")
+
+    draft = None
+    if existing and existing.status == NfIssue.Status.DRAFT:
+        draft = existing
+
+    issue = save_nf_draft(
+        tenant=tenant,
+        idempotency_key=idempotency_key,
+        provider=provider,
+        customer=customer,
+        service=service,
+        fiscal_profile=fiscal_profile,
+        ibge_code=ibge_code,
+        competence_date=competence_date,
+        amount_cents=amount_cents,
+        draft=draft,
+        descricao_servico=descricao_servico,
+        informacoes_complementares=informacoes_complementares,
+        codigo_nbs=codigo_nbs,
+    )
+    return submit_nf_draft(issue, actor="api")
 
 
 @transaction.atomic
@@ -547,10 +778,16 @@ def cancel_nf_issue(
     actor: str = "api",
 ) -> NfIssue:
     text = (justificativa or "").strip()
-    if not (15 <= len(text) <= 255):
-        raise CancelJustificationError(
-            "justificativa deve ter entre 15 e 255 caracteres"
-        )
+    from integrations.nfse.cancel_motivos import (
+        parse_codigo_cancelamento,
+        validate_justificativa,
+    )
+
+    try:
+        text = validate_justificativa(text)
+        c_motivo = parse_codigo_cancelamento(codigo_cancelamento)
+    except ValueError as exc:
+        raise CancelJustificationError(str(exc)) from exc
     if issue.status != NfIssue.Status.AUTHORIZED:
         raise InvalidTransitionError(
             f"Só é possível cancelar nota Autorizada. Status atual: {issue.get_status_display()} ({issue.status})"
@@ -571,7 +808,7 @@ def cancel_nf_issue(
     cancel_kwargs: dict = {
         "ref": issue.focus_ref,
         "justificativa": text,
-        "codigo_cancelamento": codigo_cancelamento,
+        "codigo_cancelamento": c_motivo,
     }
     if getattr(provider, "kind", "") == "sefin":
         from django.conf import settings as dj_settings
@@ -590,7 +827,7 @@ def cancel_nf_issue(
             unsigned = build_cancel_evento_from_issue(
                 issue,
                 justificativa=text,
-                codigo_cancelamento=codigo_cancelamento,
+                codigo_cancelamento=c_motivo,
                 tp_amb=tp_amb,
             )
             pfx_bytes, pfx_password = load_primary_pfx_material(
@@ -647,7 +884,7 @@ def cancel_nf_issue(
         metadata={
             "focus_ref": issue.focus_ref,
             "justificativa": text[:80],
-            "codigo_cancelamento": codigo_cancelamento,
+            "codigo_cancelamento": c_motivo,
             "provider": provider.kind,
         },
     )

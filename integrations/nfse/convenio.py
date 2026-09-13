@@ -248,3 +248,29 @@ def assert_municipio_aderente_nacional(
             f"NFS-e no ambiente {status.environment} (EX-PRE-01)"
         )
     return status
+
+
+def check_convenio_batch(
+    ibge_codes: list[str],
+    *,
+    environment: str | None = None,
+    pfx_bytes: bytes | None = None,
+    pfx_password: str = "",
+    force_refresh: bool = True,
+) -> list[ConvenioStatus]:
+    """Consulta vários IBGE (smoke multi-município / RF-01)."""
+    out: list[ConvenioStatus] = []
+    for raw in ibge_codes:
+        ibge = "".join(ch for ch in (raw or "") if ch.isdigit())
+        if not ibge:
+            continue
+        out.append(
+            get_convenio_status(
+                ibge,
+                environment=environment,
+                pfx_bytes=pfx_bytes,
+                pfx_password=pfx_password,
+                force_refresh=force_refresh,
+            )
+        )
+    return out

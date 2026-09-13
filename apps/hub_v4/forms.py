@@ -5,14 +5,23 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from apps.accounts.plan_limits import PlanLimitError, assert_can_add_active_provider
+from apps.accounts.plan_limits import PlanLimitError
 from apps.master_data.models import Customer, DataSource, Provider, TaxRegime
-from apps.master_data.services import create_customer, create_provider, create_service
+from apps.master_data.services import (
+    create_customer,
+    create_provider,
+    create_service,
+    update_customer,
+    update_provider,
+    update_service,
+)
 from shared.validators import validate_cnpj, validate_cpf
 
 
 def addr_from_post(post) -> dict[str, str]:
-    return {
+    from apps.master_data.customer_validation import normalize_customer_address
+
+    raw = {
         "logradouro": (post.get("logradouro") or "").strip(),
         "numero": (post.get("numero") or "").strip(),
         "complemento": (post.get("complemento") or "").strip(),
@@ -24,6 +33,7 @@ def addr_from_post(post) -> dict[str, str]:
         "telefone": (post.get("telefone_receita") or post.get("telefone") or "").strip(),
         "email": (post.get("email_receita") or post.get("email_addr") or "").strip(),
     }
+    return normalize_customer_address(raw)
 
 
 def cadastral_from_post(post) -> dict[str, Any]:
@@ -57,6 +67,19 @@ def cadastral_from_post(post) -> dict[str, Any]:
     return out
 
 
+def state_registration_from_post(post) -> str:
+    """IE do emitente: checkbox isento → ISENTO; senão campo obrigatório."""
+    isento = (post.get("ie_isento") or "") in {"1", "true", "on", "yes"}
+    if isento:
+        return "ISENTO"
+    state_reg = (post.get("state_registration") or "").strip()
+    if not state_reg:
+        raise ValueError(
+            "Informe a Inscrição Estadual (IE) ou marque Isento de IE."
+        )
+    return state_reg
+
+
 def save_provider_from_post(*, tenant, post, obj: Provider | None = None) -> Provider:
     document = validate_cnpj(post.get("document") or "")
     legal_name = (post.get("legal_name") or "").strip()
@@ -65,7 +88,7 @@ def save_provider_from_post(*, tenant, post, obj: Provider | None = None) -> Pro
     trade_name = (post.get("trade_name") or "").strip()
     tax_regime = (post.get("tax_regime") or TaxRegime.SIMPLES).strip()
     municipal = (post.get("municipal_registration") or "").strip()
-    state_reg = (post.get("state_registration") or "").strip()
+    state_reg = state_registration_from_post(post)
     is_active = (post.get("is_active") or "1") in {"1", "true", "on", "yes"}
     cadastral = cadastral_from_post(post)
 
@@ -82,28 +105,26 @@ def save_provider_from_post(*, tenant, post, obj: Provider | None = None) -> Pro
             **cadastral,
         )
 
-    was_active = bool(obj.is_active)
-    if is_active and not was_active:
-        assert_can_add_active_provider(tenant)
-
-    obj.document = document
-    obj.legal_name = legal_name
-    obj.trade_name = trade_name
-    obj.tax_regime = tax_regime
-    obj.municipal_registration = municipal
-    obj.state_registration = state_reg
-    obj.is_active = is_active
-    for key, value in cadastral.items():
-        setattr(obj, key, value)
+    fields = {
+        "document": document,
+        "legal_name": legal_name,
+        "trade_name": trade_name,
+        "tax_regime": tax_regime,
+        "municipal_registration": municipal,
+        "state_registration": state_reg,
+        "is_active": is_active,
+        **cadastral,
+    }
     if cadastral.get("data_source") == DataSource.RECEITA and obj.last_lookup_at is None:
         from django.utils import timezone
 
-        obj.last_lookup_at = timezone.now()
-    obj.save()
-    return obj
+        fields["last_lookup_at"] = timezone.now()
+    return update_provider(provider=obj, **fields)
 
 
 def save_customer_from_post(*, tenant, post, obj: Customer | None = None) -> Customer:
+    from apps.master_data.customer_validation import validate_customer_fiscal_address
+
     document_type = (post.get("document_type") or Customer.DocumentType.CNPJ).strip()
     if document_type not in {Customer.DocumentType.CPF, Customer.DocumentType.CNPJ}:
         document_type = Customer.DocumentType.CNPJ
@@ -118,6 +139,7 @@ def save_customer_from_post(*, tenant, post, obj: Customer | None = None) -> Cus
     email = (post.get("email") or "").strip()
     is_active = (post.get("is_active") or "1") in {"1", "true", "on", "yes"}
     cadastral = cadastral_from_post(post)
+    validate_customer_fiscal_address(cadastral.get("address"))
 
     if obj is None:
         return create_customer(
@@ -130,20 +152,20 @@ def save_customer_from_post(*, tenant, post, obj: Customer | None = None) -> Cus
             **cadastral,
         )
 
-    obj.document = document
-    obj.document_type = document_type
-    obj.name = name
-    obj.email = email
-    obj.is_active = is_active
-    for key, value in cadastral.items():
-        setattr(obj, key, value)
-    obj.save()
-    return obj
+    return update_customer(
+        customer=obj,
+        document=document,
+        document_type=document_type,
+        name=name,
+        email=email,
+        is_active=is_active,
+        **cadastral,
+    )
 
 
 def save_fiscal_profile_from_post(*, tenant, post, obj=None):
     from apps.fiscal.bootstrap import ensure_published_rule
-    from apps.fiscal.models import FiscalProfile
+    from apps.fiscal.profile_services import create_fiscal_profile, update_fiscal_profile
 
     name = (post.get("name") or "").strip()
     if not name:
@@ -153,9 +175,7 @@ def save_fiscal_profile_from_post(*, tenant, post, obj=None):
     status = (post.get("status") or "active").strip() or "active"
 
     if obj is None:
-        if FiscalProfile.objects.filter(tenant=tenant, name=name).exists():
-            raise ValueError("Já existe um perfil com este nome.")
-        profile = FiscalProfile.objects.create(
+        profile = create_fiscal_profile(
             tenant=tenant,
             name=name,
             tax_regime=tax_regime,
@@ -163,18 +183,13 @@ def save_fiscal_profile_from_post(*, tenant, post, obj=None):
             status=status,
         )
     else:
-        if (
-            FiscalProfile.objects.filter(tenant=tenant, name=name)
-            .exclude(pk=obj.pk)
-            .exists()
-        ):
-            raise ValueError("Já existe um perfil com este nome.")
-        obj.name = name
-        obj.tax_regime = tax_regime
-        obj.iss_retention_policy = retention
-        obj.status = status
-        obj.save()
-        profile = obj
+        profile = update_fiscal_profile(
+            profile=obj,
+            name=name,
+            tax_regime=tax_regime,
+            iss_retention_policy=retention,
+            status=status,
+        )
 
     ensure = (post.get("ensure_rule") or "") in {"1", "true", "on", "yes"}
     if ensure:
@@ -230,6 +245,7 @@ def save_tax_rule_from_post(*, tenant, post):
 
 def save_service_from_post(*, tenant, post, obj=None):
     from apps.master_data.models import ServiceCatalogItem
+    from apps.master_data.service_validation import normalize_ctn_iss
 
     code = (post.get("service_code") or "").strip()
     description = (post.get("description") or "").strip()
@@ -238,8 +254,24 @@ def save_service_from_post(*, tenant, post, obj=None):
     if not description:
         raise ValueError("Informe a descrição do serviço.")
     lc116 = (post.get("lc116_item") or "").strip()
-    nacional = (post.get("codigo_tributacao_nacional_iss") or "").strip()
+    nacional_raw = (post.get("codigo_tributacao_nacional_iss") or "").strip()
+    operation_kind = (
+        post.get("operation_kind") or ServiceCatalogItem.OperationKind.SERVICO_ISS
+    ).strip()
+    if operation_kind not in {c.value for c in ServiceCatalogItem.OperationKind}:
+        operation_kind = ServiceCatalogItem.OperationKind.SERVICO_ISS
     is_active = (post.get("is_active") or "1") in {"1", "true", "on", "yes"}
+    nacional = normalize_ctn_iss(nacional_raw) if nacional_raw else ""
+    nbs_raw = (post.get("codigo_nbs") or "").strip()
+    from apps.master_data.nbs_import import normalize_nbs_code, resolve_nbs_item
+
+    nbs_code = normalize_nbs_code(nbs_raw) if nbs_raw else ""
+    nbs_item = resolve_nbs_item(codigo=nbs_code) if len(nbs_code) == 9 else None
+    if operation_kind == ServiceCatalogItem.OperationKind.LOCACAO_BEM:
+        lc116 = ""
+        nacional = ""
+        nbs_code = ""
+        nbs_item = None
 
     if obj is None:
         if ServiceCatalogItem.objects.filter(tenant=tenant, service_code=code).exists():
@@ -250,40 +282,65 @@ def save_service_from_post(*, tenant, post, obj=None):
             description=description,
             lc116_item=lc116,
             codigo_tributacao_nacional_iss=nacional,
+            codigo_nbs=nbs_code,
+            nbs_item=nbs_item,
+            operation_kind=operation_kind,
             is_active=is_active,
         )
 
-    if (
-        ServiceCatalogItem.objects.filter(tenant=tenant, service_code=code)
-        .exclude(pk=obj.pk)
-        .exists()
-    ):
-        raise ValueError("Já existe serviço com este código.")
-    obj.service_code = code
-    obj.description = description
-    obj.lc116_item = lc116
-    obj.codigo_tributacao_nacional_iss = nacional
-    obj.is_active = is_active
-    obj.save()
-    return obj
+    return update_service(
+        item=obj,
+        service_code=code,
+        description=description,
+        lc116_item=lc116,
+        codigo_tributacao_nacional_iss=nacional,
+        codigo_nbs=nbs_code,
+        nbs_item=nbs_item,
+        operation_kind=operation_kind,
+        is_active=is_active,
+    )
 
 
-def _parse_brl_to_cents(raw: str) -> int:
+def parse_brl_amount_cents(
+    raw: str,
+    *,
+    field_label: str = "Valor",
+    allow_zero: bool = False,
+) -> int:
+    """Converte '20,00' / '1.500,00' / 'R$ 20,00' em centavos."""
     from decimal import Decimal, InvalidOperation
 
-    text = (raw or "0").strip()
+    text = (raw or "").strip().replace("\u00a0", " ")
+    for token in ("R$", "r$"):
+        text = text.replace(token, "")
+    text = text.strip()
     if not text:
-        return 0
+        raise ValueError(f"Informe o {field_label.lower()} da nota.")
     if "," in text:
         text = text.replace(".", "").replace(",", ".")
     try:
         amount = Decimal(text)
     except InvalidOperation as exc:
-        raise ValueError("Preço unitário inválido") from exc
+        raise ValueError(
+            f"{field_label} inválido. Use o formato 20,00 ou 1500,00."
+        ) from exc
     cents = int((amount * 100).quantize(Decimal("1")))
     if cents < 0:
-        raise ValueError("Preço unitário não pode ser negativo")
+        raise ValueError(f"O {field_label.lower()} não pode ser negativo.")
+    if cents < 1 and not (allow_zero and cents == 0):
+        raise ValueError(f"O {field_label.lower()} deve ser positivo.")
     return cents
+
+
+def _parse_brl_to_cents(raw: str) -> int:
+    text = (raw or "").strip()
+    if not text:
+        return 0
+    return parse_brl_amount_cents(
+        text,
+        field_label="Preço unitário",
+        allow_zero=True,
+    )
 
 
 def _parse_percent_to_bp(raw: str) -> int:
@@ -323,6 +380,7 @@ def save_nfe_product_from_post(*, tenant, post, obj=None):
     icms_bp = _parse_percent_to_bp(post.get("icms_rate") or "0")
     pis_bp = _parse_percent_to_bp(post.get("pis_rate") or "0")
     cofins_bp = _parse_percent_to_bp(post.get("cofins_rate") or "0")
+    gtin = (post.get("gtin") or "").strip()
 
     try:
         if obj is None:
@@ -343,6 +401,7 @@ def save_nfe_product_from_post(*, tenant, post, obj=None):
                 pis_rate_bp=pis_bp,
                 cofins_cst=cofins_cst,
                 cofins_rate_bp=cofins_bp,
+                gtin=gtin,
                 is_active=is_active,
             )
         return update_product(
@@ -362,6 +421,7 @@ def save_nfe_product_from_post(*, tenant, post, obj=None):
             pis_rate_bp=pis_bp,
             cofins_cst=cofins_cst,
             cofins_rate_bp=cofins_bp,
+            gtin=gtin,
             is_active=is_active,
         )
     except (NfeDisabledError, NfeValidationError) as exc:

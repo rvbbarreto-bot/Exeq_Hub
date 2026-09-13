@@ -33,6 +33,16 @@ def require_nfe_enabled() -> None:
         raise NfeDisabledError("NF-e desabilitada (NFE_ENABLED=false)")
 
 
+def require_nfe_enabled_for_tenant(tenant) -> None:
+    require_nfe_enabled()
+    from apps.accounts.tenant_emission import nfe_tenant_opt_in
+
+    if not nfe_tenant_opt_in(tenant):
+        raise NfeDisabledError(
+            "NF-e não habilitada para este tenant (nfe_enabled)"
+        )
+
+
 def http_mode_requires_ie() -> bool:
     return (getattr(settings, "NFE_HTTP_MODE", "stub") or "stub").lower() == "http"
 
@@ -142,7 +152,7 @@ def discard_draft(
     actor: str = "api",
 ) -> None:
     """Remove rascunho puro (sem número consumido)."""
-    require_nfe_enabled()
+    require_nfe_enabled_for_tenant(invoice.tenant)
     if invoice.status != NfeInvoice.Status.DRAFT:
         raise NfeInvalidTransitionError("discard só em draft")
     if invoice.number_consumed or invoice.number is not None:
@@ -165,7 +175,7 @@ def clone_invoice(
     actor: str = "api",
 ) -> NfeInvoice:
     """Novo draft a partir de rejected/failed com nNF consumido (sem reusar number)."""
-    require_nfe_enabled()
+    require_nfe_enabled_for_tenant(source.tenant)
     if source.status not in {NfeInvoice.Status.REJECTED, NfeInvoice.Status.FAILED}:
         raise NfeInvalidTransitionError("clone só a partir de rejected/failed")
     if not source.number_consumed:
@@ -244,7 +254,7 @@ def create_draft(
     ind_ie_dest: str = "9",
     actor: str = "api",
 ) -> NfeInvoice:
-    require_nfe_enabled()
+    require_nfe_enabled_for_tenant(tenant)
     existing = NfeInvoice.objects.filter(tenant=tenant, idempotency_key=idempotency_key).first()
     if existing:
         return existing
@@ -274,7 +284,7 @@ def replace_items(
     items: list[dict[str, Any]],
     expected_version: int | None = None,
 ) -> NfeInvoice:
-    require_nfe_enabled()
+    require_nfe_enabled_for_tenant(invoice.tenant)
     require_content_mutable(invoice)
     if invoice.status != NfeInvoice.Status.DRAFT and not (
         invoice.status in {NfeInvoice.Status.REJECTED, NfeInvoice.Status.FAILED}
@@ -357,7 +367,7 @@ def apply_operator_header_update(
     expected_version: int | None = None,
 ) -> NfeInvoice:
     """Atualiza cabeçalho mutável; bloqueado se conteúdo locked / snapshot frozen."""
-    require_nfe_enabled()
+    require_nfe_enabled_for_tenant(invoice.tenant)
     require_content_mutable(invoice)
     require_not_snapshot_frozen(invoice, field="header")
     if expected_version is not None and invoice.version != expected_version:
@@ -386,7 +396,7 @@ def apply_operator_header_update(
 
 
 def validate_invoice(invoice: NfeInvoice) -> dict[str, Any]:
-    require_nfe_enabled()
+    require_nfe_enabled_for_tenant(invoice.tenant)
     require_content_mutable(invoice)
     result = build_validation(invoice, require_ie=http_mode_requires_ie())
     for row in result["items_taxes"]:
@@ -414,7 +424,8 @@ def validate_invoice(invoice: NfeInvoice) -> dict[str, Any]:
 
 
 def _snapshot_for_emit(invoice: NfeInvoice, validation: dict[str, Any]) -> dict[str, Any]:
-    from apps.nfe.catalog import CATALOG_VERSION
+    from apps.fiscal.rtc_goods import effective_payable_cents, nfe_rtc_mode
+    from apps.nfe.catalog import catalog_meta, catalog_version_label
 
     provider = invoice.provider
     customer = invoice.customer
@@ -434,12 +445,15 @@ def _snapshot_for_emit(invoice: NfeInvoice, validation: dict[str, Any]) -> dict[
                 "origin": it.origin,
                 "csosn": it.csosn,
                 "icms_cst": it.icms_cst,
+                "gtin": getattr(it.product, "gtin", "") if it.product_id else "",
                 "taxes": it.taxes,
             }
         )
     snap = {
         "tax_engine_version": TAX_ENGINE_VERSION,
-        "catalog_version": validation.get("totals", {}).get("catalog_version") or CATALOG_VERSION,
+        "catalog_version": validation.get("totals", {}).get("catalog_version")
+        or catalog_version_label(),
+        "catalog_versions": catalog_meta(),
         "layout_version": getattr(settings, "NFE_LAYOUT_VERSION", "pl009-stub"),
         "tenant_id": str(invoice.tenant_id),
         "emitente": {
@@ -472,11 +486,27 @@ def _snapshot_for_emit(invoice: NfeInvoice, validation: dict[str, Any]) -> dict[
         "totals": validation["totals"],
         "payment": {
             "method": invoice.payment_method,
-            "amount_cents": invoice.payment_amount_cents or validation["totals"]["total_cents"],
+            "amount_cents": (
+                invoice.payment_amount_cents
+                or effective_payable_cents(validation["totals"], mode=nfe_rtc_mode())
+            ),
         },
     }
     raw = json.dumps(snap, sort_keys=True, default=str).encode("utf-8")
     snap["payload_hash"] = hashlib.sha256(raw).hexdigest()
+
+    rtc_totals = validation.get("totals", {}).get("rtc")
+    from apps.fiscal.rtc_goods import build_goods_rtc_forensic, nfe_rtc_mode
+
+    rtc_mode = nfe_rtc_mode()
+    if rtc_totals and rtc_mode != "off":
+        snap["forensic"] = build_goods_rtc_forensic(
+            rtc_totals=rtc_totals,
+            catalog_meta=snap.get("catalog_versions") or {},
+            mode=rtc_mode,
+            document_model="55",
+            layout=snap.get("layout_version") or "",
+        )
     return snap
 
 
@@ -487,7 +517,7 @@ def emit_invoice(
     expected_version: int | None = None,
     actor: str = "api",
 ) -> NfeInvoice:
-    require_nfe_enabled()
+    require_nfe_enabled_for_tenant(invoice.tenant)
     inv = NfeInvoice.objects.select_for_update().get(pk=invoice.pk)
     if expected_version is not None and inv.version != expected_version:
         raise NfeVersionConflictError(f"versão esperada {expected_version}, atual {inv.version}")
@@ -525,8 +555,17 @@ def emit_invoice(
     inv.status = NfeInvoice.Status.SUBMITTING
     inv.total_cents = validation["totals"]["total_cents"]
     if inv.payment_amount_cents is None:
-        inv.payment_amount_cents = inv.total_cents
+        inv.payment_amount_cents = validation["totals"]["total_cents"]
     snap = _snapshot_for_emit(inv, validation)
+    from apps.fiscal.rtc_goods import effective_payable_cents, nfe_rtc_mode
+
+    payable = effective_payable_cents(validation["totals"], mode=nfe_rtc_mode())
+    if nfe_rtc_mode() == "emit":
+        inv.payment_amount_cents = payable
+        snap["payment"]["amount_cents"] = payable
+    from apps.fiscal.sefaz_timestamps import persist_authorization_meta, stamp_dh_emi
+
+    snap = stamp_dh_emi(snap)
     inv.fiscal_snapshot = snap
     inv.payload_hash = snap["payload_hash"]
     inv.taxes_summary = validation["totals"]
@@ -559,6 +598,7 @@ def emit_invoice(
         inv.number_consumed = True
         inv.rejection_code = ""
         inv.rejection_message = ""
+        persist_authorization_meta(inv, result)
     elif result.status == "polling":
         inv.status = NfeInvoice.Status.POLLING
         inv.access_key = result.access_key or inv.access_key
@@ -637,7 +677,7 @@ def cancel_invoice(
     justificativa: str,
     actor: str = "api",
 ) -> NfeInvoice:
-    require_nfe_enabled()
+    require_nfe_enabled_for_tenant(invoice.tenant)
     inv = NfeInvoice.objects.select_for_update().get(pk=invoice.pk)
     if inv.status != NfeInvoice.Status.AUTHORIZED:
         raise NfeInvalidTransitionError("só cancela NF-e autorizada")
@@ -730,7 +770,7 @@ def issue_carta_correcao(
     actor: str = "api",
 ) -> NfeInvoice:
     """CCe 110110 — NF-e permanece authorized; grava evento + artefato xml_cce."""
-    require_nfe_enabled()
+    require_nfe_enabled_for_tenant(invoice.tenant)
     inv = NfeInvoice.objects.select_for_update().get(pk=invoice.pk)
     if inv.status != NfeInvoice.Status.AUTHORIZED:
         raise NfeInvalidTransitionError("CCe só em NF-e autorizada")
@@ -847,20 +887,207 @@ def create_product(
     csosn: str = "102",
     icms_cst: str = "",
     icms_rate_bp: int = 0,
+    pis_cst: str = "07",
+    pis_rate_bp: int = 0,
+    cofins_cst: str = "07",
+    cofins_rate_bp: int = 0,
+    cest: str = "",
+    gtin: str = "",
+    ipi_cst: str = "",
+    ip_enq: str = "",
+    ipi_rate_bp: int = 0,
+    is_active: bool = True,
     tax_regime_hint: str = "",
 ) -> NfeProduct:
-    require_nfe_enabled()
+    require_nfe_enabled_for_tenant(tenant)
+    code_norm = (code or "").strip()[:60]
+    if not code_norm:
+        raise NfeValidationError("Código do produto é obrigatório")
+    if NfeProduct.objects.filter(tenant=tenant, code=code_norm).exists():
+        raise NfeValidationError(f"Já existe produto com código {code_norm}")
+    ncm_digits = "".join(ch for ch in str(ncm or "") if ch.isdigit())[:8]
+    from apps.fiscal.goods_validate import normalize_gtin
+    from apps.nfe.cross_validate import validate_product_fields
+
+    prod_errors = validate_product_fields(
+        ncm=ncm_digits,
+        unit=unit,
+        cfop_internal=cfop_internal,
+        cfop_interstate=cfop_interstate,
+        csosn=csosn,
+        icms_cst=icms_cst,
+        pis_cst=pis_cst,
+        cofins_cst=cofins_cst,
+        origin=origin,
+        tax_regime=tax_regime_hint,
+        cest=cest,
+        ipi_cst=ipi_cst,
+        ip_enq=ip_enq,
+        ipi_rate_bp=ipi_rate_bp,
+        tenant=tenant,
+        context="catalog",
+    )
+    if prod_errors:
+        raise NfeValidationError(prod_errors[0])
+    if len(ncm_digits) != 8:
+        raise NfeValidationError("NCM deve ter 8 dígitos")
+    desc = (description or "").strip()[:120]
+    if not desc:
+        raise NfeValidationError("Descrição é obrigatória")
     return NfeProduct.objects.create(
         tenant=tenant,
-        code=code[:60],
-        description=description[:120],
-        ncm=ncm[:8],
-        unit=unit[:6],
-        unit_price_cents=unit_price_cents,
-        origin=origin[:1],
-        cfop_internal=cfop_internal[:4],
+        code=code_norm,
+        description=desc,
+        ncm=ncm_digits,
+        unit=(unit or "UN")[:6],
+        unit_price_cents=max(0, int(unit_price_cents or 0)),
+        origin=(origin or "0")[:1],
+        cfop_internal=(cfop_internal or "5102")[:4],
         cfop_interstate=(cfop_interstate or "6102")[:4],
-        csosn=csosn[:3],
-        icms_cst=icms_cst[:3],
-        icms_rate_bp=icms_rate_bp,
+        csosn=(csosn or "")[:3],
+        icms_cst=(icms_cst or "")[:3],
+        icms_rate_bp=max(0, int(icms_rate_bp or 0)),
+        pis_cst=(pis_cst or "07")[:2],
+        pis_rate_bp=max(0, int(pis_rate_bp or 0)),
+        cofins_cst=(cofins_cst or "07")[:2],
+        cofins_rate_bp=max(0, int(cofins_rate_bp or 0)),
+        cest="".join(ch for ch in str(cest or "") if ch.isdigit())[:7],
+        gtin=normalize_gtin(gtin),
+        ipi_cst=(ipi_cst or "")[:2],
+        ip_enq=(ip_enq or "")[:3],
+        ipi_rate_bp=max(0, int(ipi_rate_bp or 0)),
+        is_active=bool(is_active),
     )
+
+
+def update_product(
+    product: NfeProduct,
+    *,
+    code: str | None = None,
+    description: str | None = None,
+    ncm: str | None = None,
+    unit_price_cents: int | None = None,
+    unit: str | None = None,
+    origin: str | None = None,
+    cfop_internal: str | None = None,
+    cfop_interstate: str | None = None,
+    csosn: str | None = None,
+    icms_cst: str | None = None,
+    icms_rate_bp: int | None = None,
+    pis_cst: str | None = None,
+    pis_rate_bp: int | None = None,
+    cofins_cst: str | None = None,
+    cofins_rate_bp: int | None = None,
+    cest: str | None = None,
+    gtin: str | None = None,
+    ipi_cst: str | None = None,
+    ip_enq: str | None = None,
+    ipi_rate_bp: int | None = None,
+    is_active: bool | None = None,
+) -> NfeProduct:
+    require_nfe_enabled_for_tenant(product.tenant)
+    if code is not None:
+        code_norm = code.strip()[:60]
+        if not code_norm:
+            raise NfeValidationError("Código do produto é obrigatório")
+        if (
+            NfeProduct.objects.filter(tenant_id=product.tenant_id, code=code_norm)
+            .exclude(pk=product.pk)
+            .exists()
+        ):
+            raise NfeValidationError(f"Já existe produto com código {code_norm}")
+        product.code = code_norm
+    if description is not None:
+        desc = description.strip()[:120]
+        if not desc:
+            raise NfeValidationError("Descrição é obrigatória")
+        product.description = desc
+    if ncm is not None:
+        ncm_digits = "".join(ch for ch in str(ncm) if ch.isdigit())[:8]
+        from apps.nfe.cross_validate import validate_product_fields
+
+        prod_errors = validate_product_fields(
+            ncm=ncm_digits,
+            unit=product.unit if unit is None else unit,
+            cfop_internal=product.cfop_internal if cfop_internal is None else cfop_internal,
+            cfop_interstate=(
+                product.cfop_interstate if cfop_interstate is None else cfop_interstate
+            ),
+            csosn=product.csosn if csosn is None else csosn,
+            icms_cst=product.icms_cst if icms_cst is None else icms_cst,
+            pis_cst=product.pis_cst if pis_cst is None else pis_cst,
+            cofins_cst=product.cofins_cst if cofins_cst is None else cofins_cst,
+            origin=product.origin if origin is None else origin,
+            cest=product.cest if cest is None else cest,
+            ipi_cst=product.ipi_cst if ipi_cst is None else ipi_cst,
+            ip_enq=product.ip_enq if ip_enq is None else ip_enq,
+            ipi_rate_bp=product.ipi_rate_bp if ipi_rate_bp is None else ipi_rate_bp,
+            tenant=product.tenant,
+            context="catalog",
+        )
+        if prod_errors:
+            raise NfeValidationError(prod_errors[0])
+        if len(ncm_digits) != 8:
+            raise NfeValidationError("NCM deve ter 8 dígitos")
+        product.ncm = ncm_digits
+    if unit_price_cents is not None:
+        product.unit_price_cents = max(0, int(unit_price_cents))
+    if unit is not None:
+        product.unit = (unit or "UN")[:6]
+    if origin is not None:
+        product.origin = (origin or "0")[:1]
+    if cfop_internal is not None:
+        product.cfop_internal = (cfop_internal or "5102")[:4]
+    if cfop_interstate is not None:
+        product.cfop_interstate = (cfop_interstate or "6102")[:4]
+    if csosn is not None:
+        product.csosn = (csosn or "")[:3]
+    if icms_cst is not None:
+        product.icms_cst = (icms_cst or "")[:3]
+    if icms_rate_bp is not None:
+        product.icms_rate_bp = max(0, int(icms_rate_bp))
+    if pis_cst is not None:
+        product.pis_cst = (pis_cst or "07")[:2]
+    if pis_rate_bp is not None:
+        product.pis_rate_bp = max(0, int(pis_rate_bp))
+    if cofins_cst is not None:
+        product.cofins_cst = (cofins_cst or "07")[:2]
+    if cofins_rate_bp is not None:
+        product.cofins_rate_bp = max(0, int(cofins_rate_bp))
+    if cest is not None:
+        product.cest = "".join(ch for ch in str(cest) if ch.isdigit())[:7]
+    if gtin is not None:
+        from apps.fiscal.goods_validate import normalize_gtin
+
+        product.gtin = normalize_gtin(gtin)
+    if ipi_cst is not None:
+        product.ipi_cst = (ipi_cst or "")[:2]
+    if ip_enq is not None:
+        product.ip_enq = (ip_enq or "")[:3]
+    if ipi_rate_bp is not None:
+        product.ipi_rate_bp = max(0, int(ipi_rate_bp))
+    if is_active is not None:
+        product.is_active = bool(is_active)
+    from apps.nfe.cross_validate import validate_product_fields
+
+    prod_errors = validate_product_fields(
+        ncm=product.ncm,
+        unit=product.unit,
+        cfop_internal=product.cfop_internal,
+        cfop_interstate=product.cfop_interstate,
+        csosn=product.csosn,
+        icms_cst=product.icms_cst,
+        pis_cst=product.pis_cst,
+        cofins_cst=product.cofins_cst,
+        origin=product.origin,
+        cest=product.cest,
+        ipi_cst=product.ipi_cst,
+        ip_enq=product.ip_enq,
+        ipi_rate_bp=product.ipi_rate_bp,
+        tenant=product.tenant,
+        context="catalog",
+    )
+    if prod_errors:
+        raise NfeValidationError(prod_errors[0])
+    product.save()
+    return product

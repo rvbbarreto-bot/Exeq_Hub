@@ -1,0 +1,41 @@
+{% extends "hub_v4/base.html" %}
+
+{% block page_actions %}
+{% if can_write %}
+<a class="btn btn-primary" href="{% url 'hub-v4-food-customer-new' %}">Novo cliente</a>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+{% include "hub_v4/food/_subnav.html" %}
+<form method="get" class="card" style="margin-bottom:12px;padding:12px;display:flex;gap:12px;flex-wrap:wrap;align-items:end;">
+  <label class="full" style="flex:1;min-width:200px;">
+    <span style="color:var(--text-muted);font-size:.8rem;">Buscar nome</span>
+    <input name="q" value="{{ search_q }}" placeholder="Maria" />
+  </label>
+  <button class="btn btn-ghost" type="submit">Buscar</button>
+</form>
+
+{% if page.object_list %}
+<table class="data">
+  <thead>
+    <tr><th>Nome</th><th>Telefone</th><th>E-mail</th><th>Documento</th></tr>
+  </thead>
+  <tbody>
+    {% for c in page.object_list %}
+    <tr>
+      <td>{{ c.name }}</td>
+      <td class="mono">{{ c.phone_e164|default:"—" }}</td>
+      <td>{{ c.email|default:"—" }}</td>
+      <td class="mono">{{ c.document|default:"—" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p style="color:var(--text-muted);">Nenhum cliente cadastrado.</p>
+{% if can_write %}
+<p><a class="btn btn-primary btn-sm" href="{% url 'hub-v4-food-customer-new' %}">Cadastrar cliente</a></p>
+{% endif %}
+{% endif %}
+{% endblock %}

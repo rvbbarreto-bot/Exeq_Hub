@@ -73,6 +73,27 @@ def test_http_emit_from_gzip_b64_field():
     fake.emitir_dps.assert_called_once()
 
 
+def test_http_consultar_cancel_event_overrides_authorized_xml():
+    chave = "35041072237229907000137000000000006826077669419404"
+    auth_xml = b'<?xml version="1.0"?><NFSe><infNFSe><cStat>100</cStat></infNFSe></NFSe>'
+    evt_xml = b'<?xml version="1.0"?><evento><infEvento><e101101/></infEvento></evento>'
+    fake = MagicMock()
+    fake.consultar_nfse.return_value = SefinHttpResponse(
+        status_code=200,
+        data={"chaveAcesso": chave},
+        xml_bytes=auth_xml,
+    )
+    fake.consultar_evento_nfse.return_value = SefinHttpResponse(
+        status_code=200,
+        data={"cStat": "135"},
+        xml_bytes=evt_xml,
+    )
+    provider = SefinNfseProvider(mode="http", client=fake)
+    result = provider.consultar(ref=chave)
+    assert result.status == "cancelled"
+    fake.consultar_evento_nfse.assert_called_once()
+
+
 def test_http_consultar():
     fake = MagicMock()
     fake.consultar_nfse.return_value = SefinHttpResponse(

@@ -1,25 +1,28 @@
 {% extends "master_data/base.html" %}
 {% block title %}Cadastros · EXEQ Hub{% endblock %}
 {% block content %}
-<div class="exeq-card">
-  <h1>Cadastros mestres</h1>
-  <p class="lead">Consulta cadastral CNPJ com revisão antes de gravar. CPF permanece manual (LGPD).</p>
-  <div class="exeq-grid">
-    <div class="exeq-card" style="box-shadow:none;margin:0;">
-      <h2>Prestadores</h2>
-      <p class="lead">{{ providers_count }} cadastrado(s)</p>
-      <div class="exeq-actions">
-        <a class="exeq-btn" href="{% url 'cadastro-provider-list' %}">Listar</a>
-        <a class="exeq-btn exeq-btn-primary" href="{% url 'cadastro-provider-new' %}">Novo prestador</a>
-      </div>
+<div class="exeq-page-header">
+  <div>
+    <p class="exeq-crumb">Cadastros</p>
+    <h1>Cadastros mestres</h1>
+  </div>
+</div>
+
+<div class="exeq-grid">
+  <div class="exeq-card" style="margin:0;">
+    <h2>Prestadores</h2>
+    <p class="lead">{{ providers_count }} cadastrado(s)</p>
+    <div class="exeq-actions">
+      <a class="exeq-btn" href="{% url 'cadastro-provider-list' %}">Listar</a>
+      <a class="exeq-btn exeq-btn-primary" href="{% url 'cadastro-provider-new' %}">Novo prestador</a>
     </div>
-    <div class="exeq-card" style="box-shadow:none;margin:0;">
-      <h2>Tomadores</h2>
-      <p class="lead">{{ customers_count }} cadastrado(s)</p>
-      <div class="exeq-actions">
-        <a class="exeq-btn" href="{% url 'cadastro-customer-list' %}">Listar</a>
-        <a class="exeq-btn exeq-btn-primary" href="{% url 'cadastro-customer-new' %}">Novo tomador</a>
-      </div>
+  </div>
+  <div class="exeq-card" style="margin:0;">
+    <h2>Tomadores</h2>
+    <p class="lead">{{ customers_count }} cadastrado(s)</p>
+    <div class="exeq-actions">
+      <a class="exeq-btn" href="{% url 'cadastro-customer-list' %}">Listar</a>
+      <a class="exeq-btn exeq-btn-primary" href="{% url 'cadastro-customer-new' %}">Novo tomador</a>
     </div>
   </div>
 </div>

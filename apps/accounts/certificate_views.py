@@ -3,7 +3,11 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.accounts.certificates import PfxParseError, upload_a1_certificate
+from apps.accounts.certificates import (
+    PfxParseError,
+    default_key_usage_for_tenant,
+    upload_a1_certificate,
+)
 from apps.accounts.models import DigitalCertificate
 from apps.accounts.permissions import IsTenantMember, IsTenantWriter
 from apps.accounts.secrets import set_tenant_secret
@@ -74,10 +78,21 @@ class UploadCertificateView(APIView):
                 pfx_bytes=upload.read(),
                 password=password,
                 actor_user=request.user,
+                provider=_resolve_provider(request, cnpj),
+                key_usage=default_key_usage_for_tenant(request.tenant),
             )
         except PfxParseError as exc:
             return Response({"detail": str(exc)}, status=400)
         return Response(DigitalCertificateSerializer(cert).data, status=status.HTTP_201_CREATED)
+
+
+def _resolve_provider(request, cnpj: str):
+    from apps.master_data.models import Provider
+
+    provider_id = request.data.get("provider_id")
+    if provider_id:
+        return Provider.objects.filter(tenant=request.tenant, id=provider_id).first()
+    return Provider.objects.filter(tenant=request.tenant, document=cnpj).first()
 
 
 class SetFocusTokenView(APIView):

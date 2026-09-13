@@ -55,9 +55,18 @@ class GuiaFiscalCreateSerializer(serializers.Serializer):
     tipo_guia = serializers.ChoiceField(choices=GuiaFiscal.TipoGuia.choices)
     competencia = serializers.RegexField(regex=r"^\d{4}-\d{2}$")
     versao_atual = serializers.IntegerField(min_value=1, default=1, required=False)
+    delivery_email = serializers.EmailField(required=False, allow_blank=True)
+    delivery_phone = serializers.CharField(required=False, allow_blank=True, max_length=32)
 
     def create(self, validated_data):
         tenant = self.context["request"].tenant
+        delivery_email = (validated_data.pop("delivery_email", "") or "").strip()
+        delivery_phone = (validated_data.pop("delivery_phone", "") or "").strip()
+        delivery_payload = {}
+        if delivery_email:
+            delivery_payload["delivery_email"] = delivery_email
+        if delivery_phone:
+            delivery_payload["delivery_phone"] = delivery_phone
         try:
             provider = Provider.objects.get(
                 id=validated_data["provider_id"],
@@ -73,6 +82,7 @@ class GuiaFiscalCreateSerializer(serializers.Serializer):
                 tipo_guia=validated_data["tipo_guia"],
                 competencia=validated_data["competencia"],
                 versao_atual=validated_data.get("versao_atual", 1),
+                delivery_payload=delivery_payload or None,
             )
         except DuplicateDasNaturalKeyError as exc:
             raise serializers.ValidationError({"detail": str(exc), "code": exc.code}) from exc

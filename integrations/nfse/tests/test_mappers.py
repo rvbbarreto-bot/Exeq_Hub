@@ -144,3 +144,57 @@ def test_to_focus_nfse_nested_payload(tenant_a, emission_setup):
     assert body["tomador"]["cpf"] == "52998224725"
     assert body["servico"]["valor_servicos"] == 100.0
     assert body["servico"]["aliquota"] == 2.0
+
+
+@pytest.mark.django_db
+def test_to_focus_nfsen_uses_simples_codigo_from_rule(tenant_a, emission_setup):
+    from apps.fiscal.models import MunicipalTaxRule, TaxRuleCatalog
+
+    catalog = TaxRuleCatalog.objects.filter(
+        tenant=tenant_a, status=TaxRuleCatalog.Status.PUBLISHED
+    ).first()
+    rule = MunicipalTaxRule.objects.filter(catalog=catalog).first()
+    rule.simples_codigo_tributacao = 2
+    rule.save(update_fields=["simples_codigo_tributacao", "updated_at"])
+
+    issue = create_nf_issue(
+        tenant=tenant_a,
+        idempotency_key="payload-nfsen-sn-code",
+        provider=emission_setup["provider"],
+        customer=emission_setup["customer"],
+        service=emission_setup["service"],
+        fiscal_profile=emission_setup["profile"],
+        ibge_code="3504107",
+        competence_date=date(2024, 6, 15),
+        amount_cents=10000,
+    )
+    body = to_focus_nfsen(issue)
+    assert body["codigo_opcao_simples_nacional"] == 2
+
+
+@pytest.mark.django_db
+def test_to_focus_nfsen_paliq_when_retained(tenant_a, emission_setup):
+    from apps.fiscal.models import MunicipalTaxRule, TaxRuleCatalog
+
+    catalog = TaxRuleCatalog.objects.filter(
+        tenant=tenant_a, status=TaxRuleCatalog.Status.PUBLISHED
+    ).first()
+    rule = MunicipalTaxRule.objects.filter(catalog=catalog).first()
+    rule.iss_retained = True
+    rule.iss_rate = Decimal("0.0500")
+    rule.save(update_fields=["iss_retained", "iss_rate", "updated_at"])
+
+    issue = create_nf_issue(
+        tenant=tenant_a,
+        idempotency_key="payload-nfsen-retained",
+        provider=emission_setup["provider"],
+        customer=emission_setup["customer"],
+        service=emission_setup["service"],
+        fiscal_profile=emission_setup["profile"],
+        ibge_code="3504107",
+        competence_date=date(2024, 6, 15),
+        amount_cents=10000,
+    )
+    body = to_focus_nfsen(issue)
+    assert body["tipo_retencao_iss"] == 2
+    assert body["percentual_aliquota_relativa_municipio"] == 5.0

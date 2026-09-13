@@ -2,6 +2,8 @@ from datetime import timedelta
 import os
 from pathlib import Path
 
+from config.db_gate import assert_sqlite_allowed, env_truthy
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
@@ -30,6 +32,18 @@ DEBUG = env("DJANGO_DEBUG", "true").lower() == "true"
 _allowed = env("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,testserver") or ""
 ALLOWED_HOSTS: list[str] = [h.strip() for h in _allowed.split(",") if h.strip()]
 
+_csrf_origins = env("CSRF_TRUSTED_ORIGINS", "") or ""
+CSRF_TRUSTED_ORIGINS: list[str] = [
+    o.strip() for o in _csrf_origins.split(",") if o.strip()
+]
+if DEBUG and not CSRF_TRUSTED_ORIGINS:
+    CSRF_TRUSTED_ORIGINS = [
+        "http://127.0.0.1:8000",
+        "http://localhost:8000",
+    ]
+
+CSRF_FAILURE_VIEW = "apps.hub_v4.csrf.hub_csrf_failure"
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -44,8 +58,10 @@ INSTALLED_APPS = [
     "apps.ops",
     "apps.issuance",
     "apps.nfe",
+    "apps.nfce",
     "apps.billing",
     "apps.das",
+    "apps.metering",
     "apps.channel",
     "apps.scheduling",
     "apps.food",
@@ -69,7 +85,7 @@ ROOT_URLCONF = "config.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        "DIRS": [BASE_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -84,8 +100,10 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-if env("EXEQ_TEST_SQLITE", "").lower() in {"1", "true", "yes"}:
-    # Lab offline: pytest sem Postgres/docker (não usar em prod)
+assert_sqlite_allowed()
+
+if env_truthy("EXEQ_TEST_SQLITE"):
+    # Offline: pytest sem Postgres/docker (gate PO — bloqueado fora de pytest)
     _sqlite = BASE_DIR / ".storage" / "pytest_exeq.sqlite3"
     _sqlite.parent.mkdir(parents=True, exist_ok=True)
     DATABASES = {
@@ -193,6 +211,24 @@ CELERY_BEAT_SCHEDULE = {
         "task": "food.sync_marketplace_orders",
         "schedule": float(env("FOOD_MARKETPLACE_SYNC_INTERVAL_SECONDS", "120") or "120"),
     },
+    # iFood fiscal: reconcile PROCESSING preso (D6 — 15 min)
+    "food-reconcile-ifood-fiscal": {
+        "task": "food.reconcile_ifood_fiscal",
+        "schedule": float(env("FOOD_FISCAL_RECONCILE_INTERVAL_SECONDS", "900") or "900"),
+        "kwargs": {"limit": int(env("FOOD_FISCAL_RECONCILE_BATCH_LIMIT", "50") or "50")},
+    },
+    # NFC-e: polling/submitting órfãos (paridade nfe.reconcile_stale)
+    "nfce-reconcile-stale": {
+        "task": "nfce.reconcile_stale",
+        "schedule": float(env("NFCE_RECONCILE_INTERVAL_SECONDS", "120") or "120"),
+        "kwargs": {"limit": int(env("NFCE_RECONCILE_BATCH_LIMIT", "50") or "50")},
+    },
+    # NF-e entrada: enfileira distNSU por cursor automático
+    "nfe-entrada-distribuicao-tick": {
+        "task": "nfe.distribuicao_tick",
+        "schedule": float(env("NFE_ENTRADA_TICK_INTERVAL_SECONDS", "900") or "900"),
+        "kwargs": {"limit": int(env("NFE_ENTRADA_TICK_BATCH_LIMIT", "50") or "50")},
+    },
 }
 NF_SYNC_PROCESSING = env("NF_SYNC_PROCESSING", "false").lower() == "true"
 # Reforma Tributária (NFS-e Nacional): off | shadow (calcula+snapshot, não envia) | emit
@@ -210,6 +246,17 @@ TAX_RULE_NATIONAL_FALLBACK = (
 )
 # Teto para emissões smoke/fábrica de teste (centavos). R$ 15,00 = 1500 → max 1499.
 NFSE_TEST_MAX_AMOUNT_CENTS = int(env("NFSE_TEST_MAX_AMOUNT_CENTS", "1499") or "1499")
+# Portão cNBS no DPS: off (default) | homolog (só tpAmb=2) | on (produção+homolog).
+NFSE_DPS_CNBS_MODE = (env("NFSE_DPS_CNBS_MODE", "off") or "off").strip().lower()
+# Sync status com portal SEFIN ao abrir listagem Hub (assíncrono; throttle por nota).
+NFSE_PORTAL_SYNC_ENABLED = env("NFSE_PORTAL_SYNC_ENABLED", "true").lower() == "true"
+NFSE_PORTAL_SYNC_MIN_INTERVAL_SECONDS = int(
+    env("NFSE_PORTAL_SYNC_MIN_INTERVAL_SECONDS", "300") or "300"
+)
+NFSE_PORTAL_SYNC_FORCE_INTERVAL_SECONDS = int(
+    env("NFSE_PORTAL_SYNC_FORCE_INTERVAL_SECONDS", "30") or "30"
+)
+NFSE_PORTAL_SYNC_LIST_LIMIT = int(env("NFSE_PORTAL_SYNC_LIST_LIMIT", "15") or "15")
 WEBHOOK_GATEWAY_SECRET = env("WEBHOOK_GATEWAY_SECRET", "dev-webhook-secret")
 # Fail-closed em DEBUG=False (ou FORCE_SECURE_SECRETS=true). Ver shared/security_checks.py
 FORCE_SECURE_SECRETS = env("FORCE_SECURE_SECRETS", "false").lower() == "true"
@@ -238,6 +285,11 @@ ALLOW_ENV_INTER_CREDENTIALS_FALLBACK = (
 )
 PAYMENT_HTTP_MODE = env("PAYMENT_HTTP_MODE", "stub")  # stub | http
 PAYMENT_DEFAULT_PROVIDER = env("PAYMENT_DEFAULT_PROVIDER", "inter")  # inter|asaas|c6
+# Food Mercado Pago — override isolado do billing (FOOD_MP_HTTP_MODE vazio → PAYMENT_HTTP_MODE)
+FOOD_MP_HTTP_MODE = env("FOOD_MP_HTTP_MODE", "")
+FOOD_MP_WEBHOOK_SECRET = env("FOOD_MP_WEBHOOK_SECRET", "")
+MERCADOPAGO_ACCESS_TOKEN = env("MERCADOPAGO_ACCESS_TOKEN", "")
+MERCADOPAGO_PUBLIC_KEY = env("MERCADOPAGO_PUBLIC_KEY", "")
 # Food marketplace (iFood / aiqfome) — stub | http
 MARKETPLACE_HTTP_MODE = env("MARKETPLACE_HTTP_MODE", "stub")
 MARKETPLACE_HTTP_TIMEOUT = float(env("MARKETPLACE_HTTP_TIMEOUT", "15") or "15")
@@ -339,8 +391,23 @@ NFE_ENABLED = (env("NFE_ENABLED", "false") or "false").lower() in ("1", "true", 
 NFE_HTTP_MODE = env("NFE_HTTP_MODE", "stub")  # stub | http (SEFAZ-SP)
 NFE_HTTP_DRY_RUN = (env("NFE_HTTP_DRY_RUN", "false") or "false").lower() in ("1", "true", "yes")
 NFE_HTTP_TIMEOUT = int(env("NFE_HTTP_TIMEOUT", "60") or "60")
+# CA bundle TLS SEFAZ (ICP-Brasil v10); vazio = bundle em integrations/sefaz_nfe/certs/
+NFE_SEFAZ_CA_BUNDLE = env("NFE_SEFAZ_CA_BUNDLE", "")
 NFE_DEFAULT_TP_AMB = env("NFE_DEFAULT_TP_AMB", "2")  # 2 homolog | 1 produção
 NFE_LAYOUT_VERSION = env("NFE_LAYOUT_VERSION", "pl009-stub")
+NFE_RTC_MODE = env("NFE_RTC_MODE", "shadow")  # off | shadow | emit
+NFE_CATALOG_STRICT = (env("NFE_CATALOG_STRICT", "false") or "false").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+GOODS_CROSS_VALIDATE = env("GOODS_CROSS_VALIDATE", "") or env("NFE_CROSS_VALIDATE", "warn")
+# off | warn | block — NF-e + NFC-e (ADR-GOODS-VALIDATE-V1); NFE_CROSS_VALIDATE legado
+NFE_CROSS_VALIDATE = GOODS_CROSS_VALIDATE
+NFE_PRODUCT_IMPORT_MAX_ROWS = int(env("NFE_PRODUCT_IMPORT_MAX_ROWS", "500") or "500")
+NFE_PRODUCT_IMPORT_MAX_BYTES = int(
+    env("NFE_PRODUCT_IMPORT_MAX_BYTES", str(3 * 1024 * 1024)) or str(3 * 1024 * 1024)
+)
 NFE_PIVOT_UF = env("NFE_PIVOT_UF", "SP")
 # I5: reconciliação polling → authorized|rejected|failed
 NFE_POLL_COUNTDOWN = int(env("NFE_POLL_COUNTDOWN", "15") or "15")
@@ -350,6 +417,52 @@ NFE_SYNC_POLL = (env("NFE_SYNC_POLL", "false") or "false").lower() in ("1", "tru
 NFE_RECONCILE_STALE_SECONDS = int(env("NFE_RECONCILE_STALE_SECONDS", "120") or "120")
 # RF-41: path opcional para XSD oficial (vazio = só preflight estrutural)
 NFE_XSD_PATH = env("NFE_XSD_PATH", "")
+
+# IBPT — tributos aproximados (Lei 12.741) para vTotTrib NF-e
+IBPT_ENABLED = (env("IBPT_ENABLED", "false") or "false").lower() in ("1", "true", "yes")
+IBPT_DATA_PATH = env("IBPT_DATA_PATH", "")
+
+# DANFE — diretório opcional de logos por CNPJ ({cnpj}.png)
+NFE_DANFE_LOGO_DIR = env("NFE_DANFE_LOGO_DIR", "")
+
+# NF-e entrada — distribuição DFe + manifestação (ADR-NFE-ENTRADA-001)
+NFE_ENTRADA_ENABLED = (env("NFE_ENTRADA_ENABLED", "false") or "false").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+NFE_ENTRADA_HTTP_MODE = env("NFE_ENTRADA_HTTP_MODE", "stub")  # stub | http
+NFE_ENTRADA_HTTP_DRY_RUN = (env("NFE_ENTRADA_HTTP_DRY_RUN", "false") or "false").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+NFE_ENTRADA_STUB_MODE = env("NFE_ENTRADA_STUB_MODE", "137")  # 137 | 138 | 656
+NFE_ENTRADA_DIST_TIMEOUT = int(env("NFE_ENTRADA_DIST_TIMEOUT", "60") or "60")
+NFE_ENTRADA_DIST_MAX_RETRIES = int(env("NFE_ENTRADA_DIST_MAX_RETRIES", "3") or "3")
+NFE_ENTRADA_DIST_BACKOFF_BASE = int(env("NFE_ENTRADA_DIST_BACKOFF_BASE", "300") or "300")
+NFE_ENTRADA_BLOCK_656_SECONDS = int(env("NFE_ENTRADA_BLOCK_656_SECONDS", "3600") or "3600")
+NFE_ENTRADA_DEFAULT_INTERVAL = int(env("NFE_ENTRADA_DEFAULT_INTERVAL", "3600") or "3600")
+NFE_ENTRADA_MANUAL_COOLDOWN_SECONDS = int(
+    env("NFE_ENTRADA_MANUAL_COOLDOWN_SECONDS", "4200") or "4200"
+)  # 70 min — consulta manual Hub/API
+NFE_ENTRADA_TICK_INTERVAL_SECONDS = int(env("NFE_ENTRADA_TICK_INTERVAL_SECONDS", "900") or "900")
+NFE_ENTRADA_TICK_BATCH_LIMIT = int(env("NFE_ENTRADA_TICK_BATCH_LIMIT", "50") or "50")
+
+# NFC-e PDV (mod 65) — default off; lab: NFCE_ENABLED=true + NFCE_HTTP_MODE=stub
+NFCE_ENABLED = (env("NFCE_ENABLED", "false") or "false").lower() in ("1", "true", "yes")
+NFCE_HTTP_MODE = env("NFCE_HTTP_MODE", "stub")  # stub | http (SEFAZ-SP)
+NFCE_DEFAULT_TP_AMB = env("NFCE_DEFAULT_TP_AMB", "2")
+NFCE_LAYOUT_VERSION = env("NFCE_LAYOUT_VERSION", "pl009-stub")
+NFCE_UF_POLICY = env("NFCE_UF_POLICY", "sp_v2026")
+NFCE_RTC_MODE = env("NFCE_RTC_MODE", "shadow")  # off | shadow | emit
+NFCE_HTTP_DRY_RUN = (env("NFCE_HTTP_DRY_RUN", "false") or "false").lower() in ("1", "true", "yes")
+NFCE_HTTP_TIMEOUT = int(env("NFCE_HTTP_TIMEOUT", "60") or "60")
+NFCE_SYNC_POLL = (env("NFCE_SYNC_POLL", "false") or "false").lower() in ("1", "true", "yes")
+NFCE_RECONCILE_STALE_SECONDS = int(env("NFCE_RECONCILE_STALE_SECONDS", "120") or "120")
+FOOD_FISCAL_RECONCILE_STALE_SECONDS = int(env("FOOD_FISCAL_RECONCILE_STALE_SECONDS", "900") or "900")
+NFCE_CSC_ID = env("NFCE_CSC_ID", "1")
+NFCE_CSC_TOKEN = env("NFCE_CSC_TOKEN", "")
 
 FOCUS_HTTP_MODE = env("FOCUS_HTTP_MODE", "stub")  # stub | http
 FOCUS_API_BASE_URL = env(
@@ -445,3 +558,6 @@ EMAIL_USE_SSL = (env("EMAIL_USE_SSL", "false") or "false").lower() in (
 )
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "EXEQ Hub <noreply@exeq.local>")
 SERVER_EMAIL = env("SERVER_EMAIL", DEFAULT_FROM_EMAIL)
+
+# Hub V4 — navegação lateral (spec PO; equivalente UNFOLD["SIDEBAR"] para /hub/)
+from config.hub_sidebar import HUB_V4_SIDEBAR  # noqa: E402

@@ -53,9 +53,13 @@ def test_openapi_includes_nfe_paths():
 
 
 @pytest.fixture
-def nfe_settings(settings):
+def nfe_settings(settings, tenant_a):
+    from apps.accounts.tenant_emission import apply_emission_flags
+
     settings.NFE_ENABLED = True
     settings.NFE_HTTP_MODE = "stub"
+    tenant_a.settings = apply_emission_flags(tenant_a.settings, nfse=True, nfe=True)
+    tenant_a.save(update_fields=["settings", "updated_at"])
     return settings
 
 

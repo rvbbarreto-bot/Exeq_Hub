@@ -8,10 +8,11 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from apps.master_data.models import Customer, Provider, TaxRegime
-from apps.nfe.models import NfeInvoice
+from apps.nfe.models import NfeInvoice, NfeInvoiceItem
 from apps.nfe.services import create_draft, create_product, replace_items, validate_invoice
 from apps.nfe.tax import (
     TAX_ENGINE_VERSION,
+    build_validation,
     calculate_item_taxes,
     default_icms_interestadual_rate_bp,
     is_interstate,
@@ -126,6 +127,55 @@ def customer_mg(tenant_a):
             "codigo_ibge": "3106200",
         },
     )
+
+
+@pytest.mark.django_db
+def test_build_validation_accepts_codigo_municipio_ibge_from_hub_cadastro(
+    tenant_a, provider_sp, customer_mg,
+):
+    """Hub Empresas/Clientes gravam codigo_municipio_ibge — não codigo_ibge."""
+    provider_sp.address = {
+        **provider_sp.address,
+        "codigo_ibge": "",
+        "codigo_municipio_ibge": "3504107",
+    }
+    provider_sp.save(update_fields=["address", "updated_at"])
+    customer_mg.address = {
+        **customer_mg.address,
+        "codigo_ibge": "",
+        "codigo_municipio_ibge": "3106200",
+    }
+    customer_mg.save(update_fields=["address", "updated_at"])
+
+    inv = NfeInvoice.objects.create(
+        tenant=tenant_a,
+        provider=provider_sp,
+        customer=customer_mg,
+        idempotency_key="u5-ibge-hub-key",
+        issue_date=date(2026, 8, 6),
+        ind_ie_dest="9",
+    )
+    NfeInvoiceItem.objects.create(
+        invoice=inv,
+        line_number=1,
+        code="X1",
+        description="Item",
+        ncm="21069090",
+        cfop="6102",
+        unit="UN",
+        quantity="1",
+        unit_price_cents=1000,
+        total_cents=1000,
+        csosn="102",
+    )
+
+    result = build_validation(inv, require_ie=False)
+    ibge_fields = {
+        e["field"]
+        for e in result["field_errors"]
+        if e["field"].endswith("codigo_ibge")
+    }
+    assert ibge_fields == set()
 
 
 @pytest.mark.django_db

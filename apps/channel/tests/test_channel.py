@@ -41,8 +41,12 @@ def test_same_message_id_idempotent(tenant_a):
     assert a.id == b.id
 
 
+_WH_TOKEN = {"HTTP_X_EXEQ_WEBHOOK_TOKEN": "test-webhook-token"}
+
+
 @pytest.mark.django_db
 def test_evolution_webhook_api(api_client, tenant_a):
+    # WA-FLX-08: sem telefone autorizado no tenant, o fluxo é bloqueado.
     response = api_client.post(
         "/api/v1/webhooks/evolution",
         {
@@ -52,6 +56,23 @@ def test_evolution_webhook_api(api_client, tenant_a):
             "text": "emitir",
         },
         format="json",
+        **_WH_TOKEN,
+    )
+    assert response.status_code == 200
+    assert response.data["status"] == "blocked"
+
+    tenant_a.settings = {"whatsapp_authorized_phones": ["+5511777777777"]}
+    tenant_a.save(update_fields=["settings"])
+    response = api_client.post(
+        "/api/v1/webhooks/evolution",
+        {
+            "tenant_slug": "acme",
+            "phone_e164": "+5511777777777",
+            "message_id": "w2",
+            "text": "emitir",
+        },
+        format="json",
+        **_WH_TOKEN,
     )
     assert response.status_code == 200
     assert response.data["status"] == "collecting"

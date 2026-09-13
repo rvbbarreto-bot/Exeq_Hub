@@ -8,9 +8,10 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
-from apps.accounts.certificates import get_primary_certificate
+from apps.accounts.certificates import certificate_purpose_ok, get_primary_certificate
 from apps.accounts.models import DigitalCertificate
 from apps.master_data.models import Provider
+from apps.nfe.ie_validation import validate_emitter_ie
 from apps.nfe.models import NfeNumberSeries
 from apps.nfe.services import nfe_feature_enabled
 from integrations.sefaz_nfe.endpoints import list_supported_ufs
@@ -166,8 +167,6 @@ def build_gate_payload(
         addr = provider.address if isinstance(provider.address, dict) else {}
         uf = _provider_uf(addr)
         ie = (provider.state_registration or "").strip()
-        ie_digits = _digits(ie)
-        ie_isento = ie.upper() in {"ISENTO", "ISENTA"}
         ibge = _digits(str(addr.get("codigo_ibge") or addr.get("cMun") or ""))
         logradouro = str(addr.get("logradouro") or addr.get("street") or "").strip()
 
@@ -201,17 +200,7 @@ def build_gate_payload(
                 "must": True,
             }
         )
-        # IE: stub aceita vazio; http exige dígitos ou ISENTO
-        if mode == "stub":
-            ie_ok = True
-            ie_label = f"IE={'ok' if ie else 'pendente (ok em stub)'}"
-        else:
-            ie_ok = ie_isento or len(ie_digits) >= 2
-            ie_label = (
-                "IE isento"
-                if ie_isento
-                else (f"IE ok ({len(ie_digits)} dig.)" if ie_ok else "IE pendente/inválida (obrigatória em http)")
-            )
+        ie_ok, ie_label = validate_emitter_ie(ie, http_mode=(mode == "http"))
         checks.append({"id": "ie", "ok": ie_ok, "label": ie_label, "must": True})
 
         crt_ok = bool(getattr(provider, "tax_regime", None))
@@ -262,6 +251,24 @@ def build_gate_payload(
             if cert and cert.status not in usable:
                 cert_label = f"Cert A1 inutilizável ({cert.status})"
         checks.append({"id": "cert", "ok": cert_ok, "label": cert_label, "must": True})
+
+        cert_nfe_ok = True
+        cert_nfe_label = "Cert A1 permissão NF-e (stub)"
+        if mode == "http" and cert is not None and cert_ok:
+            cert_nfe_ok, cert_nfe_label = certificate_purpose_ok(
+                tenant=tenant, cnpj=provider.document, purpose="nfe"
+            )
+        elif mode == "http" and cert is None:
+            cert_nfe_ok = False
+            cert_nfe_label = "Cert A1 ausente para NF-e HTTP"
+        checks.append(
+            {
+                "id": "cert_nfe_usage",
+                "ok": cert_nfe_ok,
+                "label": cert_nfe_label,
+                "must": mode != "stub",
+            }
+        )
 
         # warning < 30d (must=false)
         cert_expiring = False

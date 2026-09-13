@@ -338,8 +338,11 @@ class CustomerFormView(View):
 
             obj.last_lookup_at = timezone.now()
             obj.save(update_fields=["last_lookup_at"])
-        messages.success(request, "Tomador cadastrado.")
-        return redirect("cadastro-customer-edit", pk=obj.pk)
+        messages.success(
+            request,
+            f'Tomador "{obj.name}" cadastrado com sucesso.',
+        )
+        return redirect("cadastro-customer-list")
 
 
 @require_http_methods(["POST"])

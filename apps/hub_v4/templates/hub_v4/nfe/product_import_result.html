@@ -1,0 +1,156 @@
+{% extends "hub_v4/base.html" %}
+
+{% load hub_v4_tags %}
+
+
+
+{% block page_subtitle %}
+
+<div class="page-subtitle">{{ preview.filename }}</div>
+
+{% endblock %}
+
+
+
+{% block page_actions %}
+
+<a class="btn btn-ghost" href="{% url 'hub-v4-nfe-products' %}">Voltar para produtos</a>
+
+{% endblock %}
+
+
+
+{% block content %}
+
+{% if preview.summary.nao_processados %}
+
+<div class="banner banner-warning">
+
+  <span>⚠</span>
+
+  <span>Importação concluída — <strong>{{ preview.summary.cadastrados|add:preview.summary.alterados }}</strong> de <strong>{{ preview.summary.total }}</strong> linhas processadas. Revise os erros abaixo.</span>
+
+</div>
+
+{% else %}
+
+<div class="banner banner-success">
+
+  <span>✓</span>
+
+  <span>Importação concluída com sucesso — {{ preview.summary.total }} linha{{ preview.summary.total|pluralize }} processada{{ preview.summary.total|pluralize }}.</span>
+
+</div>
+
+{% endif %}
+
+
+
+<div class="metricgrid">
+
+  {% kpi_card "Linhas na planilha" preview.summary.total tone="total" %}
+
+  {% kpi_card "Importados" preview.summary.cadastrados tone="ok" %}
+
+  {% kpi_card "Alterados" preview.summary.alterados tone="ok" %}
+
+  {% kpi_card "Não processados" preview.summary.nao_processados tone="err" %}
+
+</div>
+
+
+
+{% if preview.summary.nao_processados %}
+
+<div class="card table-card">
+
+  <table class="data">
+
+    <thead>
+
+      <tr>
+
+        <th>Linha</th>
+
+        <th>Código</th>
+
+        <th>Status</th>
+
+        <th>Detalhe</th>
+
+      </tr>
+
+    </thead>
+
+    <tbody>
+
+      {% for row in preview.rows %}
+
+      {% if row.status == "NÃO PROCESSADO" or row.messages %}
+
+      <tr>
+
+        <td class="num">{{ row.line_number }}</td>
+
+        <td class="mono">{{ row.code }}</td>
+
+        <td>{% import_status_badge row.status %}</td>
+
+        <td class="page-subtitle">{% for msg in row.messages %}{{ msg }}{% if not forloop.last %}; {% endif %}{% endfor %}</td>
+
+      </tr>
+
+      {% endif %}
+
+      {% endfor %}
+
+    </tbody>
+
+  </table>
+
+  <div class="rowcards">
+
+    {% for row in preview.rows %}
+
+    {% if row.status == "NÃO PROCESSADO" or row.messages %}
+
+    <div class="rowcard">
+
+      <div class="rowcard-top">
+
+        <span class="rowcard-title">Linha {{ row.line_number }} · {{ row.code }}</span>
+
+        {% import_status_badge row.status %}
+
+      </div>
+
+      <div class="rowcard-kv">Detalhe<b>{% for msg in row.messages %}{{ msg }}{% endfor %}</b></div>
+
+    </div>
+
+    {% endif %}
+
+    {% endfor %}
+
+  </div>
+
+</div>
+
+{% endif %}
+
+
+
+<div class="card stickyfoot">
+
+  <div class="stickyfoot-left">
+
+    <a class="btn btn-ghost" href="{% url 'hub-v4-nfe-product-import-report' token=token %}">Baixar relatório</a>
+
+  </div>
+
+  <a class="btn btn-primary" href="{% url 'hub-v4-nfe-products' %}">Ver produtos importados</a>
+
+</div>
+
+{% endblock %}
+

@@ -31,6 +31,7 @@ class AutorizacaoParse:
     x_motivo: str = ""
     protocol: str = ""
     access_key: str = ""
+    dh_recbto: str = ""
     lote_c_stat: str = ""
     lote_x_motivo: str = ""
     n_rec: str = ""  # recibo do lote (I5)
@@ -93,6 +94,7 @@ def parse_autorizacao_response(body: str | bytes) -> AutorizacaoParse:
                 x_motivo=_child_text(el, "xMotivo"),
                 protocol=_child_text(el, "nProt"),
                 access_key=_child_text(el, "chNFe"),
+                dh_recbto=_child_text(el, "dhRecbto"),
                 lote_c_stat=lote_stat,
                 lote_x_motivo=lote_mot,
                 n_rec=n_rec,
@@ -119,6 +121,7 @@ def parse_autorizacao_response(body: str | bytes) -> AutorizacaoParse:
             x_motivo=best.x_motivo or lote_mot,
             protocol=best.protocol,
             access_key=best.access_key,
+            dh_recbto=best.dh_recbto,
             lote_c_stat=lote_stat,
             lote_x_motivo=lote_mot,
             n_rec=n_rec,
@@ -137,6 +140,7 @@ def parse_autorizacao_response(body: str | bytes) -> AutorizacaoParse:
     first_mot = ""
     first_prot = ""
     first_ch = ""
+    first_dh = ""
     for el in root.iter():
         tag = _local(el.tag)
         if tag == "cStat" and el.text and not first_stat:
@@ -147,11 +151,14 @@ def parse_autorizacao_response(body: str | bytes) -> AutorizacaoParse:
             first_prot = el.text.strip()
         elif tag == "chNFe" and el.text and not first_ch:
             first_ch = el.text.strip()
+        elif tag == "dhRecbto" and el.text and not first_dh:
+            first_dh = el.text.strip()
     return AutorizacaoParse(
         c_stat=first_stat,
         x_motivo=first_mot,
         protocol=first_prot,
         access_key=first_ch,
+        dh_recbto=first_dh,
         n_rec=n_rec,
     )
 

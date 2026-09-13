@@ -35,3 +35,19 @@ class FoodInvalidTransitionError(FoodError):
 
 class FoodPaymentError(FoodError):
     code = "food_payment_error"
+
+
+class FoodPaymentProviderError(FoodPaymentError):
+    code = "food_payment_provider_error"
+
+
+class FoodPaymentEmailRequiredError(FoodPaymentError):
+    code = "food_payment_email_required"
+
+
+class FoodPaymentMethodNotAllowedError(FoodPaymentError):
+    code = "food_payment_method_not_allowed"
+
+
+class FoodPaymentCardTokenRequiredError(FoodPaymentError):
+    code = "food_payment_card_token_required"

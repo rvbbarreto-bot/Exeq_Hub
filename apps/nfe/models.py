@@ -32,6 +32,17 @@ class NfeProduct(TenantOwnedModel):
     pis_rate_bp = models.PositiveIntegerField(default=0, verbose_name="Alíquota PIS bp")
     cofins_cst = models.CharField(max_length=2, default="07", verbose_name="CST COFINS")
     cofins_rate_bp = models.PositiveIntegerField(default=0, verbose_name="Alíquota COFINS bp")
+    cest = models.CharField(max_length=7, blank=True, default="", verbose_name="CEST")
+    gtin = models.CharField(
+        max_length=14,
+        blank=True,
+        default="",
+        verbose_name="GTIN/EAN",
+        help_text="Opcional. Vazio → SEM GTIN no XML.",
+    )
+    ipi_cst = models.CharField(max_length=2, blank=True, default="", verbose_name="CST IPI")
+    ip_enq = models.CharField(max_length=3, blank=True, default="", verbose_name="cEnq IPI")
+    ipi_rate_bp = models.PositiveIntegerField(default=0, verbose_name="Alíquota IPI bp")
     is_active = models.BooleanField(default=True, verbose_name="Ativo")
 
     class Meta:
@@ -351,4 +362,12 @@ class NfeTransmissionAttempt(TenantOwnedModel):
 
     def __str__(self) -> str:
         return f"{self.stage} {self.c_stat or self.result_status}"
+
+
+from apps.nfe.entrada.models import (  # noqa: E402,F401
+    NfeDistribuicaoCursor,
+    NfeDistribuicaoSyncLog,
+    NfeEntradaDocument,
+    NfeEntradaManifestation,
+)
 

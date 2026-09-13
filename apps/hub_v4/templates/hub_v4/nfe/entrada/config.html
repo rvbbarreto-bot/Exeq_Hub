@@ -1,0 +1,47 @@
+{% extends "hub_v4/base.html" %}
+
+{% block page_actions %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-nfe-entrada-list' %}">Lista</a>
+{% endblock %}
+
+{% block content %}
+<form class="card" method="post">
+  {% csrf_token %}
+  <div class="section-label" style="margin-top:0;">Distribuição automática (distNSU)</div>
+  <p style="color:var(--text-muted);font-size:.9rem;">
+    Consulta periódica ao Ambiente Nacional para capturar NF-e destinadas ao CNPJ.
+  </p>
+  {% if providers|length > 1 %}
+  <div class="field">
+    <label for="provider_id">Empresa</label>
+    <select id="provider_id" name="provider_id" onchange="window.location='?provider_id='+this.value">
+      {% for p in providers %}
+      <option value="{{ p.id }}" {% if provider_id == p.id|stringformat:"s" %}selected{% endif %}>{{ p.legal_name }} · {{ p.document }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% else %}
+  <input type="hidden" name="provider_id" value="{{ provider_id }}">
+  {% endif %}
+  {% if cursor %}
+  <div class="form-grid" style="margin-bottom:12px;">
+    <div><span style="color:var(--text-muted);font-size:.8rem;">CNPJ</span><div class="mono">{{ cursor.cnpj }}</div></div>
+    <div><span style="color:var(--text-muted);font-size:.8rem;">ultNSU</span><div class="mono">{{ cursor.ult_nsu }}</div></div>
+    <div><span style="color:var(--text-muted);font-size:.8rem;">Ambiente</span><div>{{ cursor.get_tp_amb_display }}</div></div>
+  </div>
+  <label class="checkbox-row">
+    <input type="checkbox" name="automatic_enabled" {% if cursor.automatic_enabled %}checked{% endif %}>
+    Habilitar consulta automática (Celery Beat)
+  </label>
+  <div class="field" style="margin-top:12px;max-width:240px;">
+    <label for="interval_seconds">Intervalo entre consultas (segundos)</label>
+    <input id="interval_seconds" name="interval_seconds" type="number" min="300" max="86400" value="{{ cursor.interval_seconds }}">
+  </div>
+  {% if can_write %}
+  <button type="submit" class="btn btn-primary" style="margin-top:12px;">Salvar</button>
+  {% endif %}
+  {% else %}
+  <p>Selecione uma empresa para configurar.</p>
+  {% endif %}
+</form>
+{% endblock %}

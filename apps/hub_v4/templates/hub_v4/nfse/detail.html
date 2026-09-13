@@ -1,89 +1,242 @@
-{% extends "hub_v4/base.html" %}
-{% load hub_v4_tags %}
-
-{% block page_actions %}
-{% if issue.status == "draft" %}
-<a class="btn btn-primary" href="{% url 'hub-v4-nfse-wizard' %}?draft={{ issue.id }}">Continuar rascunho</a>
-{% elif docs.pdf %}
-<a class="btn btn-primary" href="{% url 'hub-v4-nfse-doc-download' issue.id 'pdf' %}">Baixar PDF</a>
-{% endif %}
-{% if docs.xml %}
-<a class="btn btn-ghost" href="{% url 'hub-v4-nfse-doc-download' issue.id 'xml' %}">Baixar XML</a>
-{% endif %}
-<a class="btn btn-ghost" href="{% url 'hub-v4-nfse-documents' issue.id %}">Documentos Técnicos</a>
-<a class="btn btn-ghost" href="{% url 'hub-v4-nfse-list' %}">Voltar à lista</a>
-{% endblock %}
-
-{% block content %}
-<div class="card" style="margin-bottom:12px;">
-  <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center;">
-    <div>
-      <div style="font-family:var(--font-display);font-weight:700;font-size:1.1rem;">
-        {{ issue.customer.name }}
-      </div>
-      <div style="color:var(--text-muted);font-size:.9rem;">
-        Ref {{ issue.focus_ref|default:"—" }} · Prestador {{ issue.provider.legal_name }}
-      </div>
-    </div>
-    {% status_badge issue.status %}
-  </div>
-</div>
-
-<div class="card" style="margin-bottom:12px;">
-  <div class="section-label" style="margin-top:0;">Resumo fiscal</div>
-  <div class="form-grid">
-    <div><span style="color:var(--text-muted);font-size:.8rem;">Valor</span><div><strong>{{ issue.amount_cents|cents_brl }}</strong></div></div>
-    <div><span style="color:var(--text-muted);font-size:.8rem;">Competência</span><div>{{ issue.competence_date|date:"d/m/Y" }}</div></div>
-    <div><span style="color:var(--text-muted);font-size:.8rem;">Serviço</span><div>{{ issue.service.description }}</div></div>
-    <div><span style="color:var(--text-muted);font-size:.8rem;">IBGE</span><div>{{ issue.ibge_code }}</div></div>
-    {% if issue.rejection_code %}
-    <div class="full"><span style="color:var(--text-muted);font-size:.8rem;">Rejeição</span><div>{{ issue.rejection_code }}</div></div>
-    {% endif %}
-  </div>
-</div>
-
-<div class="card" style="margin-bottom:12px;">
-  <div class="section-label" style="margin-top:0;">Timeline fiscal</div>
-  {% include "hub_v4/components/timeline.html" with timeline=timeline %}
-</div>
-
-<div class="card" style="margin-bottom:12px;">
-  <div class="section-label" style="margin-top:0;">Documentos</div>
-  {% if artifacts %}
-  <ul style="margin:0;padding-left:18px;">
-    {% for a in artifacts %}
-    <li>
-      {{ a.get_kind_display }}
-      ·
-      <a href="{% url 'hub-v4-nfse-doc-download' issue.id a.kind %}">Baixar</a>
-    </li>
-    {% endfor %}
-  </ul>
-  <a class="btn btn-ghost btn-sm" style="margin-top:10px;" href="{% url 'hub-v4-nfse-documents' issue.id %}">Abrir documentos técnicos</a>
-  {% else %}
-  <p style="color:var(--text-muted);margin:0;">Nenhum documento armazenado ainda.</p>
-  {% endif %}
-</div>
-
-<div class="card">
-  <div class="section-label" style="margin-top:0;">Histórico de eventos</div>
-  {% if events %}
-  <table class="data">
-    <thead><tr><th>Quando</th><th>De</th><th>Para</th><th>Ator</th></tr></thead>
-    <tbody>
-      {% for ev in events %}
-      <tr>
-        <td>{{ ev.occurred_at|date:"d/m/Y H:i" }}</td>
-        <td>{{ ev.from_status|default:"—" }}</td>
-        <td>{{ ev.to_status }}</td>
-        <td>{{ ev.actor|default:"—" }}</td>
-      </tr>
-      {% empty %}
-      {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p style="color:var(--text-muted);margin:0;">Sem eventos registrados.</p>
-  {% endif %}
-</div>
-{% endblock %}
+{% extends "hub_v4/base.html" %}
+{% load hub_v4_tags %}
+
+{% block page_crumb %}{% endblock %}
+
+{% block page_actions %}
+{% if issue.status == "draft" %}
+<a class="btn btn-primary" href="{% url 'hub-v4-nfse-wizard' %}?draft={{ issue.id }}">Continuar rascunho</a>
+{% elif docs.pdf %}
+<a class="btn btn-primary" href="{% url 'hub-v4-nfse-doc-download' issue.id 'pdf' %}">Baixar PDF</a>
+{% endif %}
+{% if docs.xml %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-nfse-doc-download' issue.id 'xml' %}">Baixar XML</a>
+{% endif %}
+<a class="btn btn-ghost" href="{% url 'hub-v4-nfse-documents' issue.id %}">Documentos</a>
+<a class="btn btn-ghost" href="{% url 'hub-v4-nfse-list' %}">Voltar</a>
+{% endblock %}
+
+{% block content %}
+<div class="card detail-header">
+  <div class="detail-header-main">
+    <h2 class="detail-title">{{ issue.customer.name }}</h2>
+    <p class="detail-subtitle">
+      Ref <span class="mono">{{ issue.focus_ref|default:"—" }}</span>
+      · {{ issue.provider.legal_name }}
+    </p>
+  </div>
+  {% status_badge issue.status %}
+</div>
+
+{% if rejection %}
+<div class="card rejection-alert">
+  <div class="rejection-alert-head">
+    <span class="rejection-alert-icon" aria-hidden="true">!</span>
+    <div>
+      <div class="rejection-alert-title">{{ rejection.title }}</div>
+      <p class="rejection-alert-message">{{ rejection.message }}</p>
+    </div>
+  </div>
+  {% if rejection.hint %}
+  <p class="rejection-alert-hint">{{ rejection.hint }}</p>
+  {% endif %}
+  {% if rejection.code %}
+  <p class="rejection-alert-code">Referência técnica: <span class="mono">{{ rejection.code }}</span></p>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="section-label" style="margin-top:0;">Resumo fiscal</div>
+  <div class="fiscal-summary-grid">
+    <div class="fiscal-summary-kpi">
+      <span>Valor</span>
+      <strong class="num fiscal-summary-value">{{ issue.amount_cents|cents_brl }}</strong>
+    </div>
+    <div class="detail-field">
+      <span>Competência</span>
+      <div>{{ issue.competence_date|date:"d/m/Y" }}</div>
+    </div>
+    <div class="detail-field">
+      <span>IBGE</span>
+      <div class="mono">{{ issue.ibge_code }}</div>
+    </div>
+    <div class="detail-field detail-field--full">
+      <span>Serviço</span>
+      <div><strong>{{ issue.service.service_code }}</strong> · {{ issue.service.description }}</div>
+    </div>
+    <div class="detail-field detail-field--full">
+      <span>Descrição na nota</span>
+      <div class="detail-text">{{ descricao_nota }}</div>
+    </div>
+    {% if informacoes_complementares %}
+    <div class="detail-field detail-field--full">
+      <span>Informações complementares</span>
+      <div class="detail-text">{{ informacoes_complementares }}</div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if sefin %}
+<div class="card">
+  <div class="section-label" style="margin-top:0;">Integração SEFIN</div>
+  {% if sefin.integrated %}
+  <div class="banner banner-success" style="margin-bottom:12px;">
+    Integrada na SEFIN Nacional · cStat {{ sefin.c_stat|default:"100" }}
+    {% if sefin.n_nfse %} · NFS-e <strong>{{ sefin.n_nfse }}</strong>{% endif %}
+  </div>
+  {% elif sefin.reject_local %}
+  <div class="banner banner-warning" style="margin-bottom:12px;">
+    {% if rejection %}
+    {{ rejection.title }} — a DPS não chegou a ser autorizada na SEFIN.
+    {% else %}
+    Não enviada à SEFIN — validação local antes do envio.
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="banner banner-warning" style="margin-bottom:12px;">
+    Ainda sem comprovante de autorização SEFIN nesta emissão.
+  </div>
+  {% endif %}
+  <div class="detail-grid">
+    {% if sefin.n_nfse %}
+    <div class="detail-field">
+      <span>Nº NFS-e</span>
+      <strong>{{ sefin.n_nfse }}</strong>
+    </div>
+    {% endif %}
+    <div class="detail-field">
+      <span>Ambiente</span>
+      <div>{{ sefin.ambiente_label }}</div>
+    </div>
+    {% if sefin.ver_aplic %}
+    <div class="detail-field">
+      <span>Aplicativo SEFIN</span>
+      <div class="mono">{{ sefin.ver_aplic }}</div>
+    </div>
+    {% endif %}
+    {% if sefin.chave_acesso %}
+    <div class="detail-field detail-field--full">
+      <span>Chave de acesso</span>
+      <div class="mono detail-chave">{{ sefin.chave_acesso }}</div>
+    </div>
+    {% endif %}
+  </div>
+  {% if sefin.chave_acesso %}
+  <div class="detail-actions">
+    <a class="btn btn-primary btn-sm" href="{{ sefin.consulta_publica_url }}" target="_blank" rel="noopener">
+      Consulta pública
+    </a>
+    <a class="btn btn-ghost btn-sm" href="{{ sefin.portal_contribuinte_url }}" target="_blank" rel="noopener">
+      Portal Contribuinte
+    </a>
+  </div>
+  <p class="hint-line" style="margin-top:10px;">
+    Consulta pública: chave acima + CNPJ <span class="mono">{{ issue.provider.document }}</span>
+    · competência {{ issue.competence_date|date:"d/m/Y" }} · {{ issue.amount_cents|cents_brl }}
+  </p>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if can_cancel %}
+<div class="card card-danger">
+  <div class="section-label section-label--danger" style="margin-top:0;">Cancelar NFS-e</div>
+  <p class="hint-line">Ação irreversível na SEFIN. Justificativa entre 15 e 150 caracteres.</p>
+  <form method="post" action="{% url 'hub-v4-nfse-cancel' issue.id %}"
+        id="form-nfse-cancel"
+        onsubmit="return confirm('Confirma o cancelamento desta NFS-e?');">
+    {% csrf_token %}
+    <div class="form-grid">
+      <div class="field full">
+        <label for="id_motivo_cancelamento">Motivo do cancelamento *</label>
+        <select id="id_motivo_cancelamento" name="motivo_cancelamento" required>
+          <option value="">Selecione…</option>
+          {% for code, label in cancel_motivos %}
+          <option value="{{ code }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field full">
+        <label for="id_justificativa">Justificativa *</label>
+        <textarea id="id_justificativa" name="justificativa" rows="3" required
+                  minlength="15" maxlength="150"
+                  placeholder="Descreva o motivo do cancelamento…"
+                  data-char-limit="150"></textarea>
+        <div class="hint-line" data-char-counter-for="id_justificativa">0 / 150 caracteres (mín. 15)</div>
+      </div>
+    </div>
+    <div class="wizard-nav form-sticky-footer">
+      <span></span>
+      <button type="submit" class="btn btn-danger">Confirmar cancelamento</button>
+    </div>
+  </form>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="section-label" style="margin-top:0;">Timeline fiscal</div>
+  {% include "hub_v4/components/timeline.html" with timeline=timeline %}
+</div>
+
+<div class="card">
+  <div class="section-label" style="margin-top:0;">Documentos</div>
+  {% if artifacts %}
+  <ul class="detail-doc-list">
+    {% for a in artifacts %}
+    <li>
+      {{ a.get_kind_display }}
+      ·
+      <a href="{% url 'hub-v4-nfse-doc-download' issue.id a.kind %}">Baixar</a>
+    </li>
+    {% endfor %}
+  </ul>
+  <a class="btn btn-ghost btn-sm" style="margin-top:10px;" href="{% url 'hub-v4-nfse-documents' issue.id %}">Documentos técnicos</a>
+  {% else %}
+  <p class="hint-line" style="margin:0;">Nenhum documento armazenado ainda.</p>
+  {% endif %}
+</div>
+
+<div class="card table-card">
+  <div class="section-label" style="margin-top:0;">Histórico de eventos</div>
+  {% if event_rows %}
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Quando</th>
+        <th>De</th>
+        <th>Para</th>
+        <th>Responsável</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for ev in event_rows %}
+      <tr>
+        <td>{{ ev.occurred_at|date:"d/m/Y H:i" }}</td>
+        <td>{% if ev.from_status %}{% status_badge ev.from_status %}{% else %}<span class="hint-line">—</span>{% endif %}</td>
+        <td>{% status_badge ev.to_status %}</td>
+        <td>{{ ev.actor_label }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="rowcards">
+    {% for ev in event_rows %}
+    <div class="rowcard">
+      <div class="rowcard-top">
+        <span class="rowcard-title">{{ ev.occurred_at|date:"d/m/Y H:i" }}</span>
+        {% status_badge ev.to_status %}
+      </div>
+      <div class="rowcard-kv">De<b>{% if ev.from_status %}{{ ev.from_label }}{% else %}—{% endif %}</b></div>
+      <div class="rowcard-kv">Para<b>{{ ev.to_label }}</b></div>
+      <div class="rowcard-kv">Responsável<b>{{ ev.actor_label }}</b></div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="hint-line" style="margin:0;">Sem eventos registrados.</p>
+  {% endif %}
+</div>
+{% endblock %}
+

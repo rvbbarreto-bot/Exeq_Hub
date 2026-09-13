@@ -119,6 +119,23 @@ class CepLookupView(APIView):
         return Response(result.as_api_dict(), status=status.HTTP_200_OK)
 
 
+class NbsSearchView(APIView):
+    """GET /api/v1/master-data/nbs/search?q=&limit=20"""
+
+    permission_classes = [IsTenantWriter]
+
+    def get(self, request):
+        from apps.master_data.nbs_import import search_nbs
+
+        q = request.query_params.get("q") or ""
+        try:
+            limit = int(request.query_params.get("limit") or 20)
+        except (TypeError, ValueError):
+            limit = 20
+        items = search_nbs(query=q, limit=limit)
+        return Response({"count": len(items), "results": items}, status=status.HTTP_200_OK)
+
+
 def _lookup_response(request, *, entity_kind: str) -> Response:
     ser = DocumentLookupSerializer(data=request.data)
     ser.is_valid(raise_exception=True)

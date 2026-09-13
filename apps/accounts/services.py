@@ -5,6 +5,7 @@ SYSTEM_ROLES: tuple[tuple[str, str], ...] = (
     ("operator", "Operator"),
     ("accountant", "Accountant"),
     ("readonly", "Read Only"),
+    ("food_operator", "Food Operator"),
 )
 
 
