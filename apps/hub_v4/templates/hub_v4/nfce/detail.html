@@ -40,7 +40,7 @@
     <div>
       <div class="rejection-alert-title">{{ invoice.get_status_display }}</div>
       <p class="rejection-alert-message">
-        {{ invoice.rejection_message|default:"A SEFAZ recusou ou não concluiu esta NFC-e." }}
+        {{ invoice|nfce_rejection_display|default:"A SEFAZ recusou ou não concluiu esta NFC-e." }}
       </p>
     </div>
   </div>

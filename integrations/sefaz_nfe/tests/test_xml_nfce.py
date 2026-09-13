@@ -80,3 +80,32 @@ def test_xml_nfce_with_cpf_dest():
     text = xml.decode("utf-8")
     assert "<dest>" in text
     assert "<CPF>" in text
+
+
+def test_xml_nfce_sn_cst49_uses_pis_outr_not_aliq():
+    """cStat 225 — CST 49 no SN exige PISOutr/COFINSOutr (não PISAliq)."""
+    snap = _sample_snapshot(omit_dest=True)
+    item = dict(snap["items"][0])
+    item["taxes"] = {
+        "icms": {"regime": "sn", "csosn": "102"},
+        "pis": {"cst": "49", "value_cents": 0, "rate_bp": 0, "base_cents": 0},
+        "cofins": {"cst": "49", "value_cents": 0, "rate_bp": 0, "base_cents": 0},
+    }
+    snap["items"] = [item]
+    text = build_nfce_xml(snapshot=snap).decode("utf-8")
+    assert "<PISOutr>" in text
+    assert "<COFINSOutr>" in text
+    assert "<PISAliq>" not in text
+    assert "<COFINSAliq>" not in text
+    assert "<vBC>0.00</vBC>" in text
+    assert "<vPIS>0.00</vPIS>" in text
+    assert "<vCOFINS>0.00</vCOFINS>" in text
+
+
+def test_xml_nfce_tpag99_includes_xpag_before_vpag():
+    snap = _sample_snapshot(omit_dest=True)
+    snap["payment"] = {"method": "99", "amount_cents": 10000}
+    text = build_nfce_xml(snapshot=snap).decode("utf-8")
+    assert "<tPag>99</tPag>" in text
+    assert "<xPag>" in text
+    assert text.index("<xPag>") < text.index("<vPag>")

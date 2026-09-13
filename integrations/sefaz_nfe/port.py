@@ -10,9 +10,15 @@ from uuid import uuid4
 
 from django.conf import settings
 
+from integrations.sefaz_nfe.messages import format_sefaz_transport_error
 from integrations.sefaz_nfe.parse import map_cstat_to_status, sanitize_sefaz_raw
 
 logger = logging.getLogger(__name__)
+
+
+def _sefaz_transport_message(exc: BaseException, *, nfce: bool = False) -> str:
+    label = "NFC-e" if nfce else "NF-e"
+    return format_sefaz_transport_error(exc, document_label=label)[:512]
 
 
 def _model_from_access_key(access_key: str) -> str:
@@ -495,7 +501,7 @@ class HttpNfeProvider:
             return NfeEmitResult(
                 status="failed",
                 rejection_code="HTTP",
-                rejection_message=f"Falha HTTP SEFAZ: {exc}",
+                rejection_message=_sefaz_transport_message(exc),
                 access_key=access_key,
                 raw=sanitize_sefaz_raw({"mode": "http", "stage": "transport"}),
                 signed_xml=signed,
@@ -620,7 +626,7 @@ class HttpNfeProvider:
             return NfeEmitResult(
                 status="failed",
                 rejection_code="HTTP",
-                rejection_message=f"Falha HTTP SEFAZ NFC-e: {exc}",
+                rejection_message=_sefaz_transport_message(exc, nfce=True),
                 access_key=access_key,
                 raw=sanitize_sefaz_raw({"mode": "http", "stage": "transport", "document_model": "65"}),
                 signed_xml=signed,
@@ -733,7 +739,7 @@ class HttpNfeProvider:
                 status="failed",
                 access_key=key,
                 rejection_code="HTTP",
-                rejection_message=f"Falha HTTP SEFAZ consulta: {exc}",
+                rejection_message=_sefaz_transport_message(exc),
                 raw=sanitize_sefaz_raw(
                     {"mode": "http", "stage": "consulta_transport", "document_model": model}
                 ),
@@ -887,7 +893,7 @@ class HttpNfeProvider:
                 status="failed",
                 access_key=key,
                 rejection_code="HTTP",
-                rejection_message=f"Falha HTTP SEFAZ cancel: {exc}",
+                rejection_message=_sefaz_transport_message(exc),
                 raw=sanitize_sefaz_raw({"mode": "http", "stage": "cancel_transport"}),
                 signed_xml=signed,
             )
@@ -1056,7 +1062,7 @@ class HttpNfeProvider:
                 status="failed",
                 access_key=key,
                 rejection_code="HTTP",
-                rejection_message=f"Falha HTTP SEFAZ CCe: {exc}",
+                rejection_message=_sefaz_transport_message(exc),
                 raw=sanitize_sefaz_raw({"mode": "http", "stage": "cce_transport"}),
                 signed_xml=signed,
             )
@@ -1212,7 +1218,7 @@ class HttpNfeProvider:
             return NfeEmitResult(
                 status="failed",
                 rejection_code="HTTP",
-                rejection_message=f"Falha HTTP SEFAZ inutilização: {exc}",
+                rejection_message=_sefaz_transport_message(exc),
                 raw=sanitize_sefaz_raw({"mode": "http", "stage": "inut_transport"}),
                 signed_xml=signed,
             )

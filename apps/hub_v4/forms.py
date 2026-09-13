@@ -5,9 +5,16 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from apps.accounts.plan_limits import PlanLimitError, assert_can_add_active_provider
+from apps.accounts.plan_limits import PlanLimitError
 from apps.master_data.models import Customer, DataSource, Provider, TaxRegime
-from apps.master_data.services import create_customer, create_provider, create_service
+from apps.master_data.services import (
+    create_customer,
+    create_provider,
+    create_service,
+    update_customer,
+    update_provider,
+    update_service,
+)
 from shared.validators import validate_cnpj, validate_cpf
 
 
@@ -60,6 +67,19 @@ def cadastral_from_post(post) -> dict[str, Any]:
     return out
 
 
+def state_registration_from_post(post) -> str:
+    """IE do emitente: checkbox isento → ISENTO; senão campo obrigatório."""
+    isento = (post.get("ie_isento") or "") in {"1", "true", "on", "yes"}
+    if isento:
+        return "ISENTO"
+    state_reg = (post.get("state_registration") or "").strip()
+    if not state_reg:
+        raise ValueError(
+            "Informe a Inscrição Estadual (IE) ou marque Isento de IE."
+        )
+    return state_reg
+
+
 def save_provider_from_post(*, tenant, post, obj: Provider | None = None) -> Provider:
     document = validate_cnpj(post.get("document") or "")
     legal_name = (post.get("legal_name") or "").strip()
@@ -68,7 +88,7 @@ def save_provider_from_post(*, tenant, post, obj: Provider | None = None) -> Pro
     trade_name = (post.get("trade_name") or "").strip()
     tax_regime = (post.get("tax_regime") or TaxRegime.SIMPLES).strip()
     municipal = (post.get("municipal_registration") or "").strip()
-    state_reg = (post.get("state_registration") or "").strip()
+    state_reg = state_registration_from_post(post)
     is_active = (post.get("is_active") or "1") in {"1", "true", "on", "yes"}
     cadastral = cadastral_from_post(post)
 
@@ -85,25 +105,21 @@ def save_provider_from_post(*, tenant, post, obj: Provider | None = None) -> Pro
             **cadastral,
         )
 
-    was_active = bool(obj.is_active)
-    if is_active and not was_active:
-        assert_can_add_active_provider(tenant)
-
-    obj.document = document
-    obj.legal_name = legal_name
-    obj.trade_name = trade_name
-    obj.tax_regime = tax_regime
-    obj.municipal_registration = municipal
-    obj.state_registration = state_reg
-    obj.is_active = is_active
-    for key, value in cadastral.items():
-        setattr(obj, key, value)
+    fields = {
+        "document": document,
+        "legal_name": legal_name,
+        "trade_name": trade_name,
+        "tax_regime": tax_regime,
+        "municipal_registration": municipal,
+        "state_registration": state_reg,
+        "is_active": is_active,
+        **cadastral,
+    }
     if cadastral.get("data_source") == DataSource.RECEITA and obj.last_lookup_at is None:
         from django.utils import timezone
 
-        obj.last_lookup_at = timezone.now()
-    obj.save()
-    return obj
+        fields["last_lookup_at"] = timezone.now()
+    return update_provider(provider=obj, **fields)
 
 
 def save_customer_from_post(*, tenant, post, obj: Customer | None = None) -> Customer:
@@ -136,20 +152,20 @@ def save_customer_from_post(*, tenant, post, obj: Customer | None = None) -> Cus
             **cadastral,
         )
 
-    obj.document = document
-    obj.document_type = document_type
-    obj.name = name
-    obj.email = email
-    obj.is_active = is_active
-    for key, value in cadastral.items():
-        setattr(obj, key, value)
-    obj.save()
-    return obj
+    return update_customer(
+        customer=obj,
+        document=document,
+        document_type=document_type,
+        name=name,
+        email=email,
+        is_active=is_active,
+        **cadastral,
+    )
 
 
 def save_fiscal_profile_from_post(*, tenant, post, obj=None):
     from apps.fiscal.bootstrap import ensure_published_rule
-    from apps.fiscal.models import FiscalProfile
+    from apps.fiscal.profile_services import create_fiscal_profile, update_fiscal_profile
 
     name = (post.get("name") or "").strip()
     if not name:
@@ -159,9 +175,7 @@ def save_fiscal_profile_from_post(*, tenant, post, obj=None):
     status = (post.get("status") or "active").strip() or "active"
 
     if obj is None:
-        if FiscalProfile.objects.filter(tenant=tenant, name=name).exists():
-            raise ValueError("Já existe um perfil com este nome.")
-        profile = FiscalProfile.objects.create(
+        profile = create_fiscal_profile(
             tenant=tenant,
             name=name,
             tax_regime=tax_regime,
@@ -169,18 +183,13 @@ def save_fiscal_profile_from_post(*, tenant, post, obj=None):
             status=status,
         )
     else:
-        if (
-            FiscalProfile.objects.filter(tenant=tenant, name=name)
-            .exclude(pk=obj.pk)
-            .exists()
-        ):
-            raise ValueError("Já existe um perfil com este nome.")
-        obj.name = name
-        obj.tax_regime = tax_regime
-        obj.iss_retention_policy = retention
-        obj.status = status
-        obj.save()
-        profile = obj
+        profile = update_fiscal_profile(
+            profile=obj,
+            name=name,
+            tax_regime=tax_regime,
+            iss_retention_policy=retention,
+            status=status,
+        )
 
     ensure = (post.get("ensure_rule") or "") in {"1", "true", "on", "yes"}
     if ensure:
@@ -279,22 +288,17 @@ def save_service_from_post(*, tenant, post, obj=None):
             is_active=is_active,
         )
 
-    if (
-        ServiceCatalogItem.objects.filter(tenant=tenant, service_code=code)
-        .exclude(pk=obj.pk)
-        .exists()
-    ):
-        raise ValueError("Já existe serviço com este código.")
-    obj.service_code = code
-    obj.description = description
-    obj.lc116_item = lc116
-    obj.codigo_tributacao_nacional_iss = nacional
-    obj.codigo_nbs = nbs_code
-    obj.nbs_item = nbs_item
-    obj.operation_kind = operation_kind
-    obj.is_active = is_active
-    obj.save()
-    return obj
+    return update_service(
+        item=obj,
+        service_code=code,
+        description=description,
+        lc116_item=lc116,
+        codigo_tributacao_nacional_iss=nacional,
+        codigo_nbs=nbs_code,
+        nbs_item=nbs_item,
+        operation_kind=operation_kind,
+        is_active=is_active,
+    )
 
 
 def parse_brl_amount_cents(

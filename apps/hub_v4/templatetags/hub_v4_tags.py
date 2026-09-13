@@ -1,6 +1,35 @@
 from django import template
 
+from integrations.sefaz_nfe.distribuicao import CSTAT_NENHUM_DOCUMENTO
+
 register = template.Library()
+
+
+@register.filter
+def nfce_rejection_display(invoice) -> str:
+    """Mensagem de rejeição/falha NFC-e amigável (inclui registros legados técnicos)."""
+    from apps.nfce.user_messages import format_nfce_rejection_message
+
+    if invoice is None:
+        return ""
+    return format_nfce_rejection_message(
+        getattr(invoice, "rejection_code", None),
+        getattr(invoice, "rejection_message", None),
+    )
+
+
+@register.filter
+def entrada_last_cstat_display(cursor) -> str:
+    """Último cStat para UI — omite código 137 (fila vazia, sem documentos)."""
+    if cursor is None:
+        return "—"
+    c_stat = (getattr(cursor, "last_c_stat", None) or "").strip()
+    motivo = (getattr(cursor, "last_x_motivo", None) or "").strip()
+    if c_stat == CSTAT_NENHUM_DOCUMENTO:
+        return motivo or "Nenhum documento localizado"
+    if c_stat:
+        return f"{c_stat} {motivo}".strip()
+    return motivo or "—"
 
 
 @register.inclusion_tag("hub_v4/components/kpi_card.html")
@@ -30,7 +59,7 @@ def import_status_badge(status):
 
 
 @register.inclusion_tag("hub_v4/components/status_badge.html")
-def status_badge(status):
+def status_badge(status, tooltip=""):
     s = (status or "").lower()
     mapping = {
         "authorized": ("success", "Autorizada"),
@@ -70,7 +99,7 @@ def entrada_manifest_badge(status):
         "nao_realizada": ("danger", "Não realizada"),
     }
     tone, label = mapping.get(s, ("neutral", status or "—"))
-    return {"tone": tone, "label": label}
+    return {"tone": tone, "label": label, "tooltip": ""}
 
 
 @register.inclusion_tag("hub_v4/components/status_badge.html")
@@ -145,3 +174,38 @@ def cents_brl(value):
     reais = cents / 100.0
     formatted = f"{reais:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     return f"R$ {formatted}"
+
+
+_MONTHS_PT = (
+    "Jan",
+    "Fev",
+    "Mar",
+    "Abr",
+    "Mai",
+    "Jun",
+    "Jul",
+    "Ago",
+    "Set",
+    "Out",
+    "Nov",
+    "Dez",
+)
+
+
+@register.filter
+def mes_label(value):
+    try:
+        year = value[:4]
+        month = int(value[5:7])
+        return f"{_MONTHS_PT[month - 1]}/{year}"
+    except (IndexError, ValueError, TypeError):
+        return value or "—"
+
+
+@register.inclusion_tag("hub_v4/components/status_badge.html")
+def consumption_badge(billable, outcome):
+    if billable:
+        return {"tone": "success", "label": "Faturável"}
+    if (outcome or "").lower() == "failure":
+        return {"tone": "danger", "label": "Falha"}
+    return {"tone": "neutral", "label": "Não faturável"}

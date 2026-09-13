@@ -61,6 +61,7 @@ INSTALLED_APPS = [
     "apps.nfce",
     "apps.billing",
     "apps.das",
+    "apps.metering",
     "apps.channel",
     "apps.scheduling",
     "apps.food",
@@ -390,6 +391,8 @@ NFE_ENABLED = (env("NFE_ENABLED", "false") or "false").lower() in ("1", "true", 
 NFE_HTTP_MODE = env("NFE_HTTP_MODE", "stub")  # stub | http (SEFAZ-SP)
 NFE_HTTP_DRY_RUN = (env("NFE_HTTP_DRY_RUN", "false") or "false").lower() in ("1", "true", "yes")
 NFE_HTTP_TIMEOUT = int(env("NFE_HTTP_TIMEOUT", "60") or "60")
+# CA bundle TLS SEFAZ (ICP-Brasil v10); vazio = bundle em integrations/sefaz_nfe/certs/
+NFE_SEFAZ_CA_BUNDLE = env("NFE_SEFAZ_CA_BUNDLE", "")
 NFE_DEFAULT_TP_AMB = env("NFE_DEFAULT_TP_AMB", "2")  # 2 homolog | 1 produção
 NFE_LAYOUT_VERSION = env("NFE_LAYOUT_VERSION", "pl009-stub")
 NFE_RTC_MODE = env("NFE_RTC_MODE", "shadow")  # off | shadow | emit
@@ -440,6 +443,9 @@ NFE_ENTRADA_DIST_MAX_RETRIES = int(env("NFE_ENTRADA_DIST_MAX_RETRIES", "3") or "
 NFE_ENTRADA_DIST_BACKOFF_BASE = int(env("NFE_ENTRADA_DIST_BACKOFF_BASE", "300") or "300")
 NFE_ENTRADA_BLOCK_656_SECONDS = int(env("NFE_ENTRADA_BLOCK_656_SECONDS", "3600") or "3600")
 NFE_ENTRADA_DEFAULT_INTERVAL = int(env("NFE_ENTRADA_DEFAULT_INTERVAL", "3600") or "3600")
+NFE_ENTRADA_MANUAL_COOLDOWN_SECONDS = int(
+    env("NFE_ENTRADA_MANUAL_COOLDOWN_SECONDS", "4200") or "4200"
+)  # 70 min — consulta manual Hub/API
 NFE_ENTRADA_TICK_INTERVAL_SECONDS = int(env("NFE_ENTRADA_TICK_INTERVAL_SECONDS", "900") or "900")
 NFE_ENTRADA_TICK_BATCH_LIMIT = int(env("NFE_ENTRADA_TICK_BATCH_LIMIT", "50") or "50")
 

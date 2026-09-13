@@ -18,6 +18,8 @@ from integrations.sefaz_nfe.xml_nfe import (
     _money_cents,
     _qty,
     _qty_str,
+    append_det_pag,
+    append_pis_cofins,
 )
 from apps.nfe.csosn import map_csosn_to_xml_group
 from integrations.sefaz_nfe.prod_fields import prod_c_ean
@@ -174,19 +176,7 @@ def build_nfce_xml(*, snapshot: dict[str, Any], access_key: str | None = None) -
             _el(grp, "pICMS", f"{Decimal(rate_bp) / Decimal(100):.4f}")
             _el(grp, "vICMS", _money_cents(int(icms_block.get("value_cents") or 0)))
 
-        for kind, tag in (("pis", "PIS"), ("cofins", "COFINS")):
-            blk = taxes.get(kind) or {}
-            parent = _el(imposto, tag)
-            cst = str(blk.get("cst") or "07")[:2]
-            if cst in ("04", "05", "06", "07", "08", "09"):
-                g = _el(parent, f"{tag}NT")
-                _el(g, "CST", cst)
-            else:
-                g = _el(parent, f"{tag}Aliq")
-                _el(g, "CST", cst)
-                _el(g, "vBC", _money_cents(int(blk.get("base_cents") or 0)))
-                _el(g, "p" + tag, f"{Decimal(int(blk.get('rate_bp') or 0)) / Decimal(100):.4f}")
-                _el(g, "v" + tag, _money_cents(int(blk.get("value_cents") or 0)))
+        append_pis_cofins(imposto, taxes, is_sn=is_sn)
 
         rtc = taxes.get("rtc") or {}
         if rtc.get("xml_ub"):
@@ -232,9 +222,7 @@ def build_nfce_xml(*, snapshot: dict[str, Any], access_key: str | None = None) -
     _el(transp, "modFrete", "9")
 
     pag = _el(inf, "pag")
-    detpag = _el(pag, "detPag")
-    _el(detpag, "tPag", str(payment.get("method") or "99")[:2])
-    _el(detpag, "vPag", _money_cents(int(payment.get("amount_cents") or pay_cents)))
+    append_det_pag(pag, payment, pay_cents)
 
     inf_adic = _el(inf, "infAdic")
     _el(inf_adic, "infCpl", "NFC-e gerada pelo EXEQ Hub (emissor proprio).")

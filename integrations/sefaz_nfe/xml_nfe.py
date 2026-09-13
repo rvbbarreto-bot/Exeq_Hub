@@ -54,6 +54,46 @@ def _crt(tax_regime: str) -> str:
     return "3"
 
 
+def append_pis_cofins(imposto: ET.Element, taxes: dict, *, is_sn: bool) -> None:
+    """PIS/COFINS por item — PISOutr exige vBC+pPIS+vPIS (ou qBCProd) + vPIS no XSD."""
+    default_pc_cst = "49" if is_sn else "07"
+    for kind, tag in (("pis", "PIS"), ("cofins", "COFINS")):
+        blk = taxes.get(kind) or {}
+        parent = _el(imposto, tag)
+        cst = str(blk.get("cst") or default_pc_cst)[:2]
+        if is_sn and cst in ("01", "02", "03"):
+            cst = "49"
+        if cst in ("04", "05", "06", "07", "08", "09"):
+            g = _el(parent, f"{tag}NT")
+            _el(g, "CST", cst)
+        elif cst in ("49", "99"):
+            g = _el(parent, f"{tag}Outr")
+            _el(g, "CST", cst)
+            base = int(blk.get("base_cents") or 0)
+            rate = int(blk.get("rate_bp") or 0)
+            value = int(blk.get("value_cents") or 0)
+            _el(g, "vBC", _money_cents(base))
+            _el(g, "p" + tag, f"{Decimal(rate) / Decimal(100):.4f}")
+            _el(g, "v" + tag, _money_cents(value))
+        else:
+            g = _el(parent, f"{tag}Aliq")
+            _el(g, "CST", cst)
+            _el(g, "vBC", _money_cents(int(blk.get("base_cents") or 0)))
+            _el(g, "p" + tag, f"{Decimal(int(blk.get("rate_bp") or 0)) / Decimal(100):.4f}")
+            _el(g, "v" + tag, _money_cents(int(blk.get("value_cents") or 0)))
+
+
+def append_det_pag(pag: ET.Element, payment: dict, pay_cents: int) -> None:
+    """detPag — xPag obrigatório antes de vPag quando tPag=99 (NT 2020.006)."""
+    detpag = _el(pag, "detPag")
+    tpag = str(payment.get("method") or "99")[:2]
+    _el(detpag, "tPag", tpag)
+    if tpag == "99":
+        xpag = str(payment.get("description") or payment.get("x_pag") or "Outros").strip()
+        _el(detpag, "xPag", (xpag or "Outros")[:60])
+    _el(detpag, "vPag", _money_cents(int(payment.get("amount_cents") or pay_cents)))
+
+
 def _cmun(addr: dict) -> str:
     raw = addr.get("codigo_ibge") or addr.get("codigo_municipio_ibge") or addr.get("ibge") or ""
     digits = "".join(ch for ch in str(raw) if ch.isdigit())[:7]
@@ -293,32 +333,7 @@ def build_nfe_xml(*, snapshot: dict[str, Any], access_key: str | None = None) ->
             _el(grp, "pICMS", f"{Decimal(rate_bp) / Decimal(100):.4f}")
             _el(grp, "vICMS", _money_cents(int(icms_block.get("value_cents") or 0)))
 
-        default_pc_cst = "49" if is_sn else "07"
-        for kind, tag in (("pis", "PIS"), ("cofins", "COFINS")):
-            blk = taxes.get(kind) or {}
-            parent = _el(imposto, tag)
-            cst = str(blk.get("cst") or default_pc_cst)[:2]
-            if is_sn and cst in ("01", "02", "03"):
-                cst = "49"
-            if cst in ("04", "05", "06", "07", "08", "09"):
-                g = _el(parent, f"{tag}NT")
-                _el(g, "CST", cst)
-            elif cst in ("49", "99"):
-                g = _el(parent, f"{tag}Outr")
-                _el(g, "CST", cst)
-                base = int(blk.get("base_cents") or 0)
-                rate = int(blk.get("rate_bp") or 0)
-                value = int(blk.get("value_cents") or 0)
-                if base or rate or value:
-                    _el(g, "vBC", _money_cents(base))
-                    _el(g, "p" + tag, f"{Decimal(rate) / Decimal(100):.4f}")
-                    _el(g, "v" + tag, _money_cents(value))
-            else:
-                g = _el(parent, f"{tag}Aliq")
-                _el(g, "CST", cst)
-                _el(g, "vBC", _money_cents(int(blk.get("base_cents") or 0)))
-                _el(g, "p" + tag, f"{Decimal(int(blk.get('rate_bp') or 0)) / Decimal(100):.4f}")
-                _el(g, "v" + tag, _money_cents(int(blk.get("value_cents") or 0)))
+        append_pis_cofins(imposto, taxes, is_sn=is_sn)
 
         item_trib = taxes.get("v_tot_trib_cents")
         if item_trib:
@@ -430,9 +445,7 @@ def build_nfe_xml(*, snapshot: dict[str, Any], access_key: str | None = None) ->
             _el(ve, "UF", str(veic["uf"])[:2])
 
     pag = _el(inf, "pag")
-    detpag = _el(pag, "detPag")
-    _el(detpag, "tPag", str(payment.get("method") or "99")[:2])
-    _el(detpag, "vPag", _money_cents(int(payment.get("amount_cents") or pay_cents)))
+    append_det_pag(pag, payment, pay_cents)
 
     inf_adic = _el(inf, "infAdic")
     inf_cpl = (snapshot.get("inf_adic") or {}).get("infCpl") or "NF-e gerada pelo EXEQ Hub (emissor proprio)."

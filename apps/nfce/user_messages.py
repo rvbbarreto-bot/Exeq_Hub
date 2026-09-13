@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
+
+from integrations.sefaz_nfe.messages import format_sefaz_http_rejection
 
 _CSC_MESSAGE = (
     "Não foi possível emitir a NFC-e: o Código de Segurança do Contribuinte (CSC) "
@@ -29,13 +32,39 @@ _GATE_MESSAGES: dict[str, str] = {
 }
 
 
-def format_nfce_gate_errors(failed: list[dict[str, Any]]) -> str:
-    """Converte checks do gate em texto para operador (sem JSON técnico)."""
-    if not failed:
+_VALIDATION_FIELD_HINTS: dict[str, str] = {
+    "provider.state_registration": (
+        "Informe a Inscrição Estadual (IE) da empresa em Cadastro → Empresas "
+        "ou marque Isento de IE."
+    ),
+}
+
+
+def format_nfce_validation_errors(errors: list[dict[str, Any]]) -> str:
+    if not errors:
         return (
             "Emissão NFC-e indisponível no momento. "
             "Verifique a configuração fiscal ou fale com seu contador."
         )
+    for err in errors:
+        field = str(err.get("field") or "")
+        if field in _VALIDATION_FIELD_HINTS:
+            return _VALIDATION_FIELD_HINTS[field]
+    first = str(errors[0].get("message") or "").strip()
+    if first:
+        return f"Não foi possível emitir a NFC-e: {first}"
+    return (
+        "Emissão NFC-e indisponível no momento. "
+        "Verifique a configuração fiscal ou fale com seu contador."
+    )
+
+
+def format_nfce_gate_errors(failed: list[dict[str, Any]]) -> str:
+    """Converte checks do gate em texto para operador (sem JSON técnico)."""
+    if not failed:
+        return format_nfce_validation_errors([])
+    if failed and failed[0].get("field"):
+        return format_nfce_validation_errors(failed)
     ids = [str(c.get("id") or "") for c in failed]
     if "csc" in ids:
         return _CSC_MESSAGE
@@ -47,10 +76,48 @@ def format_nfce_gate_errors(failed: list[dict[str, Any]]) -> str:
         elif check.get("label"):
             parts.append(str(check["label"]))
     if not parts:
-        return (
-            "Emissão NFC-e indisponível no momento. "
-            "Verifique a configuração fiscal ou fale com seu contador."
-        )
+        return format_nfce_validation_errors([])
     if len(parts) == 1:
         return parts[0]
     return "Emissão NFC-e indisponível: " + " ".join(parts[:2])
+
+
+def format_nfce_rejection_message(
+    rejection_code: str | None,
+    rejection_message: str | None,
+) -> str:
+    """Texto amigável para detalhe/listagem (inclui registros legados técnicos)."""
+    return format_sefaz_http_rejection(
+        rejection_code,
+        rejection_message,
+        document_label="NFC-e",
+    )
+
+
+def format_nfce_emit_exception(exc: BaseException) -> str:
+    """Erros do PDV/API — gate, validação JSON ou domínio."""
+    from apps.nfce.exceptions import NfceGateError, NfceValidationError
+
+    if isinstance(exc, NfceGateError):
+        return str(exc)
+    if isinstance(exc, NfceValidationError):
+        try:
+            parsed = json.loads(str(exc))
+            if isinstance(parsed, list):
+                return format_nfce_validation_errors(parsed)
+        except (json.JSONDecodeError, TypeError):
+            pass
+        return str(exc) or format_nfce_validation_errors([])
+    raw = str(exc or "").strip()
+    if raw.startswith("[") and '"field"' in raw:
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                return format_nfce_validation_errors(parsed)
+        except (json.JSONDecodeError, TypeError):
+            pass
+    if "HTTPSConnectionPool" in raw or "SSLCertVerificationError" in raw:
+        from integrations.sefaz_nfe.messages import format_sefaz_transport_error
+
+        return format_sefaz_transport_error(exc, document_label="NFC-e")
+    return raw or format_nfce_validation_errors([])

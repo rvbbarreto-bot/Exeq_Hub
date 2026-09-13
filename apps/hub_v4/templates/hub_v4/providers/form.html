@@ -66,7 +66,17 @@
       <div class="field">
         <label for="id_state_registration">Inscrição estadual (IE)</label>
         <input name="state_registration" id="id_state_registration"
-               value="{% if form %}{{ form.state_registration }}{% elif obj %}{{ obj.state_registration }}{% endif %}">
+               value="{% if form and form.ie_isento != 'on' %}{{ form.state_registration }}{% elif obj and obj.state_registration|upper != 'ISENTO' and obj.state_registration|upper != 'ISENTA' %}{{ obj.state_registration }}{% endif %}">
+        <label class="checkbox-inline" style="margin-top:0.5rem;display:flex;align-items:center;gap:0.35rem;font-weight:normal;">
+          <input type="checkbox" name="ie_isento" id="id_ie_isento" value="1"
+            {% if form and form.ie_isento == 'on' %}checked
+            {% elif not form and obj and obj.state_registration|upper == 'ISENTO' %}checked
+            {% elif not form and obj and obj.state_registration|upper == 'ISENTA' %}checked{% endif %}>
+          Isento de IE
+        </label>
+        <p class="help" id="ie-isento-help" style="margin:0.35rem 0 0;font-size:0.875rem;color:var(--muted,#666);">
+          Marque se o emitente não possui Inscrição Estadual. Caso contrário, informe o número da IE.
+        </p>
       </div>
       <div class="field">
         <label for="id_tax_regime">Regime tributário *</label>

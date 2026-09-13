@@ -949,6 +949,24 @@
           });
       });
     }
+    var ieIsento = qs("#id_ie_isento", root);
+    var ieInput = qs("#id_state_registration", root);
+    function syncIeIsento() {
+      if (!ieIsento || !ieInput) return;
+      var isento = ieIsento.checked;
+      ieInput.disabled = isento;
+      ieInput.required = !isento;
+      if (isento) {
+        ieInput.value = "";
+        ieInput.setAttribute("aria-disabled", "true");
+      } else {
+        ieInput.removeAttribute("aria-disabled");
+      }
+    }
+    if (ieIsento) {
+      ieIsento.addEventListener("change", syncIeIsento);
+      syncIeIsento();
+    }
   })();
 
   function formatBrlFromDigits(digits) {
