@@ -29,13 +29,18 @@ _GATE_MESSAGES: dict[str, str] = {
     "address_min": "Endereço do emitente incompleto. Atualize o cadastro da empresa.",
     "crt": "Regime tributário (CRT) do emitente não informado.",
     "nfce_enabled": "Emissão NFC-e não está habilitada para este escritório.",
+    "ie": (
+        "Inscrição Estadual (IE) inválida para emissão em produção. "
+        "Informe a IE numérica da empresa em Cadastro → Empresas "
+        "(ISENTO só quando a SEFAZ reconhece o CNPJ como isento)."
+    ),
 }
 
 
 _VALIDATION_FIELD_HINTS: dict[str, str] = {
     "provider.state_registration": (
-        "Informe a Inscrição Estadual (IE) da empresa em Cadastro → Empresas "
-        "ou marque Isento de IE."
+        "Informe a Inscrição Estadual (IE) numérica da empresa em Cadastro → Empresas. "
+        "Em produção a SEFAZ não aceita ISENTO se o CNPJ possui IE cadastrada."
     ),
 }
 

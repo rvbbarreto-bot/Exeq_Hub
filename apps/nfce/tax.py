@@ -32,11 +32,19 @@ def build_validation(
 
     if not provider.document:
         errors.append({"field": "provider", "message": "emitente sem CNPJ"})
-    if require_ie and not (getattr(provider, "state_registration", None) or "").strip():
+    ie_raw = (getattr(provider, "state_registration", None) or "").strip()
+    if require_ie and not ie_raw:
         errors.append(
             {
                 "field": "provider.state_registration",
                 "message": "IE do emitente obrigatória para HTTP SEFAZ",
+            }
+        )
+    if require_ie and str(invoice.tp_amb) == "1" and ie_raw.upper() in {"ISENTO", "ISENTA"}:
+        errors.append(
+            {
+                "field": "provider.state_registration",
+                "message": "Em produção a SEFAZ exige IE numérica válida (não ISENTO)",
             }
         )
     addr = provider.address or {}

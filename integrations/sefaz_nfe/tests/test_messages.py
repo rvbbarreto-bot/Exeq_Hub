@@ -40,3 +40,14 @@ def test_format_sefaz_http_rejection_keeps_friendly_message():
 def test_format_sefaz_http_rejection_sefaz_motivo():
     msg = format_sefaz_http_rejection("539", "Duplicidade de NF-e", document_label="NFC-e")
     assert msg == "Duplicidade de NF-e"
+
+
+def test_format_sefaz_http_rejection_ie_209():
+    msg = format_sefaz_http_rejection(
+        "209",
+        "Rejeição: IE do emitente inválida",
+        document_label="NFC-e",
+    )
+    assert "Inscrição Estadual" in msg
+    assert "Isento de IE" in msg
+    assert "Rejeição:" not in msg

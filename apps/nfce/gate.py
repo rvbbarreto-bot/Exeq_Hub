@@ -160,6 +160,20 @@ def build_gate_payload(
             }
         )
 
+        from apps.nfe.ie_validation import validate_emitter_ie
+
+        ie = (provider.state_registration or "").strip()
+        ie_ok, ie_label = validate_emitter_ie(ie, http_mode=(mode == "http"))
+        if mode == "http" and amb == "1" and ie.upper() in {"ISENTO", "ISENTA"}:
+            ie_ok = False
+            ie_label = (
+                "IE ISENTO bloqueada em produção — informe IE numérica da SEFAZ "
+                "(Cadastro → Empresas)"
+            )
+        checks.append(
+            {"id": "ie", "ok": ie_ok, "label": ie_label, "must": mode == "http"}
+        )
+
         cert = get_primary_certificate(tenant=tenant, cnpj=provider.document)
         if mode == "stub":
             cert_ok = True

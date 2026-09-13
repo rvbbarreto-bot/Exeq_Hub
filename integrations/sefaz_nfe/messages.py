@@ -109,4 +109,11 @@ def format_sefaz_http_rejection(
             document_label=document_label,
         )
 
+    if code == "209" or "ie do emitente" in msg.lower():
+        return (
+            f"A SEFAZ rejeitou a Inscrição Estadual (IE) do emitente na {document_label}. "
+            "Atualize em Cadastro → Empresas com a IE numérica cadastrada na SEFAZ "
+            "(desmarque Isento de IE se a empresa possui IE ativa)."
+        )
+
     return msg
